@@ -77,7 +77,26 @@ function translateModelName(model: string): string {
     return modelWithDash
   }
   
-  // 5. 回退：按模型系列查找可用模型
+  // 5. Anthropic 旧格式到 Copilot 新格式映射
+  // claude-3-5-sonnet-xxx -> claude-sonnet-4.5
+  // claude-3-opus-xxx -> claude-opus-4.5
+  // claude-3-5-haiku-xxx -> claude-haiku-4.5
+  const oldFormatMapping: Record<string, string> = {
+    "claude-3-5-sonnet": "claude-sonnet-4.5",
+    "claude-3-sonnet": "claude-sonnet-4",
+    "claude-3-5-opus": "claude-opus-4.5",
+    "claude-3-opus": "claude-opus-4.5",
+    "claude-3-5-haiku": "claude-haiku-4.5",
+    "claude-3-haiku": "claude-haiku-4.5",
+  }
+  
+  for (const [oldFormat, newFormat] of Object.entries(oldFormatMapping)) {
+    if (modelBase.startsWith(oldFormat) && supportedModels.includes(newFormat)) {
+      return newFormat
+    }
+  }
+  
+  // 6. 回退：按模型系列查找可用模型
   const modelFamily = model.includes("opus") ? "opus" 
     : model.includes("sonnet") ? "sonnet"
     : model.includes("haiku") ? "haiku"
@@ -90,7 +109,7 @@ function translateModelName(model: string): string {
     }
   }
 
-  // 6. 如果都找不到，返回原始模型名
+  // 7. 如果都找不到，返回原始模型名
   return model
 }
 
