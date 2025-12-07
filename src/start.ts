@@ -115,10 +115,6 @@ export async function runServer(options: RunServerOptions): Promise<void> {
     `Available models: \n${state.models?.data.map((model) => `- ${model.id}`).join("\n")}`,
   )
 
-  consola.info(
-    `Available models: \n${availableModels.map((model) => `- ${model}`).join("\n")}`,
-  )
-
   const serverUrl = `http://localhost:${options.port}`
 
   if (options.claudeCode) {
