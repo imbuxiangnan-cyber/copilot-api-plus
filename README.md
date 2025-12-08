@@ -1,5 +1,7 @@
 # Copilot API Plus
 
+
+
 > **Fork of [ericc-ch/copilot-api](https://github.com/ericc-ch/copilot-api)** with bug fixes and improvements.
 
 > [!WARNING]
@@ -169,6 +171,8 @@ The following command line options are available for the `start` command:
 | --claude-code  | Generate a command to launch Claude Code with Copilot API config              | false      | -c    |
 | --show-token   | Show GitHub and Copilot tokens on fetch and refresh                           | false      | none  |
 | --proxy-env    | Initialize proxy from environment variables                                   | false      | none  |
+| --zen          | Enable OpenCode Zen mode (proxy to Zen instead of GitHub Copilot)             | false      | -z    |
+| --zen-api-key  | OpenCode Zen API key (get from https://opencode.ai/zen)                       | none       | none  |
 
 ### Auth Command Options
 
@@ -350,6 +354,141 @@ The dashboard provides a user-friendly interface to view your Copilot usage data
 - **URL-based Configuration**: You can also specify the API endpoint directly in the URL using a query parameter. This is useful for bookmarks or sharing links. For example:
   `https://imbuxiangnan-cyber.github.io/copilot-api-plus?endpoint=http://your-api-server/usage`
 
+## Using with OpenCode Zen
+
+
+### OpenCode Zen 使用指南
+
+OpenCode Zen 是由 opencode.ai 提供的多模型 API 服务，支持 Claude、GPT-5、Gemini、Qwen 等主流大模型，适合代码生成、AI 助手等场景。Copilot API Plus 支持将 Zen 转换为 OpenAI/Anthropic 兼容 API，方便与 Claude Code、opencode 等工具无缝集成。
+
+#### 1. 获取 Zen API Key
+1. 访问 [https://opencode.ai/zen](https://opencode.ai/zen)
+2. 注册并登录，进入“API Keys”页面，创建你的 API Key
+
+#### 2. 启动 Zen 模式
+首次运行会自动提示输入 API Key，并保存到本地。也可直接指定：
+```sh
+npx copilot-api-plus@latest start --zen --zen-api-key <你的APIKey>
+```
+或交互式：
+```sh
+npx copilot-api-plus@latest start --zen
+```
+
+#### 3. 与 Claude Code 配合
+Zen 支持多种 Claude 模型，推荐用法：
+```sh
+npx copilot-api-plus@latest start --zen --claude-code
+```
+会自动生成 Claude Code 启动命令，支持模型选择。
+
+#### 4. 支持的模型（部分示例）
+| 名称                | ID                   | 说明                      |
+|---------------------|----------------------|---------------------------|
+| Claude Sonnet 4.5   | claude-sonnet-4-5    | Anthropic Claude 200K     |
+| Claude Opus 4.5     | claude-opus-4-5      | Anthropic Claude 200K     |
+| GPT-5 Codex         | gpt-5-codex          | OpenAI Responses API      |
+| Gemini 3 Pro        | gemini-3-pro         | Google Gemini             |
+| Qwen3 Coder 480B    | qwen3-coder          | Alibaba Qwen              |
+| Kimi K2             | kimi-k2              | Moonshot                  |
+| Grok Code Fast 1    | grok-code            | xAI                       |
+更多模型请见 [Zen 官网](https://opencode.ai/zen)。
+
+#### 5. API 路径
+Zen 模式下，所有 OpenAI/Anthropic 兼容路径均可用：
+- `POST /v1/chat/completions`  （OpenAI 格式）
+- `POST /v1/messages`          （Anthropic 格式）
+- `GET /v1/models`             （模型列表）
+Zen 专属路径（始终可用）：
+- `POST /zen/v1/chat/completions`
+- `POST /zen/v1/messages`
+- `GET /zen/v1/models`
+
+#### 6. 常见问题
+- **API Key 存储位置**：`~/.local/share/copilot-api-plus/zen-auth.json`
+- **切换/清除 API Key**：
+  - 只清除 Zen：`npx copilot-api-plus@latest logout --zen`
+  - 全部清除：`npx copilot-api-plus@latest logout --all`
+- **模型选择**：启动时会自动显示可用模型列表
+- **与 opencode 配合**：在 `opencode.json` 里设置 `baseURL` 为 `http://127.0.0.1:4141/v1`，或用环境变量 `OPENAI_BASE_URL`
+
+#### 7. 使用技巧
+- 推荐用 `--claude-code` 生成 Claude Code 启动命令
+- 支持所有 Zen 公开模型，按需选择
+- 支持 Docker 部署，API Key 持久化
+
+如需详细配置示例、opencode 配置、更多高级用法，请继续阅读下方文档。
+
+### Why Use Zen Mode?
+
+- **Access to many models**: Claude Sonnet 4.5, Claude Opus 4.5, GPT-5 Codex, Gemini 3 Pro, Qwen3 Coder, and more
+- **Transparent pricing**: Pay per request with zero markups
+- **Tested & verified**: All models are tested by the OpenCode team for coding tasks
+- **Single API key**: One key for all Zen models
+
+### Getting Started with Zen
+
+1. **Get your API key**: Go to [opencode.ai/zen](https://opencode.ai/zen), sign up, and create an API key.
+
+2. **Start the server in Zen mode**:
+   ```sh
+   npx copilot-api-plus@latest start --zen
+   ```
+   
+   You will be prompted to enter your Zen API key on first run. The key will be saved for future use.
+
+3. **Or provide the API key directly**:
+   ```sh
+   npx copilot-api-plus@latest start --zen --zen-api-key your_api_key_here
+   ```
+
+### Using Zen with Claude Code
+
+Start the server with both `--zen` and `--claude-code` flags:
+
+```sh
+npx copilot-api-plus@latest start --zen --claude-code
+```
+
+This will:
+1. Connect to OpenCode Zen instead of GitHub Copilot
+2. Show you available Zen models to choose from
+3. Generate a command to launch Claude Code with the selected model
+
+### Available Zen Models
+
+When using Zen mode, you can access models like:
+
+| Model              | ID                | Description                    |
+| ------------------ | ----------------- | ------------------------------ |
+| Claude Sonnet 4.5  | claude-sonnet-4-5 | Anthropic Claude (200K context)|
+| Claude Opus 4.5    | claude-opus-4-5   | Anthropic Claude (200K context)|
+| GPT 5 Codex        | gpt-5-codex       | OpenAI (Responses API)         |
+| Gemini 3 Pro       | gemini-3-pro      | Google Gemini                  |
+| Qwen3 Coder 480B   | qwen3-coder       | Alibaba Qwen                   |
+| Kimi K2            | kimi-k2           | Moonshot                       |
+| Grok Code Fast 1   | grok-code         | xAI                            |
+
+For the full list, visit [opencode.ai/zen](https://opencode.ai/zen).
+
+### Zen API Endpoints
+
+The server exposes the same endpoints in Zen mode:
+
+| Endpoint                    | Description                          |
+| --------------------------- | ------------------------------------ |
+| `POST /v1/chat/completions` | OpenAI-compatible chat completions   |
+| `POST /v1/messages`         | Anthropic-compatible messages        |
+| `GET /v1/models`            | List available Zen models            |
+
+You can also access dedicated Zen routes (always available):
+
+| Endpoint                         | Description              |
+| -------------------------------- | ------------------------ |
+| `POST /zen/v1/chat/completions`  | Zen chat completions     |
+| `POST /zen/v1/messages`          | Zen messages             |
+| `GET /zen/v1/models`             | Zen models               |
+
 ## Using with Claude Code
 
 This proxy can be used to power [Claude Code](https://docs.anthropic.com/en/claude-code), an experimental conversational AI assistant for developers from Anthropic.
@@ -397,6 +536,125 @@ Here is an example `.claude/settings.json` file:
 You can find more options here: [Claude Code settings](https://docs.anthropic.com/en/docs/claude-code/settings#environment-variables)
 
 You can also read more about IDE integration here: [Add Claude Code to your IDE](https://docs.anthropic.com/en/docs/claude-code/ide-integrations)
+
+## Using with opencode
+
+[opencode](https://github.com/sst/opencode) is a modern AI coding assistant that supports multiple providers. You can use copilot-api-plus as a custom provider for opencode.
+
+### Configuration
+
+Create or edit `opencode.json` in your project root directory:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "copilot-api-plus": {
+      "api": "openai-compatible",
+      "name": "Copilot API Plus",
+      "options": {
+        "baseURL": "http://127.0.0.1:4141/v1"
+      },
+      "models": {
+        "claude-sonnet-4": {
+          "name": "Claude Sonnet 4",
+          "id": "claude-sonnet-4",
+          "max_tokens": 64000,
+          "default_tokens": 16000,
+          "profile": "coder",
+          "attachment": true,
+          "limit": {
+            "context": 200000
+          }
+        },
+        "claude-sonnet-4.5": {
+          "name": "Claude Sonnet 4.5",
+          "id": "claude-sonnet-4.5",
+          "max_tokens": 64000,
+          "default_tokens": 16000,
+          "profile": "coder",
+          "attachment": true,
+          "limit": {
+            "context": 200000
+          }
+        },
+        "gpt-4.1": {
+          "name": "GPT-4.1",
+          "id": "gpt-4.1",
+          "max_tokens": 32768,
+          "default_tokens": 16000,
+          "profile": "coder",
+          "attachment": true,
+          "limit": {
+            "context": 1047576
+          }
+        },
+        "o4-mini": {
+          "name": "o4-mini",
+          "id": "o4-mini",
+          "max_tokens": 100000,
+          "default_tokens": 16000,
+          "profile": "coder",
+          "attachment": true,
+          "limit": {
+            "context": 200000
+          }
+        },
+        "gemini-2.5-pro": {
+          "name": "Gemini 2.5 Pro",
+          "id": "gemini-2.5-pro",
+          "max_tokens": 65536,
+          "default_tokens": 16000,
+          "profile": "coder",
+          "attachment": true,
+          "limit": {
+            "context": 1048576
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+### Usage
+
+1. Start copilot-api-plus:
+   ```sh
+   npx copilot-api-plus@latest start --proxy-env
+   ```
+
+2. Run opencode in the same project directory:
+   ```sh
+   npx opencode@latest
+   ```
+
+3. Select `copilot-api-plus` as your provider when prompted, or use the model switcher to change providers.
+
+### Available Models
+
+When using copilot-api-plus with opencode, you can access all GitHub Copilot models:
+
+| Model             | Description                          |
+| ----------------- | ------------------------------------ |
+| `claude-sonnet-4` | Claude Sonnet 4 (200K context)       |
+| `claude-sonnet-4.5` | Claude Sonnet 4.5 (200K context)   |
+| `gpt-4.1`         | GPT-4.1 (1M context)                 |
+| `o4-mini`         | OpenAI o4-mini reasoning model       |
+| `gemini-2.5-pro`  | Google Gemini 2.5 Pro (1M context)   |
+
+### Environment Variables for opencode
+
+If you prefer not to create a config file, you can also set environment variables:
+
+```sh
+# Set the base URL for opencode to use
+export OPENAI_BASE_URL=http://127.0.0.1:4141/v1
+export OPENAI_API_KEY=dummy
+
+# Start opencode
+npx opencode@latest
+```
 
 ## Running from Source
 

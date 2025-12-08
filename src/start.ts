@@ -26,6 +26,8 @@ interface RunServerOptions {
   showToken: boolean
   proxyEnv: boolean
   apiKeys?: Array<string>
+  zen: boolean
+  zenApiKey?: string
 }
 
 /**
@@ -48,6 +50,8 @@ interface RunServerOptions {
  *   - showToken: Expose GitHub/Copilot tokens in responses for debugging
  *   - proxyEnv: Initialize proxy settings from environment variables
  *   - apiKeys: Optional list of API keys to enable API key authentication
+ *   - zen: Enable OpenCode Zen mode (proxy to Zen instead of GitHub Copilot)
+ *   - zenApiKey: OpenCode Zen API key (optional; if omitted will prompt for setup)
  */
 export async function runServer(options: RunServerOptions): Promise<void> {
   if (options.proxyEnv) {
@@ -77,54 +81,88 @@ export async function runServer(options: RunServerOptions): Promise<void> {
   }
 
   await ensurePaths()
-  await cacheVSCodeVersion()
 
-  if (options.githubToken) {
-    state.githubToken = options.githubToken
-    consola.info("Using provided GitHub token")
-    // Validate the provided token
+  // Handle Zen mode
+  if (options.zen) {
+    consola.info("OpenCode Zen mode enabled")
+    state.zenMode = true
+
+    // Setup Zen API key
+    if (options.zenApiKey) {
+      state.zenApiKey = options.zenApiKey
+      consola.info("Using provided Zen API key")
+    } else {
+      const { setupZenApiKey, loadZenAuth } = await import("~/services/zen/auth")
+      const existingAuth = await loadZenAuth()
+
+      if (existingAuth) {
+        state.zenApiKey = existingAuth.apiKey
+        consola.info("Using existing Zen API key")
+      } else {
+        const apiKey = await setupZenApiKey()
+        state.zenApiKey = apiKey
+      }
+    }
+
+    // Cache Zen models
+    const { cacheZenModels } = await import("~/services/zen/get-models")
+    await cacheZenModels()
+
+    consola.info(
+      `Available Zen models: \n${state.zenModels?.data.map((model) => `- ${model.id}`).join("\n")}`,
+    )
+  } else {
+    // Standard Copilot mode
+    await cacheVSCodeVersion()
+
+    if (options.githubToken) {
+      state.githubToken = options.githubToken
+      consola.info("Using provided GitHub token")
+      // Validate the provided token
+      try {
+        const { getGitHubUser } = await import("~/services/github/get-user")
+        const user = await getGitHubUser()
+        consola.info(`Logged in as ${user.login}`)
+      } catch (error) {
+        consola.error("Provided GitHub token is invalid")
+        throw error
+      }
+    } else {
+      await setupGitHubToken()
+    }
+
     try {
-      const { getGitHubUser } = await import("~/services/github/get-user")
-      const user = await getGitHubUser()
-      consola.info(`Logged in as ${user.login}`)
+      await setupCopilotToken()
     } catch (error) {
-      consola.error("Provided GitHub token is invalid")
+      // If getting Copilot token fails with 401, the GitHub token might be invalid
+      const { HTTPError } = await import("~/lib/error")
+      if (error instanceof HTTPError && error.response.status === 401) {
+        consola.error("Failed to get Copilot token - GitHub token may be invalid or Copilot access revoked")
+        const { clearGithubToken } = await import("~/lib/token")
+        await clearGithubToken()
+        consola.info("Please restart to re-authenticate")
+      }
       throw error
     }
-  } else {
-    await setupGitHubToken()
-  }
+    
+    await cacheModels()
 
-  try {
-    await setupCopilotToken()
-  } catch (error) {
-    // If getting Copilot token fails with 401, the GitHub token might be invalid
-    const { HTTPError } = await import("~/lib/error")
-    if (error instanceof HTTPError && error.response.status === 401) {
-      consola.error("Failed to get Copilot token - GitHub token may be invalid or Copilot access revoked")
-      const { clearGithubToken } = await import("~/lib/token")
-      await clearGithubToken()
-      consola.info("Please restart to re-authenticate")
-    }
-    throw error
+    consola.info(
+      `Available models: \n${state.models?.data.map((model) => `- ${model.id}`).join("\n")}`,
+    )
   }
-  
-  await cacheModels()
-
-  consola.info(
-    `Available models: \n${state.models?.data.map((model) => `- ${model.id}`).join("\n")}`,
-  )
 
   const serverUrl = `http://localhost:${options.port}`
 
   if (options.claudeCode) {
-    invariant(state.models, "Models should be loaded by now")
+    const models = state.zenMode ? state.zenModels : state.models
+    invariant(models, "Models should be loaded by now")
 
     const selectedModel = await consola.prompt(
       "Select a model to use with Claude Code",
       {
         type: "select",
-        options: state.models.data.map((model) => model.id),
+        options: models.data.map((model) => model.id),
       },
     )
 
@@ -132,7 +170,7 @@ export async function runServer(options: RunServerOptions): Promise<void> {
       "Select a small model to use with Claude Code",
       {
         type: "select",
-        options: state.models.data.map((model) => model.id),
+        options: models.data.map((model) => model.id),
       },
     )
 
@@ -239,6 +277,16 @@ export const start = defineCommand({
       type: "string",
       description: "API keys for authentication",
     },
+    zen: {
+      alias: "z",
+      type: "boolean",
+      default: false,
+      description: "Enable OpenCode Zen mode (proxy to Zen instead of GitHub Copilot)",
+    },
+    "zen-api-key": {
+      type: "string",
+      description: "OpenCode Zen API key (get from https://opencode.ai/zen)",
+    },
   },
   run({ args }) {
     const rateLimitRaw = args["rate-limit"]
@@ -265,6 +313,8 @@ export const start = defineCommand({
       showToken: args["show-token"],
       proxyEnv: args["proxy-env"],
       apiKeys,
+      zen: args.zen,
+      zenApiKey: args["zen-api-key"],
     })
   },
 })

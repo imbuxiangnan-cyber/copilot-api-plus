@@ -1,12 +1,14 @@
 {
   "name": "copilot-api-plus",
-  "version": "1.0.6",
-  "description": "Turn GitHub Copilot into OpenAI/Anthropic API compatible server. Fork with bug fixes: auto re-auth, logout support, and more.",
+  "version": "1.0.8",
+  "description": "Turn GitHub Copilot or OpenCode Zen into OpenAI/Anthropic API compatible server. Fork with bug fixes: auto re-auth, logout support, Zen mode, and more.",
   "keywords": [
     "proxy",
     "github-copilot",
     "openai-compatible",
-    "anthropic-compatible"
+    "anthropic-compatible",
+    "opencode-zen",
+    "claude-code"
   ],
   "homepage": "https://github.com/imbuxiangnan-cyber/copilot-api-plus",
   "bugs": "https://github.com/imbuxiangnan-cyber/copilot-api-plus/issues",

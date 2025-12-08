@@ -8,6 +8,7 @@ const GITHUB_TOKEN_PATH = path.join(APP_DIR, "github_token")
 
 export const PATHS = {
   APP_DIR,
+  DATA_DIR: APP_DIR,
   GITHUB_TOKEN_PATH,
 }
 

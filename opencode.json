@@ -1,4 +1,71 @@
 {
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "copilot-api-plus": {
+      "api": "openai-compatible",
+      "name": "Copilot API Plus",
+      "options": {
+        "baseURL": "http://127.0.0.1:4141/v1"
+      },
+      "models": {
+        "claude-sonnet-4": {
+          "name": "Claude Sonnet 4",
+          "id": "claude-sonnet-4",
+          "max_tokens": 64000,
+          "default_tokens": 16000,
+          "profile": "coder",
+          "attachment": true,
+          "limit": {
+            "context": 200000
+          }
+        },
+        "claude-sonnet-4.5": {
+          "name": "Claude Sonnet 4.5",
+          "id": "claude-sonnet-4.5",
+          "max_tokens": 64000,
+          "default_tokens": 16000,
+          "profile": "coder",
+          "attachment": true,
+          "limit": {
+            "context": 200000
+          }
+        },
+        "gpt-4.1": {
+          "name": "GPT-4.1",
+          "id": "gpt-4.1",
+          "max_tokens": 32768,
+          "default_tokens": 16000,
+          "profile": "coder",
+          "attachment": true,
+          "limit": {
+            "context": 1047576
+          }
+        },
+        "o4-mini": {
+          "name": "o4-mini",
+          "id": "o4-mini",
+          "max_tokens": 100000,
+          "default_tokens": 16000,
+          "profile": "coder",
+          "attachment": true,
+          "limit": {
+            "context": 200000
+          }
+        },
+        "gemini-2.5-pro": {
+          "name": "Gemini 2.5 Pro",
+          "id": "gemini-2.5-pro",
+          "max_tokens": 65536,
+          "default_tokens": 16000,
+          "profile": "coder",
+          "attachment": true,
+          "limit": {
+            "context": 1048576
+          }
+        }
+      }
+    }
+  },
   "mcp": {
     "playwright": {
       "type": "local",
@@ -15,6 +82,5 @@
       ],
       "enabled": true
     }
-  },
-  "$schema": "https://opencode.ai/config.json"
+  }
 }
