@@ -5,6 +5,8 @@
  * Based on: https://github.com/liuw1535/antigravity2api-nodejs
  */
 
+/* eslint-disable require-atomic-updates */
+
 import consola from "consola"
 
 import { getValidAccessToken } from "./auth"

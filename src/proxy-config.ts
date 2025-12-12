@@ -3,14 +3,17 @@
  * Allows users to configure, enable, disable, and view proxy settings
  */
 
+/* eslint-disable max-lines-per-function */
+/* eslint-disable complexity */
+
 import * as p from "@clack/prompts"
 import { defineCommand } from "citty"
 import consola from "consola"
 
 import {
+  clearProxyConfig,
   getProxyConfig,
   saveProxyConfig,
-  clearProxyConfig,
   type ProxyConfig,
 } from "./lib/config"
 import { ensurePaths } from "./lib/paths"

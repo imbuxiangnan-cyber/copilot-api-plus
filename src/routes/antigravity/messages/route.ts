@@ -9,7 +9,10 @@ import consola from "consola"
 import { Hono } from "hono"
 
 import { state } from "~/lib/state"
-import { createAntigravityMessages } from "~/services/antigravity/create-messages"
+import {
+  createAntigravityMessages,
+  type AnthropicMessageRequest,
+} from "~/services/antigravity/create-messages"
 
 export const antigravityMessagesRoute = new Hono()
 
@@ -25,7 +28,7 @@ antigravityMessagesRoute.post("/", async (c) => {
   }
 
   try {
-    const body = await c.req.json()
+    const body: AnthropicMessageRequest = await c.req.json()
     consola.debug("Antigravity message request:", body.model)
 
     const response = await createAntigravityMessages(body)

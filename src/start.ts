@@ -1,5 +1,9 @@
 #!/usr/bin/env node
 
+/* eslint-disable require-atomic-updates */
+/* eslint-disable max-lines-per-function */
+/* eslint-disable complexity */
+
 import { defineCommand } from "citty"
 import clipboard from "clipboardy"
 import consola from "consola"

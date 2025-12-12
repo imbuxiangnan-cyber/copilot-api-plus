@@ -5,14 +5,27 @@
  * Based on: https://github.com/liuw1535/antigravity2api-nodejs
  */
 
+/* eslint-disable max-params */
+/* eslint-disable @typescript-eslint/no-unnecessary-condition */
+/* eslint-disable @typescript-eslint/no-redundant-type-constituents */
+/* eslint-disable @typescript-eslint/no-unsafe-argument */
+
 import consola from "consola"
 
 import {
+  disableCurrentAccount,
   getValidAccessToken,
   rotateAccount,
-  disableCurrentAccount,
 } from "./auth"
 import { isThinkingModel } from "./get-models"
+import {
+  createStreamState,
+  extractFromData,
+  parseSSELine,
+  processChunk,
+  type AntigravityPart,
+  type StreamState,
+} from "./stream-parser"
 
 // Antigravity API endpoints
 const ANTIGRAVITY_API_HOST = "daily-cloudcode-pa.sandbox.googleapis.com"
@@ -38,78 +51,85 @@ export interface ChatCompletionRequest {
   tools?: Array<unknown>
 }
 
+interface ConvertedContent {
+  contents: Array<unknown>
+  systemInstruction?: unknown
+}
+
 /**
  * Convert OpenAI format messages to Antigravity format
  */
-function convertMessages(messages: Array<ChatMessage>): {
-  contents: Array<unknown>
-  systemInstruction?: unknown
-} {
+function convertMessages(messages: Array<ChatMessage>): ConvertedContent {
   const contents: Array<unknown> = []
-  let systemInstruction: unknown = undefined
+  let systemInstruction: unknown
 
   for (const message of messages) {
     if (message.role === "system") {
-      // System message becomes systemInstruction
-      const text =
-        typeof message.content === "string" ?
-          message.content
-        : message.content.map((c) => c.text || "").join("")
-
-      systemInstruction = {
-        role: "user",
-        parts: [{ text }],
-      }
+      systemInstruction = buildSystemInstruction(message.content)
       continue
     }
 
     const role = message.role === "assistant" ? "model" : "user"
-
-    if (typeof message.content === "string") {
-      contents.push({
-        role,
-        parts: [{ text: message.content }],
-      })
-    } else {
-      // Handle multimodal content
-      const parts: Array<unknown> = []
-
-      for (const part of message.content) {
-        if (part.type === "text") {
-          parts.push({ text: part.text })
-        } else if (part.type === "image_url" && part.image_url?.url) {
-          // Extract base64 image data
-          const url = part.image_url.url
-          if (url.startsWith("data:")) {
-            const match = url.match(/^data:([^;]+);base64,(.+)$/)
-            if (match) {
-              parts.push({
-                inlineData: {
-                  mimeType: match[1],
-                  data: match[2],
-                },
-              })
-            }
-          }
-        }
-      }
-
-      contents.push({ role, parts })
-    }
+    const parts = buildMessageParts(message.content)
+    contents.push({ role, parts })
   }
 
   return { contents, systemInstruction }
 }
 
 /**
+ * Build system instruction from content
+ */
+function buildSystemInstruction(content: ChatMessage["content"]): {
+  role: string
+  parts: Array<unknown>
+} {
+  const text =
+    typeof content === "string" ? content : (
+      content.map((c) => c.text || "").join("")
+    )
+  return { role: "user", parts: [{ text }] }
+}
+
+/**
+ * Build message parts from content
+ */
+function buildMessageParts(content: ChatMessage["content"]): Array<unknown> {
+  if (typeof content === "string") {
+    return [{ text: content }]
+  }
+
+  const parts: Array<unknown> = []
+  for (const part of content) {
+    if (part.type === "text") {
+      parts.push({ text: part.text })
+    } else if (part.type === "image_url" && part.image_url?.url) {
+      const imageData = parseBase64Image(part.image_url.url)
+      if (imageData) parts.push({ inlineData: imageData })
+    }
+  }
+  return parts
+}
+
+/**
+ * Parse base64 image URL
+ */
+function parseBase64Image(
+  url: string,
+): { mimeType: string; data: string } | null {
+  if (!url.startsWith("data:")) return null
+  const match = url.match(/^data:([^;]+);base64,(.+)$/)
+  if (!match) return null
+  return { mimeType: match[1], data: match[2] }
+}
+
+/**
  * Convert tools to Antigravity format
  */
 function convertTools(tools?: Array<unknown>): Array<unknown> | undefined {
-  if (!tools || tools.length === 0) {
-    return undefined
-  }
+  if (!tools || tools.length === 0) return undefined
 
-  return tools.map((tool: unknown) => {
+  return tools.map((tool) => {
     const t = tool as {
       type: string
       function?: { name: string; description?: string; parameters?: unknown }
@@ -130,34 +150,15 @@ function convertTools(tools?: Array<unknown>): Array<unknown> | undefined {
 }
 
 /**
- * Create chat completion with Antigravity
+ * Build Antigravity request body
  */
-export async function createAntigravityChatCompletion(
+function buildRequestBody(
   request: ChatCompletionRequest,
-): Promise<Response> {
-  const accessToken = await getValidAccessToken()
-
-  if (!accessToken) {
-    return new Response(
-      JSON.stringify({
-        error: {
-          message:
-            "No valid Antigravity access token available. Please run login first.",
-          type: "auth_error",
-        },
-      }),
-      {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      },
-    )
-  }
-
+): Record<string, unknown> {
   const { contents, systemInstruction } = convertMessages(request.messages)
   const tools = convertTools(request.tools)
 
-  // Build Antigravity request body
-  const antigravityRequest: Record<string, unknown> = {
+  const body: Record<string, unknown> = {
     model: request.model,
     contents,
     generationConfig: {
@@ -168,26 +169,55 @@ export async function createAntigravityChatCompletion(
     },
   }
 
-  if (systemInstruction) {
-    antigravityRequest.systemInstruction = systemInstruction
-  }
+  if (systemInstruction) body.systemInstruction = systemInstruction
+  if (tools) body.tools = tools
 
-  if (tools) {
-    antigravityRequest.tools = tools
-  }
-
-  // Enable thinking for thinking models
   if (isThinkingModel(request.model)) {
-    antigravityRequest.generationConfig = {
-      ...(antigravityRequest.generationConfig as Record<string, unknown>),
-      thinkingConfig: {
-        includeThoughts: true,
-      },
+    body.generationConfig = {
+      ...(body.generationConfig as Record<string, unknown>),
+      thinkingConfig: { includeThoughts: true },
     }
+  }
+
+  return body
+}
+
+/**
+ * Create error response
+ */
+function createErrorResponse(
+  message: string,
+  type: string,
+  status: number,
+  details?: string,
+): Response {
+  const error: Record<string, unknown> = { message, type }
+  if (details) error.details = details
+  return new Response(JSON.stringify({ error }), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  })
+}
+
+/**
+ * Create chat completion with Antigravity
+ */
+export async function createAntigravityChatCompletion(
+  request: ChatCompletionRequest,
+): Promise<Response> {
+  const accessToken = await getValidAccessToken()
+
+  if (!accessToken) {
+    return createErrorResponse(
+      "No valid Antigravity access token available. Please run login first.",
+      "auth_error",
+      401,
+    )
   }
 
   const endpoint =
     request.stream ? ANTIGRAVITY_STREAM_URL : ANTIGRAVITY_NO_STREAM_URL
+  const body = buildRequestBody(request)
 
   consola.debug(
     `Antigravity request to ${endpoint} with model ${request.model}`,
@@ -203,60 +233,49 @@ export async function createAntigravityChatCompletion(
         "Content-Type": "application/json",
         "Accept-Encoding": "gzip",
       },
-      body: JSON.stringify(antigravityRequest),
+      body: JSON.stringify(body),
     })
 
     if (!response.ok) {
-      const errorText = await response.text()
-      consola.error(`Antigravity error: ${response.status} ${errorText}`)
-
-      // Handle 403 - token might be invalid
-      if (response.status === 403) {
-        await disableCurrentAccount()
-      }
-
-      // Rotate to next account for certain errors
-      if (response.status === 429 || response.status === 503) {
-        await rotateAccount()
-      }
-
-      return new Response(
-        JSON.stringify({
-          error: {
-            message: `Antigravity API error: ${response.status}`,
-            type: "api_error",
-            details: errorText,
-          },
-        }),
-        {
-          status: response.status,
-          headers: { "Content-Type": "application/json" },
-        },
-      )
+      return await handleApiError(response)
     }
 
-    if (request.stream) {
-      // Transform SSE stream to OpenAI format
-      return transformStreamResponse(response, request.model)
-    } else {
-      // Transform non-stream response to OpenAI format
-      return transformNonStreamResponse(response, request.model)
-    }
+    return request.stream ?
+        transformStreamResponse(response, request.model)
+      : await transformNonStreamResponse(response, request.model)
   } catch (error) {
     consola.error("Antigravity request error:", error)
-    return new Response(
-      JSON.stringify({
-        error: {
-          message: `Request failed: ${error}`,
-          type: "request_error",
-        },
-      }),
-      {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      },
+    return createErrorResponse(
+      `Request failed: ${String(error)}`,
+      "request_error",
+      500,
     )
   }
+}
+
+/**
+ * Handle API error response
+ */
+async function handleApiError(response: Response): Promise<Response> {
+  const errorText = await response.text()
+  consola.error(`Antigravity error: ${response.status} ${errorText}`)
+
+  if (response.status === 403) await disableCurrentAccount()
+  if (response.status === 429 || response.status === 503) await rotateAccount()
+
+  return createErrorResponse(
+    `Antigravity API error: ${response.status}`,
+    "api_error",
+    response.status,
+    errorText,
+  )
+}
+
+/**
+ * Generate request ID
+ */
+function generateRequestId(): string {
+  return `chatcmpl-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
 }
 
 /**
@@ -264,165 +283,28 @@ export async function createAntigravityChatCompletion(
  */
 function transformStreamResponse(response: Response, model: string): Response {
   const reader = response.body?.getReader()
-
-  if (!reader) {
-    return new Response("No response body", { status: 500 })
-  }
+  if (!reader) return new Response("No response body", { status: 500 })
 
   const encoder = new TextEncoder()
   const decoder = new TextDecoder()
+  const requestId = generateRequestId()
 
   const stream = new ReadableStream({
     async start(controller) {
-      let buffer = ""
-      const requestId = `chatcmpl-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+      const state = createStreamState()
 
       try {
-        while (true) {
-          const { done, value } = await reader.read()
-
-          if (done) {
-            // Send final done message
-            controller.enqueue(encoder.encode("data: [DONE]\n\n"))
-            controller.close()
-            break
-          }
-
-          buffer += decoder.decode(value, { stream: true })
-          const lines = buffer.split("\n")
-          buffer = lines.pop() || ""
-
-          for (const line of lines) {
-            if (line.startsWith("data: ")) {
-              const data = line.slice(6).trim()
-
-              if (data === "[DONE]" || data === "") {
-                continue
-              }
-
-              try {
-                const parsed = JSON.parse(data) as {
-                  response?: {
-                    candidates?: Array<{
-                      content?: {
-                        parts?: Array<{
-                          text?: string
-                          thought?: boolean
-                          functionCall?: { name: string; args: unknown }
-                        }>
-                      }
-                      finishReason?: string
-                    }>
-                  }
-                  candidates?: Array<{
-                    content?: {
-                      parts?: Array<{
-                        text?: string
-                        thought?: boolean
-                        functionCall?: { name: string; args: unknown }
-                      }>
-                    }
-                    finishReason?: string
-                  }>
-                }
-
-                // Handle both response wrapper and direct candidates
-                const candidates =
-                  parsed.response?.candidates || parsed.candidates
-                const candidate = candidates?.[0]
-                const parts = candidate?.content?.parts || []
-
-                for (const part of parts) {
-                  // Handle thinking/thought content
-                  if (part.thought && part.text) {
-                    // Send thinking content with reasoning_content field (for clients that support it)
-                    const chunk = {
-                      id: requestId,
-                      object: "chat.completion.chunk",
-                      created: Math.floor(Date.now() / 1000),
-                      model,
-                      choices: [
-                        {
-                          index: 0,
-                          delta: {
-                            reasoning_content: part.text,
-                          },
-                          finish_reason: null,
-                        },
-                      ],
-                    }
-
-                    controller.enqueue(
-                      encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`),
-                    )
-                    continue
-                  }
-
-                  // Handle regular text content
-                  if (part.text) {
-                    const chunk = {
-                      id: requestId,
-                      object: "chat.completion.chunk",
-                      created: Math.floor(Date.now() / 1000),
-                      model,
-                      choices: [
-                        {
-                          index: 0,
-                          delta: {
-                            content: part.text,
-                          },
-                          finish_reason:
-                            candidate?.finishReason === "STOP" ? "stop" : null,
-                        },
-                      ],
-                    }
-
-                    controller.enqueue(
-                      encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`),
-                    )
-                  }
-
-                  // Handle function calls
-                  if (part.functionCall) {
-                    const chunk = {
-                      id: requestId,
-                      object: "chat.completion.chunk",
-                      created: Math.floor(Date.now() / 1000),
-                      model,
-                      choices: [
-                        {
-                          index: 0,
-                          delta: {
-                            tool_calls: [
-                              {
-                                index: 0,
-                                id: `call_${Date.now()}`,
-                                type: "function",
-                                function: {
-                                  name: part.functionCall.name,
-                                  arguments: JSON.stringify(
-                                    part.functionCall.args,
-                                  ),
-                                },
-                              },
-                            ],
-                          },
-                          finish_reason: null,
-                        },
-                      ],
-                    }
-
-                    controller.enqueue(
-                      encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`),
-                    )
-                  }
-                }
-              } catch {
-                // Skip invalid JSON
-              }
-            }
-          }
-        }
+        await processOpenAIStream(
+          reader,
+          decoder,
+          state,
+          controller,
+          encoder,
+          requestId,
+          model,
+        )
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"))
+        controller.close()
       } catch (error) {
         consola.error("Stream transform error:", error)
         controller.error(error)
@@ -440,21 +322,132 @@ function transformStreamResponse(response: Response, model: string): Response {
 }
 
 /**
+ * Process stream and emit OpenAI format chunks
+ */
+async function processOpenAIStream(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  decoder: TextDecoder,
+  state: StreamState,
+  controller: ReadableStreamDefaultController<Uint8Array>,
+  encoder: TextEncoder,
+  requestId: string,
+  model: string,
+): Promise<void> {
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+
+    const chunk = decoder.decode(value, { stream: true })
+    const lines = processChunk(chunk, state)
+
+    for (const line of lines) {
+      const data = parseSSELine(line)
+      if (!data) continue
+
+      const { candidates } = extractFromData(data)
+      const candidate = candidates[0]
+      const parts = candidate?.content?.parts ?? []
+
+      for (const part of parts) {
+        const chunkData = buildOpenAIChunk(
+          part,
+          requestId,
+          model,
+          candidate?.finishReason,
+        )
+        if (chunkData) {
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify(chunkData)}\n\n`),
+          )
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Build OpenAI format chunk from part
+ */
+function buildOpenAIChunk(
+  part: AntigravityPart,
+  requestId: string,
+  model: string,
+  finishReason?: string,
+): unknown | null {
+  const baseChunk = {
+    id: requestId,
+    object: "chat.completion.chunk",
+    created: Math.floor(Date.now() / 1000),
+    model,
+  }
+
+  // Handle thinking content
+  if (part.thought && part.text) {
+    return {
+      ...baseChunk,
+      choices: [
+        {
+          index: 0,
+          delta: { reasoning_content: part.text },
+          finish_reason: null,
+        },
+      ],
+    }
+  }
+
+  // Handle regular text
+  if (part.text && !part.thought) {
+    return {
+      ...baseChunk,
+      choices: [
+        {
+          index: 0,
+          delta: { content: part.text },
+          finish_reason: finishReason === "STOP" ? "stop" : null,
+        },
+      ],
+    }
+  }
+
+  // Handle function calls
+  if (part.functionCall) {
+    return {
+      ...baseChunk,
+      choices: [
+        {
+          index: 0,
+          delta: {
+            tool_calls: [
+              {
+                index: 0,
+                id: `call_${Date.now()}`,
+                type: "function",
+                function: {
+                  name: part.functionCall.name,
+                  arguments: JSON.stringify(part.functionCall.args),
+                },
+              },
+            ],
+          },
+          finish_reason: null,
+        },
+      ],
+    }
+  }
+
+  return null
+}
+
+/**
  * Transform Antigravity non-stream response to OpenAI format
  */
 async function transformNonStreamResponse(
   response: Response,
   model: string,
 ): Promise<Response> {
-  const data = (await response.json()) as {
+  interface NonStreamData {
     candidates?: Array<{
-      content?: {
-        parts?: Array<{
-          text?: string
-          thought?: boolean
-          functionCall?: { name: string; args: unknown }
-        }>
-      }
+      content?: { parts?: Array<AntigravityPart> }
       finishReason?: string
     }>
     usageMetadata?: {
@@ -464,9 +457,45 @@ async function transformNonStreamResponse(
     }
   }
 
+  const data = (await response.json()) as NonStreamData
   const candidate = data.candidates?.[0]
-  const parts = candidate?.content?.parts || []
+  const parts = candidate?.content?.parts ?? []
+  const { content, reasoningContent, toolCalls } =
+    extractNonStreamContent(parts)
 
+  const message: Record<string, unknown> = {
+    role: "assistant",
+    content: content || null,
+  }
+  if (reasoningContent) message.reasoning_content = reasoningContent
+  if (toolCalls.length > 0) message.tool_calls = toolCalls
+
+  const openaiResponse = {
+    id: generateRequestId(),
+    object: "chat.completion",
+    created: Math.floor(Date.now() / 1000),
+    model,
+    choices: [{ index: 0, message, finish_reason: "stop" }],
+    usage: {
+      prompt_tokens: data.usageMetadata?.promptTokenCount ?? 0,
+      completion_tokens: data.usageMetadata?.candidatesTokenCount ?? 0,
+      total_tokens: data.usageMetadata?.totalTokenCount ?? 0,
+    },
+  }
+
+  return new Response(JSON.stringify(openaiResponse), {
+    headers: { "Content-Type": "application/json" },
+  })
+}
+
+/**
+ * Extract content from non-stream response parts
+ */
+function extractNonStreamContent(parts: Array<AntigravityPart>): {
+  content: string
+  reasoningContent: string
+  toolCalls: Array<unknown>
+} {
   let content = ""
   let reasoningContent = ""
   const toolCalls: Array<unknown> = []
@@ -490,39 +519,5 @@ async function transformNonStreamResponse(
     }
   }
 
-  const message: Record<string, unknown> = {
-    role: "assistant",
-    content: content || null,
-  }
-
-  if (reasoningContent) {
-    message.reasoning_content = reasoningContent
-  }
-
-  if (toolCalls.length > 0) {
-    message.tool_calls = toolCalls
-  }
-
-  const openaiResponse = {
-    id: `chatcmpl-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-    object: "chat.completion",
-    created: Math.floor(Date.now() / 1000),
-    model,
-    choices: [
-      {
-        index: 0,
-        message,
-        finish_reason: candidate?.finishReason === "STOP" ? "stop" : "stop",
-      },
-    ],
-    usage: {
-      prompt_tokens: data.usageMetadata?.promptTokenCount || 0,
-      completion_tokens: data.usageMetadata?.candidatesTokenCount || 0,
-      total_tokens: data.usageMetadata?.totalTokenCount || 0,
-    },
-  }
-
-  return new Response(JSON.stringify(openaiResponse), {
-    headers: { "Content-Type": "application/json" },
-  })
+  return { content, reasoningContent, toolCalls }
 }

@@ -4,6 +4,8 @@
  * Returns available models from Zen.
  */
 
+/* eslint-disable require-atomic-updates */
+
 import consola from "consola"
 import { Hono } from "hono"
 

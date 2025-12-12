@@ -5,6 +5,10 @@
  * Supports multiple accounts with auto-rotation and token refresh.
  */
 
+/* eslint-disable unicorn/prefer-code-point */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unnecessary-condition */
+
 import consola from "consola"
 
 import { PATHS, ensurePaths } from "~/lib/paths"

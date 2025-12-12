@@ -9,7 +9,10 @@ import consola from "consola"
 import { Hono } from "hono"
 
 import { state } from "~/lib/state"
-import { createZenMessages } from "~/services/zen/create-messages"
+import {
+  createZenMessages,
+  type ZenMessageRequest,
+} from "~/services/zen/create-messages"
 
 export const zenMessageRoutes = new Hono()
 
@@ -22,7 +25,7 @@ zenMessageRoutes.post("/", async (c) => {
   }
 
   try {
-    const body = await c.req.json()
+    const body: ZenMessageRequest = await c.req.json()
     consola.debug("Zen message request:", body.model)
 
     const response = await createZenMessages(body)
