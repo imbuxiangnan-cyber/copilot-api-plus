@@ -36,7 +36,8 @@ export async function loadConfig(): Promise<AppConfig> {
   try {
     const configPath = getConfigPath()
     const content = await fs.readFile(configPath)
-    return JSON.parse(content) as AppConfig
+    // Buffer can be passed to JSON.parse directly (better performance)
+    return JSON.parse(content as unknown as string) as AppConfig
   } catch {
     return {}
   }

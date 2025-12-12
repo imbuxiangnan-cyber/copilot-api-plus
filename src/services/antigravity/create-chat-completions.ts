@@ -295,7 +295,7 @@ function transformStreamResponse(response: Response, model: string): Response {
 
       try {
         await processOpenAIStream(
-          reader,
+          reader as ReadableStreamDefaultReader<Uint8Array>,
           decoder,
           state,
           controller,

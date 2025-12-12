@@ -364,7 +364,12 @@ function transformStreamResponse(response: Response, model: string): Response {
       controller.enqueue(createMessageStart(messageId, model))
 
       try {
-        await processStream(reader, decoder, state, controller)
+        await processStream(
+          reader as ReadableStreamDefaultReader<Uint8Array>,
+          decoder,
+          state,
+          controller,
+        )
         controller.enqueue(createMessageStop())
         controller.close()
       } catch (error) {
