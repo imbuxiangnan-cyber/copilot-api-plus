@@ -28,7 +28,7 @@ server.get("/", (c) => c.text("Server running"))
 // Dynamic routing based on mode (Zen / Antigravity / Copilot)
 server.route(
   "/chat/completions",
-  new Hono().all("/*", async (c, _next) => {
+  new Hono().all("*", async (c, _next) => {
     if (state.zenMode) {
       return zenCompletionRoutes.fetch(c.req.raw, c.env)
     }
@@ -41,7 +41,7 @@ server.route(
 
 server.route(
   "/models",
-  new Hono().all("/*", async (c, _next) => {
+  new Hono().all("*", async (c, _next) => {
     if (state.zenMode) {
       return zenModelRoutes.fetch(c.req.raw, c.env)
     }
@@ -59,7 +59,7 @@ server.route("/token", tokenRoute)
 // Compatibility with tools that expect v1/ prefix
 server.route(
   "/v1/chat/completions",
-  new Hono().all("/*", async (c, _next) => {
+  new Hono().all("*", async (c, _next) => {
     if (state.zenMode) {
       return zenCompletionRoutes.fetch(c.req.raw, c.env)
     }
@@ -72,7 +72,7 @@ server.route(
 
 server.route(
   "/v1/models",
-  new Hono().all("/*", async (c, _next) => {
+  new Hono().all("*", async (c, _next) => {
     if (state.zenMode) {
       return zenModelRoutes.fetch(c.req.raw, c.env)
     }
@@ -88,7 +88,7 @@ server.route("/v1/embeddings", embeddingRoutes)
 // Anthropic compatible endpoints
 server.route(
   "/v1/messages",
-  new Hono().all("/*", async (c, _next) => {
+  new Hono().all("*", async (c, _next) => {
     if (state.zenMode) {
       return zenMessageRoutes.fetch(c.req.raw, c.env)
     }
