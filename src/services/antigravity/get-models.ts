@@ -16,11 +16,17 @@ const ANTIGRAVITY_API_HOST = "daily-cloudcode-pa.sandbox.googleapis.com"
 const ANTIGRAVITY_MODELS_URL = `https://${ANTIGRAVITY_API_HOST}/v1internal:fetchAvailableModels`
 const ANTIGRAVITY_USER_AGENT = "antigravity/1.11.3 windows/amd64"
 
+export interface AntigravityQuotaInfo {
+  remainingFraction: number
+  resetTime: string
+}
+
 export interface AntigravityModel {
   id: string
   object: string
   created: number
   owned_by: string
+  quotaInfo?: AntigravityQuotaInfo
 }
 
 export interface AntigravityModelsResponse {
@@ -224,6 +230,10 @@ async function fetchModelsFromApi(): Promise<Array<AntigravityModel> | null> {
           object: "model",
           created: 1700000000,
           owned_by: isGoogle ? "google" : "anthropic",
+          quotaInfo: m.quotaInfo ? {
+            remainingFraction: m.quotaInfo.remainingFraction ?? 1,
+            resetTime: m.quotaInfo.resetTime ?? "",
+          } : undefined,
         }
       })
 
@@ -269,6 +279,63 @@ export async function getAntigravityModels(): Promise<AntigravityModelsResponse>
   return {
     object: "list",
     data: FALLBACK_MODELS,
+  }
+}
+
+/**
+ * Antigravity usage response format (compatible with Copilot usage viewer)
+ */
+export interface AntigravityUsageResponse {
+  copilot_plan: string
+  quota_reset_date: string
+  quota_snapshots: {
+    models: Record<string, {
+      remaining_fraction: number
+      reset_time: string
+      percent_remaining: number
+    }>
+  }
+}
+
+/**
+ * Get Antigravity usage/quota information
+ */
+export async function getAntigravityUsage(): Promise<AntigravityUsageResponse> {
+  // Force refresh models to get latest quota
+  cachedModels = null
+  cacheTimestamp = 0
+
+  const modelsResponse = await getAntigravityModels()
+
+  // Find earliest reset time
+  let earliestResetTime = ""
+  const modelsQuota: Record<string, {
+    remaining_fraction: number
+    reset_time: string
+    percent_remaining: number
+  }> = {}
+
+  for (const model of modelsResponse.data) {
+    if (model.quotaInfo) {
+      const resetTime = model.quotaInfo.resetTime
+      if (!earliestResetTime || (resetTime && resetTime < earliestResetTime)) {
+        earliestResetTime = resetTime
+      }
+
+      modelsQuota[model.id] = {
+        remaining_fraction: model.quotaInfo.remainingFraction,
+        reset_time: model.quotaInfo.resetTime,
+        percent_remaining: Math.round(model.quotaInfo.remainingFraction * 100),
+      }
+    }
+  }
+
+  return {
+    copilot_plan: "antigravity",
+    quota_reset_date: earliestResetTime,
+    quota_snapshots: {
+      models: modelsQuota,
+    },
   }
 }
 
