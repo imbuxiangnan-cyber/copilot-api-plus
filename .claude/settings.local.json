@@ -8,7 +8,15 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(git push:*)",
-      "Bash(npm publish:*)"
+      "Bash(npm publish:*)",
+      "Bash(bun run typecheck:*)",
+      "Bash(gh run list:*)",
+      "Bash(node dist/main.js:*)",
+      "Bash(curl:*)",
+      "Bash(powershell -Command \"Invoke-RestMethod -Uri ''http://localhost:4141/usage'' -Method Get | ConvertTo-Json -Depth 10\")",
+      "Bash(powershell -Command \"Invoke-RestMethod -Uri ''http://localhost:4141/models'' -Method Get | ConvertTo-Json -Depth 10\")",
+      "Bash(bun run:*)",
+      "Bash(timeout:*)"
     ]
   }
 }

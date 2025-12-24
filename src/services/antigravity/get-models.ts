@@ -36,84 +36,54 @@ export interface AntigravityModelsResponse {
 
 /**
  * Fallback Antigravity models when API is unavailable
- * Based on antigravity2api-nodejs model list
+ * Updated based on actual API response (December 2024)
  */
 const FALLBACK_MODELS: Array<AntigravityModel> = [
   // Gemini models
   {
-    id: "gemini-2.5-pro-exp-03-25",
+    id: "gemini-2.5-pro",
     object: "model",
     created: 1700000000,
     owned_by: "google",
   },
   {
-    id: "gemini-2.5-pro-preview-05-06",
+    id: "gemini-2.5-flash",
     object: "model",
     created: 1700000000,
     owned_by: "google",
   },
   {
-    id: "gemini-2.0-flash-exp",
+    id: "gemini-2.5-flash-lite",
     object: "model",
     created: 1700000000,
     owned_by: "google",
   },
   {
-    id: "gemini-2.0-flash-001",
+    id: "gemini-2.5-flash-thinking",
     object: "model",
     created: 1700000000,
     owned_by: "google",
   },
   {
-    id: "gemini-2.0-flash-thinking-exp-1219",
+    id: "gemini-3-pro-low",
     object: "model",
     created: 1700000000,
     owned_by: "google",
   },
   {
-    id: "gemini-2.0-flash-thinking-exp",
+    id: "gemini-3-pro-high",
     object: "model",
     created: 1700000000,
     owned_by: "google",
   },
   {
-    id: "gemini-2.0-flash-thinking-exp-01-21",
+    id: "gemini-3-pro-image",
     object: "model",
     created: 1700000000,
     owned_by: "google",
   },
   {
-    id: "gemini-2.0-pro-exp-02-05",
-    object: "model",
-    created: 1700000000,
-    owned_by: "google",
-  },
-  {
-    id: "gemini-1.5-pro",
-    object: "model",
-    created: 1700000000,
-    owned_by: "google",
-  },
-  {
-    id: "gemini-1.5-flash",
-    object: "model",
-    created: 1700000000,
-    owned_by: "google",
-  },
-  {
-    id: "gemini-1.5-flash-8b",
-    object: "model",
-    created: 1700000000,
-    owned_by: "google",
-  },
-  {
-    id: "gemini-exp-1206",
-    object: "model",
-    created: 1700000000,
-    owned_by: "google",
-  },
-  {
-    id: "learnlm-1.5-pro-experimental",
+    id: "gemini-3-flash",
     object: "model",
     created: 1700000000,
     owned_by: "google",
@@ -121,43 +91,19 @@ const FALLBACK_MODELS: Array<AntigravityModel> = [
 
   // Claude models (via Antigravity)
   {
-    id: "claude-opus-4-5",
-    object: "model",
-    created: 1700000000,
-    owned_by: "anthropic",
-  },
-  {
     id: "claude-sonnet-4-5",
     object: "model",
     created: 1700000000,
     owned_by: "anthropic",
   },
   {
-    id: "claude-3-5-sonnet-20241022",
+    id: "claude-sonnet-4-5-thinking",
     object: "model",
     created: 1700000000,
     owned_by: "anthropic",
   },
   {
-    id: "claude-3-5-haiku-20241022",
-    object: "model",
-    created: 1700000000,
-    owned_by: "anthropic",
-  },
-  {
-    id: "claude-3-opus-20240229",
-    object: "model",
-    created: 1700000000,
-    owned_by: "anthropic",
-  },
-  {
-    id: "claude-3-sonnet-20240229",
-    object: "model",
-    created: 1700000000,
-    owned_by: "anthropic",
-  },
-  {
-    id: "claude-3-haiku-20240307",
+    id: "claude-opus-4-5-thinking",
     object: "model",
     created: 1700000000,
     owned_by: "anthropic",
@@ -198,9 +144,12 @@ async function fetchModelsFromApi(): Promise<Array<AntigravityModel> | null> {
       return null
     }
 
+    // API returns models as object (dictionary), not array
+    // Format: { "models": { "model-id": { "quotaInfo": {...}, ... }, ... } }
     const data = (await response.json()) as {
-      models?: Array<{
-        name: string
+      models?: Record<string, {
+        displayName?: string
+        maxTokens?: number
         quotaInfo?: {
           remainingFraction?: number
           resetTime?: string
@@ -208,31 +157,37 @@ async function fetchModelsFromApi(): Promise<Array<AntigravityModel> | null> {
       }>
     }
 
-    if (!data.models || !Array.isArray(data.models)) {
+    if (!data.models || typeof data.models !== "object") {
+      consola.warn("No models object in response")
       return null
     }
 
-    // Convert to OpenAI format
-    const models: Array<AntigravityModel> = data.models
-      .filter((m) => {
+    // Convert object to array format
+    const modelEntries = Object.entries(data.models)
+    consola.debug(`Antigravity API returned ${modelEntries.length} models`)
+
+    // Filter to only include Gemini and Claude models (skip internal models like chat_20706)
+    const models: Array<AntigravityModel> = modelEntries
+      .filter(([modelId, info]) => {
+        // Only include gemini, learnlm, and claude models
+        const isPublicModel = modelId.startsWith("gemini") ||
+                              modelId.startsWith("learnlm") ||
+                              modelId.startsWith("claude")
         // Filter out models with no remaining quota
-        const remaining = m.quotaInfo?.remainingFraction ?? 1
-        return remaining > 0
+        const remaining = info.quotaInfo?.remainingFraction ?? 1
+        return isPublicModel && remaining > 0
       })
-      .map((m) => {
-        // Extract model ID from name (e.g., "models/gemini-2.0-flash" -> "gemini-2.0-flash")
-        const modelId = m.name.replace("models/", "")
-        const isGoogle =
-          modelId.startsWith("gemini") || modelId.startsWith("learnlm")
+      .map(([modelId, info]) => {
+        const isGoogle = modelId.startsWith("gemini") || modelId.startsWith("learnlm")
 
         return {
           id: modelId,
           object: "model",
           created: 1700000000,
           owned_by: isGoogle ? "google" : "anthropic",
-          quotaInfo: m.quotaInfo ? {
-            remainingFraction: m.quotaInfo.remainingFraction ?? 1,
-            resetTime: m.quotaInfo.resetTime ?? "",
+          quotaInfo: info.quotaInfo ? {
+            remainingFraction: info.quotaInfo.remainingFraction ?? 1,
+            resetTime: info.quotaInfo.resetTime ?? "",
           } : undefined,
         }
       })
@@ -315,8 +270,10 @@ export async function getAntigravityUsage(): Promise<AntigravityUsageResponse> {
     percent_remaining: number
   }> = {}
 
+  let modelsWithQuota = 0
   for (const model of modelsResponse.data) {
     if (model.quotaInfo) {
+      modelsWithQuota++
       const resetTime = model.quotaInfo.resetTime
       if (!earliestResetTime || (resetTime && resetTime < earliestResetTime)) {
         earliestResetTime = resetTime
@@ -329,6 +286,8 @@ export async function getAntigravityUsage(): Promise<AntigravityUsageResponse> {
       }
     }
   }
+
+  consola.debug(`Antigravity usage: ${modelsWithQuota}/${modelsResponse.data.length} models have quota info`)
 
   return {
     copilot_plan: "antigravity",
