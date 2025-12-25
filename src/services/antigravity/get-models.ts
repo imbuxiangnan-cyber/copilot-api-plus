@@ -145,11 +145,13 @@ async function fetchModelsFromApi(): Promise<Array<AntigravityModel> | null> {
     }
 
     // API returns models as object (dictionary), not array
-    // Format: { "models": { "model-id": { "quotaInfo": {...}, ... }, ... } }
+    // Format: { "models": { "model-id": { "quotaInfo": {...}, "apiProvider": "...", ... }, ... } }
     const data = (await response.json()) as {
       models?: Record<string, {
         displayName?: string
         maxTokens?: number
+        apiProvider?: string
+        model?: string
         quotaInfo?: {
           remainingFraction?: number
           resetTime?: string

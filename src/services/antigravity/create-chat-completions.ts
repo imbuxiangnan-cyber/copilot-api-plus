@@ -33,6 +33,8 @@ import {
 } from "./stream-parser"
 
 // Antigravity API endpoints (OAuth authentication)
+// Note: Claude models also use the same generateContent endpoint, not rawPredict
+// The API accepts Claude model names (e.g., claude-sonnet-4-5) but uses Gemini-style format
 const ANTIGRAVITY_API_HOST = "daily-cloudcode-pa.sandbox.googleapis.com"
 const ANTIGRAVITY_STREAM_URL = `https://${ANTIGRAVITY_API_HOST}/v1internal:streamGenerateContent?alt=sse`
 const ANTIGRAVITY_NO_STREAM_URL = `https://${ANTIGRAVITY_API_HOST}/v1internal:generateContent`
@@ -162,16 +164,15 @@ function convertTools(tools?: Array<unknown>): Array<unknown> | undefined {
 }
 
 /**
- * Build Antigravity request body
+ * Build standard Gemini API request body (for API Key authentication)
  */
-function buildRequestBody(
+function buildStandardGeminiRequestBody(
   request: ChatCompletionRequest,
 ): Record<string, unknown> {
   const { contents, systemInstruction } = convertMessages(request.messages)
   const tools = convertTools(request.tools)
 
   const body: Record<string, unknown> = {
-    model: request.model,
     contents,
     generationConfig: {
       temperature: request.temperature ?? 1,
@@ -192,6 +193,24 @@ function buildRequestBody(
   }
 
   return body
+}
+
+/**
+ * Build Antigravity request body
+ * The Antigravity API expects a specific nested structure with request object
+ */
+function buildAntigravityRequestBody(
+  request: ChatCompletionRequest,
+): Record<string, unknown> {
+  const innerRequest = buildStandardGeminiRequestBody(request)
+
+  // Wrap in the Antigravity request structure
+  return {
+    model: request.model,
+    userAgent: "antigravity",
+    requestId: `agent-${crypto.randomUUID()}`,
+    request: innerRequest,
+  }
 }
 
 /**
@@ -247,7 +266,7 @@ async function createWithApiKey(
   const endpoint = request.stream
     ? getGeminiStreamUrl(request.model, apiKey)
     : getGeminiNoStreamUrl(request.model, apiKey)
-  const body = buildRequestBody(request)
+  const body = buildStandardGeminiRequestBody(request)
 
   consola.debug(`Gemini API request with model ${request.model}`)
 
@@ -279,18 +298,16 @@ async function createWithApiKey(
 
 /**
  * Create chat completion using OAuth (Antigravity private API)
+ * Note: Both Gemini and Claude models use the same endpoint and Gemini-style format
  */
 async function createWithOAuth(
   request: ChatCompletionRequest,
   accessToken: string,
 ): Promise<Response> {
-  const endpoint =
-    request.stream ? ANTIGRAVITY_STREAM_URL : ANTIGRAVITY_NO_STREAM_URL
-  const body = buildRequestBody(request)
+  const endpoint = request.stream ? ANTIGRAVITY_STREAM_URL : ANTIGRAVITY_NO_STREAM_URL
+  const body = buildAntigravityRequestBody(request)
 
-  consola.debug(
-    `Antigravity request to ${endpoint} with model ${request.model}`,
-  )
+  consola.debug(`Antigravity request to ${endpoint} with model ${request.model}`)
 
   try {
     const response = await fetch(endpoint, {
@@ -514,7 +531,7 @@ async function transformNonStreamResponse(
   response: Response,
   model: string,
 ): Promise<Response> {
-  interface NonStreamData {
+  interface AntigravityResponseData {
     candidates?: Array<{
       content?: { parts?: Array<AntigravityPart> }
       finishReason?: string
@@ -526,7 +543,23 @@ async function transformNonStreamResponse(
     }
   }
 
-  const data = (await response.json()) as NonStreamData
+  interface NonStreamData {
+    response?: AntigravityResponseData
+    candidates?: Array<{
+      content?: { parts?: Array<AntigravityPart> }
+      finishReason?: string
+    }>
+    usageMetadata?: {
+      promptTokenCount?: number
+      candidatesTokenCount?: number
+      totalTokenCount?: number
+    }
+  }
+
+  const rawData = (await response.json()) as NonStreamData
+
+  // Handle nested response structure (Antigravity wraps response in a "response" object)
+  const data = rawData.response ?? rawData
   const candidate = data.candidates?.[0]
   const parts = candidate?.content?.parts ?? []
   const { content, reasoningContent, toolCalls } =

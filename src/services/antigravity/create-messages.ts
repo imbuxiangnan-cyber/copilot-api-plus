@@ -45,6 +45,8 @@ import {
 } from "./stream-parser"
 
 // Antigravity API endpoints
+// Note: Claude models also use the same generateContent endpoint, not rawPredict
+// The API accepts Claude model names but uses Gemini-style format
 const ANTIGRAVITY_API_HOST = "daily-cloudcode-pa.sandbox.googleapis.com"
 const ANTIGRAVITY_STREAM_URL = `https://${ANTIGRAVITY_API_HOST}/v1internal:streamGenerateContent?alt=sse`
 const ANTIGRAVITY_NO_STREAM_URL = `https://${ANTIGRAVITY_API_HOST}/v1internal:generateContent`
@@ -158,8 +160,9 @@ function convertTools(tools?: Array<unknown>): Array<unknown> | undefined {
 
 /**
  * Build Antigravity request body
+ * The Antigravity API expects a specific nested structure with request object
  */
-function buildAntigravityRequest(
+function buildGeminiRequest(
   request: AnthropicMessageRequest,
 ): Record<string, unknown> {
   const { contents, systemInstruction } = convertMessages(
@@ -168,8 +171,8 @@ function buildAntigravityRequest(
   )
   const tools = convertTools(request.tools)
 
-  const body: Record<string, unknown> = {
-    model: request.model,
+  // Build the inner request object
+  const innerRequest: Record<string, unknown> = {
     contents,
     generationConfig: {
       temperature: request.temperature ?? 1,
@@ -179,17 +182,23 @@ function buildAntigravityRequest(
     },
   }
 
-  if (systemInstruction) body.systemInstruction = systemInstruction
-  if (tools) body.tools = tools
+  if (systemInstruction) innerRequest.systemInstruction = systemInstruction
+  if (tools) innerRequest.tools = tools
 
   if (isThinkingModel(request.model)) {
-    body.generationConfig = {
-      ...(body.generationConfig as Record<string, unknown>),
+    innerRequest.generationConfig = {
+      ...(innerRequest.generationConfig as Record<string, unknown>),
       thinkingConfig: { includeThoughts: true },
     }
   }
 
-  return body
+  // Wrap in the Antigravity request structure
+  return {
+    model: request.model,
+    userAgent: "antigravity",
+    requestId: `agent-${crypto.randomUUID()}`,
+    request: innerRequest,
+  }
 }
 
 /**
@@ -208,6 +217,7 @@ function createErrorResponse(
 
 /**
  * Create Anthropic-compatible message response using Antigravity
+ * Note: Both Gemini and Claude models use the same endpoint and Gemini-style format
  */
 export async function createAntigravityMessages(
   request: AnthropicMessageRequest,
@@ -222,13 +232,10 @@ export async function createAntigravityMessages(
     )
   }
 
-  const endpoint =
-    request.stream ? ANTIGRAVITY_STREAM_URL : ANTIGRAVITY_NO_STREAM_URL
-  const body = buildAntigravityRequest(request)
+  const endpoint = request.stream ? ANTIGRAVITY_STREAM_URL : ANTIGRAVITY_NO_STREAM_URL
+  const body = buildGeminiRequest(request)
 
-  consola.debug(
-    `Antigravity messages request to ${endpoint} with model ${request.model}`,
-  )
+  consola.debug(`Antigravity messages request to ${endpoint} with model ${request.model}`)
 
   try {
     const response = await fetch(endpoint, {
