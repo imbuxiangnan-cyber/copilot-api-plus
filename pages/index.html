@@ -393,9 +393,9 @@
                          <div class="progress-bar-fg h-1.5" style="width: ${percentUsed}%; background-color: ${progressBarColor};"></div>
                      </div>
                 </div>
-                <div class="flex justify-between text-xs" style="color: var(--color-fg-dark);">
+                <div class="flex justify-between items-center text-xs" style="color: var(--color-fg-dark);">
                     <span>${percentRemaining}% remaining</span>
-                    ${resetTime ? `<span title="Reset: ${new Date(resetTime).toLocaleString()}">⏱️</span>` : ''}
+                    ${resetTime ? `<span class="flex items-center gap-1" style="color: var(--color-gray-accent);">⏱️ ${new Date(resetTime).toLocaleString()}</span>` : ''}
                 </div>
             </div>
           `;
