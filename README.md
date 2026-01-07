@@ -241,10 +241,18 @@ npx copilot-api-plus@latest start --antigravity \
 可以添加多个 Google 账户，系统会在配额用尽时自动切换：
 
 ```bash
-# 添加新账户：重新运行启动命令，选择添加账户
-npx copilot-api-plus@latest start --antigravity
+# 添加新账户
+npx copilot-api-plus@latest antigravity add
+
+# 列出所有账户
+npx copilot-api-plus@latest antigravity list
+
+# 按索引删除账户
+npx copilot-api-plus@latest antigravity remove 0
 
 # 清除所有账户
+npx copilot-api-plus@latest antigravity clear
+# 或使用 logout 命令
 npx copilot-api-plus@latest logout --antigravity
 ```
 
@@ -506,6 +514,7 @@ curl http://localhost:4141/v1/messages \
 | `auth` | 仅执行 GitHub 认证流程 |
 | `logout` | 清除已保存的凭证 |
 | `proxy` | 配置代理设置 |
+| `antigravity` | 管理 Google Antigravity 账户 |
 | `check-usage` | 查看 Copilot 使用量 |
 | `debug` | 显示调试信息 |
 
@@ -552,6 +561,25 @@ curl http://localhost:4141/v1/messages \
 | `--all` | `-a` | 清除所有凭证 |
 
 > **提示**：不带参数运行 `logout` 会显示交互式菜单供选择。
+
+### antigravity 命令
+
+管理 Google Antigravity 账户的子命令：
+
+| 子命令 | 说明 |
+|--------|------|
+| `add` | 添加新的 Antigravity 账户（OAuth 登录） |
+| `list` | 列出所有已配置的账户及其状态 |
+| `remove <index>` | 按索引删除指定账户 |
+| `clear` | 清除所有 Antigravity 账户（需确认） |
+
+```bash
+# 示例
+npx copilot-api-plus@latest antigravity add      # 添加账户
+npx copilot-api-plus@latest antigravity list     # 列出账户
+npx copilot-api-plus@latest antigravity remove 0 # 删除索引为 0 的账户
+npx copilot-api-plus@latest antigravity clear    # 清除所有账户
+```
 
 ---
 
