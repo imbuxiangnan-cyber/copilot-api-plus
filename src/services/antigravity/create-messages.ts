@@ -589,6 +589,31 @@ function transformStreamResponse(response: Response, model: string): Response {
 }
 
 /**
+ * Process candidate parts and handle finish
+ */
+function processCandidate(
+  candidate: { finishReason?: string; content?: { parts?: Array<unknown> } },
+  state: StreamState,
+  emit: (event: StreamEvent) => void,
+): boolean {
+  const parts = (candidate?.content?.parts ?? []) as Array<{
+    text?: string
+    thought?: boolean
+    functionCall?: { name: string; args: unknown }
+  }>
+
+  for (const part of parts) {
+    processPart(part, state, emit)
+  }
+
+  if (candidate?.finishReason === "STOP") {
+    handleFinish(state, emit)
+    return true
+  }
+  return false
+}
+
+/**
  * Process the stream and emit events
  */
 async function processStream(
@@ -604,8 +629,7 @@ async function processStream(
     const { done, value } = await reader.read()
     if (done) break
 
-    const chunk = decoder.decode(value, { stream: true })
-    const lines = processChunk(chunk, state)
+    const lines = processChunk(decoder.decode(value, { stream: true }), state)
 
     for (const line of lines) {
       if (finished) break
@@ -619,15 +643,7 @@ async function processStream(
         state.outputTokens = usage.candidatesTokenCount ?? state.outputTokens
       }
 
-      const candidate = candidates[0]
-      const parts = candidate?.content?.parts ?? []
-
-      for (const part of parts) {
-        processPart(part, state, emit)
-      }
-
-      if (candidate?.finishReason === "STOP") {
-        handleFinish(state, emit)
+      if (candidates[0] && processCandidate(candidates[0], state, emit)) {
         finished = true
         break
       }
