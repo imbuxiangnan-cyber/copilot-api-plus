@@ -13,6 +13,7 @@
 
 import consola from "consola"
 
+import { sleep } from "../../lib/utils"
 import {
   createBlockStop,
   createMessageDelta,
@@ -328,76 +329,156 @@ function createErrorResponse(
  * Create Anthropic-compatible message response using Antigravity
  * Note: Both Gemini and Claude models use the same endpoint and Gemini-style format
  */
+const MAX_RETRIES = 5
+
 export async function createAntigravityMessages(
   request: AnthropicMessageRequest,
 ): Promise<Response> {
-  const accessToken = await getValidAccessToken()
-
-  if (!accessToken) {
-    return createErrorResponse(
-      "authentication_error",
-      "No valid Antigravity access token available. Please run login first.",
-      401,
-    )
-  }
-
   const endpoint =
     request.stream ? ANTIGRAVITY_STREAM_URL : ANTIGRAVITY_NO_STREAM_URL
   const body = buildGeminiRequest(request)
 
-  consola.debug(
-    `Antigravity messages request to ${endpoint} with model ${request.model}`,
-  )
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const accessToken = await getValidAccessToken()
 
-  try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        Host: ANTIGRAVITY_API_HOST,
-        "User-Agent": ANTIGRAVITY_USER_AGENT,
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-        "Accept-Encoding": "gzip",
-      },
-      body: JSON.stringify(body),
-    })
-
-    if (!response.ok) {
-      return await handleApiError(response)
+    if (!accessToken) {
+      return createErrorResponse(
+        "authentication_error",
+        "No valid Antigravity access token available. Please run login first.",
+        401,
+      )
     }
 
-    return request.stream ?
-        transformStreamResponse(response, request.model)
-      : await transformNonStreamResponse(response, request.model)
-  } catch (error) {
-    consola.error("Antigravity messages request error:", error)
-    return createErrorResponse(
-      "api_error",
-      `Request failed: ${String(error)}`,
-      500,
+    consola.debug(
+      `Antigravity request to ${endpoint} (attempt ${attempt + 1}/${MAX_RETRIES + 1})`,
     )
+
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          Host: ANTIGRAVITY_API_HOST,
+          "User-Agent": ANTIGRAVITY_USER_AGENT,
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+          "Accept-Encoding": "gzip",
+        },
+        body: JSON.stringify(body),
+      })
+
+      if (response.ok) {
+        return request.stream ?
+            transformStreamResponse(response, request.model)
+          : await transformNonStreamResponse(response, request.model)
+      }
+
+      const errorResult = await handleApiError(response)
+
+      if (errorResult.shouldRetry && attempt < MAX_RETRIES) {
+        consola.info(
+          `Rate limited, retrying in ${errorResult.retryDelayMs}ms...`,
+        )
+        await sleep(errorResult.retryDelayMs)
+        continue
+      }
+
+      return errorResult.response
+    } catch (error) {
+      consola.error("Antigravity messages request error:", error)
+      if (attempt < MAX_RETRIES) {
+        await sleep(500)
+        continue
+      }
+      return createErrorResponse(
+        "api_error",
+        `Request failed: ${String(error)}`,
+        500,
+      )
+    }
   }
+
+  return createErrorResponse("api_error", "Max retries exceeded", 429)
+}
+
+interface ApiErrorResult {
+  shouldRetry: boolean
+  retryDelayMs: number
+  response: Response
+}
+
+/**
+ * Parse retry delay from error response
+ */
+function parseRetryDelay(errorText: string): number {
+  try {
+    const errorData = JSON.parse(errorText) as {
+      error?: {
+        details?: Array<{
+          "@type"?: string
+          retryDelay?: string
+          quotaResetDelay?: string
+        }>
+      }
+    }
+    const details = errorData.error?.details ?? []
+    for (const detail of details) {
+      // Check RetryInfo first
+      if (detail["@type"]?.includes("RetryInfo") && detail.retryDelay) {
+        const match = /(\d+(?:\.\d+)?)s/.exec(detail.retryDelay)
+        if (match) return Math.ceil(Number.parseFloat(match[1]) * 1000)
+      }
+      // Check quotaResetDelay
+      if (detail.quotaResetDelay) {
+        const match = /(\d+(?:\.\d+)?)(?:ms|s)/.exec(detail.quotaResetDelay)
+        if (match) {
+          const value = Number.parseFloat(match[1])
+          return detail.quotaResetDelay.includes("ms") ?
+              Math.ceil(value)
+            : Math.ceil(value * 1000)
+        }
+      }
+    }
+  } catch {
+    // Ignore parse errors
+  }
+  return 500 // Default 500ms retry delay
 }
 
 /**
  * Handle API error response
  */
-async function handleApiError(response: Response): Promise<Response> {
+async function handleApiError(response: Response): Promise<ApiErrorResult> {
   const errorText = await response.text()
   consola.error(`Antigravity error: ${response.status} ${errorText}`)
 
   if (response.status === 403) {
     await disableCurrentAccount()
   }
+
+  // Handle rate limit errors with retry
   if (response.status === 429 || response.status === 503) {
     await rotateAccount()
+    const retryDelayMs = parseRetryDelay(errorText)
+    return {
+      shouldRetry: true,
+      retryDelayMs,
+      response: createErrorResponse(
+        "api_error",
+        `Antigravity API error: ${response.status}`,
+        response.status,
+      ),
+    }
   }
 
-  return createErrorResponse(
-    "api_error",
-    `Antigravity API error: ${response.status}`,
-    response.status,
-  )
+  return {
+    shouldRetry: false,
+    retryDelayMs: 0,
+    response: createErrorResponse(
+      "api_error",
+      `Antigravity API error: ${response.status}`,
+      response.status,
+    ),
+  }
 }
 
 /**
