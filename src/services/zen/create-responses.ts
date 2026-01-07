@@ -1,7 +1,8 @@
 /**
- * OpenCode Zen Messages Proxy
+ * OpenCode Zen Responses Proxy
  *
- * Proxies Anthropic-format message requests to OpenCode Zen API.
+ * Proxies OpenAI Responses API requests to OpenCode Zen.
+ * Used for GPT-5 series models with stateful, agentic tool-use.
  */
 
 import consola from "consola"
@@ -12,31 +13,27 @@ import { sleep } from "~/lib/utils"
 const MAX_RETRIES = 5
 const DEFAULT_RETRY_DELAY = 500
 
-export interface ZenMessageRequest {
+export interface ZenResponsesRequest {
   model: string
-  messages: Array<{
-    role: string
-    content: string | Array<{ type: string; text?: string; source?: unknown }>
-  }>
-  max_tokens: number
+  input: string | Array<{ role: string; content: string }>
+  instructions?: string
+  tools?: Array<unknown>
   temperature?: number
+  max_output_tokens?: number
   stream?: boolean
-  system?: string | Array<{ type: string; text: string }>
   [key: string]: unknown
 }
 
 /**
- * Parse retry delay from error response headers or body
+ * Parse retry delay from error response
  */
 function parseRetryDelay(response: Response, errorText: string): number {
-  // Check Retry-After header
   const retryAfter = response.headers.get("Retry-After")
   if (retryAfter) {
     const seconds = Number.parseInt(retryAfter, 10)
     if (!Number.isNaN(seconds)) return seconds * 1000
   }
 
-  // Try to parse from error body
   try {
     const errorData = JSON.parse(errorText) as {
       error?: { retry_after?: number }
@@ -52,10 +49,10 @@ function parseRetryDelay(response: Response, errorText: string): number {
 }
 
 /**
- * Create messages via OpenCode Zen (Anthropic format)
+ * Create responses via OpenCode Zen (OpenAI Responses API format)
  */
-export async function createZenMessages(
-  request: ZenMessageRequest,
+export async function createZenResponses(
+  request: ZenResponsesRequest,
   signal?: AbortSignal,
 ): Promise<Response> {
   const apiKey = state.zenApiKey
@@ -64,16 +61,15 @@ export async function createZenMessages(
     throw new Error("Zen API key not configured")
   }
 
-  consola.debug(`Zen messages request for model: ${request.model}`)
+  consola.debug(`Zen responses request for model: ${request.model}`)
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const response = await fetch("https://opencode.ai/zen/v1/messages", {
+      const response = await fetch("https://opencode.ai/zen/v1/responses", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
+          Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify(request),
         signal,
@@ -85,7 +81,6 @@ export async function createZenMessages(
 
       const errorText = await response.text()
 
-      // Retry on rate limit or server errors
       if (
         (response.status === 429 || response.status >= 500)
         && attempt < MAX_RETRIES
@@ -98,8 +93,10 @@ export async function createZenMessages(
         continue
       }
 
-      consola.error(`Zen Messages API error: ${response.status} ${errorText}`)
-      throw new Error(`Zen Messages API error: ${response.status} ${errorText}`)
+      consola.error(`Zen Responses API error: ${response.status} ${errorText}`)
+      throw new Error(
+        `Zen Responses API error: ${response.status} ${errorText}`,
+      )
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
         throw error

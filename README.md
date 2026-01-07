@@ -120,7 +120,7 @@ npx copilot-api-plus@latest start --account-type enterprise
 
 ### 2. OpenCode Zen 模式
 
-使用 [OpenCode Zen](https://opencode.ai/zen) 的多模型 API 服务。
+使用 [OpenCode Zen](https://opencode.ai/zen) 的多模型 API 服务，支持 GPT-5、Claude、Gemini 等顶级编程模型。
 
 #### 前置要求
 1. 访问 https://opencode.ai/zen
@@ -143,15 +143,36 @@ npx copilot-api-plus@latest start --zen --zen-api-key YOUR_API_KEY
 
 | 模型 | ID | 说明 |
 |------|-----|------|
-| Claude Sonnet 4.5 | `claude-sonnet-4-5` | Anthropic Claude (200K) |
-| Claude Opus 4.5 | `claude-opus-4-5` | Anthropic Claude (200K) |
+| GPT-5.2 | `gpt-5.2` | OpenAI 最新模型 |
+| GPT-5.1 Codex Max | `gpt-5.1-codex-max` | 代码优化版 |
+| GPT-5.1 Codex | `gpt-5.1-codex` | 代码专用 |
 | GPT-5 Codex | `gpt-5-codex` | OpenAI Responses API |
+| Claude Opus 4.5 | `claude-opus-4-5` | Anthropic Claude (200K) |
+| Claude Sonnet 4.5 | `claude-sonnet-4-5` | Anthropic Claude (200K) |
+| Claude Sonnet 4 | `claude-sonnet-4` | Anthropic Claude |
 | Gemini 3 Pro | `gemini-3-pro` | Google Gemini |
-| Qwen3 Coder 480B | `qwen3-coder` | Alibaba Qwen |
+| Qwen3 Coder | `qwen3-coder` | Alibaba Qwen |
 | Kimi K2 | `kimi-k2` | Moonshot |
-| Grok Code Fast 1 | `grok-code` | xAI |
+| Grok Code Fast 1 | `grok-code-fast-1` | xAI |
 
 更多模型请访问 [opencode.ai/zen](https://opencode.ai/zen)
+
+#### API 端点
+
+Zen 模式支持以下 API 端点：
+
+| 端点 | 说明 |
+|------|------|
+| `/v1/chat/completions` | OpenAI 兼容 Chat API |
+| `/v1/messages` | Anthropic 兼容 Messages API |
+| `/v1/responses` | OpenAI Responses API (GPT-5 系列) |
+| `/v1/models` | 获取可用模型列表 |
+
+专用端点（无需 `--zen` 标志也可访问）：
+- `/zen/v1/chat/completions`
+- `/zen/v1/messages`
+- `/zen/v1/responses`
+- `/zen/v1/models`
 
 #### 管理 API Key
 

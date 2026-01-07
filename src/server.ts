@@ -18,6 +18,7 @@ import { usageRoute } from "./routes/usage/route"
 import { zenCompletionRoutes } from "./routes/zen/chat-completions/route"
 import { zenMessageRoutes } from "./routes/zen/messages/route"
 import { zenModelRoutes } from "./routes/zen/models/route"
+import { zenResponsesRoutes } from "./routes/zen/responses/route"
 
 export const server = new Hono()
 
@@ -116,10 +117,23 @@ server.all("/v1/messages", async (c) => {
   return messageRoutes.fetch(req, c.env)
 })
 
+// OpenAI Responses API (Zen only - for GPT-5 models)
+server.all("/v1/responses/*", async (c) => {
+  const req = createSubRequest(c, "/v1/responses")
+  if (state.zenMode) return zenResponsesRoutes.fetch(req, c.env)
+  return c.json({ error: "Responses API requires Zen mode" }, 400)
+})
+server.all("/v1/responses", async (c) => {
+  const req = createSubRequest(c, "/v1/responses")
+  if (state.zenMode) return zenResponsesRoutes.fetch(req, c.env)
+  return c.json({ error: "Responses API requires Zen mode" }, 400)
+})
+
 // Dedicated Zen routes (always available)
 server.route("/zen/v1/chat/completions", zenCompletionRoutes)
 server.route("/zen/v1/models", zenModelRoutes)
 server.route("/zen/v1/messages", zenMessageRoutes)
+server.route("/zen/v1/responses", zenResponsesRoutes)
 
 // Dedicated Antigravity routes (always available)
 server.route(
