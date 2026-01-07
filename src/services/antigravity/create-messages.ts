@@ -598,8 +598,9 @@ async function processStream(
   controller: ReadableStreamDefaultController<Uint8Array>,
 ): Promise<void> {
   const emit = (event: StreamEvent) => emitSSEEvent(event, controller, state)
+  let finished = false
 
-  while (true) {
+  while (!finished) {
     const { done, value } = await reader.read()
     if (done) break
 
@@ -607,6 +608,8 @@ async function processStream(
     const lines = processChunk(chunk, state)
 
     for (const line of lines) {
+      if (finished) break
+
       const data = parseSSELine(line)
       if (!data) continue
 
@@ -625,6 +628,8 @@ async function processStream(
 
       if (candidate?.finishReason === "STOP") {
         handleFinish(state, emit)
+        finished = true
+        break
       }
     }
   }
