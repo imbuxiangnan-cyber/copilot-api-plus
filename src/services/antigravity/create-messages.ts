@@ -31,6 +31,7 @@ import {
 } from "./anthropic-events"
 import {
   disableCurrentAccount,
+  getCurrentProjectId,
   getValidAccessToken,
   rotateAccount,
 } from "./auth"
@@ -46,13 +47,79 @@ import {
   type StreamState,
 } from "./stream-parser"
 
-// Antigravity API endpoints
+// Antigravity API endpoints with fallback support
 // Note: Claude models also use the same generateContent endpoint, not rawPredict
 // The API accepts Claude model names but uses Gemini-style format
-const ANTIGRAVITY_API_HOST = "daily-cloudcode-pa.sandbox.googleapis.com"
-const ANTIGRAVITY_STREAM_URL = `https://${ANTIGRAVITY_API_HOST}/v1internal:streamGenerateContent?alt=sse`
-const ANTIGRAVITY_NO_STREAM_URL = `https://${ANTIGRAVITY_API_HOST}/v1internal:generateContent`
+const ANTIGRAVITY_ENDPOINTS = [
+  "daily-cloudcode-pa.sandbox.googleapis.com", // Daily (Sandbox) - Primary
+  "cloudcode-pa.googleapis.com", // Production - Fallback
+] as const
+
+// Current endpoint index for fallback rotation
+let currentEndpointIndex = 0
+
+function getStreamUrl(host: string): string {
+  return `https://${host}/v1internal:streamGenerateContent?alt=sse`
+}
+
+function getNoStreamUrl(host: string): string {
+  return `https://${host}/v1internal:generateContent`
+}
+
+function getCurrentHost(): string {
+  return ANTIGRAVITY_ENDPOINTS[currentEndpointIndex]
+}
+
+function rotateEndpoint(): void {
+  const oldIndex = currentEndpointIndex
+  currentEndpointIndex =
+    (currentEndpointIndex + 1) % ANTIGRAVITY_ENDPOINTS.length
+  consola.info(
+    `Rotating endpoint: ${ANTIGRAVITY_ENDPOINTS[oldIndex]} → ${ANTIGRAVITY_ENDPOINTS[currentEndpointIndex]}`,
+  )
+}
+
 const ANTIGRAVITY_USER_AGENT = "antigravity/1.11.3 windows/amd64"
+
+// Rate limit tracking per model family
+interface RateLimitInfo {
+  lastLimitTime: number
+  consecutiveErrors: number
+}
+
+const rateLimitTracker: Record<string, RateLimitInfo> = {}
+
+function getModelFamily(model: string): string {
+  if (model.includes("claude")) return "claude"
+  if (model.includes("gemini")) return "gemini"
+  return "other"
+}
+
+function trackRateLimit(model: string): void {
+  const family = getModelFamily(model)
+  if (!rateLimitTracker[family]) {
+    rateLimitTracker[family] = { lastLimitTime: 0, consecutiveErrors: 0 }
+  }
+  rateLimitTracker[family].lastLimitTime = Date.now()
+  rateLimitTracker[family].consecutiveErrors++
+}
+
+function clearRateLimitTracker(model: string): void {
+  const family = getModelFamily(model)
+  if (rateLimitTracker[family]) {
+    rateLimitTracker[family].consecutiveErrors = 0
+  }
+}
+
+function getBackoffDelay(model: string, baseDelay: number): number {
+  const family = getModelFamily(model)
+  const info = rateLimitTracker[family]
+  if (!info) return baseDelay
+
+  // Exponential backoff: base * 2^(consecutive-1), max 30s
+  const multiplier = Math.min(Math.pow(2, info.consecutiveErrors - 1), 60)
+  return Math.min(baseDelay * multiplier, 30000)
+}
 
 export interface AnthropicMessage {
   role: "user" | "assistant"
@@ -275,6 +342,7 @@ function convertTools(tools?: Array<unknown>): Array<unknown> | undefined {
  */
 function buildGeminiRequest(
   request: AnthropicMessageRequest,
+  projectId?: string | null,
 ): Record<string, unknown> {
   const { contents, systemInstruction } = convertMessages(
     request.messages,
@@ -304,12 +372,19 @@ function buildGeminiRequest(
   }
 
   // Wrap in the Antigravity request structure
-  return {
+  const result: Record<string, unknown> = {
     model: request.model,
     userAgent: "antigravity",
     requestId: `agent-${crypto.randomUUID()}`,
     request: innerRequest,
   }
+
+  // Add project ID if available (required by some endpoints)
+  if (projectId) {
+    result.project = projectId
+  }
+
+  return result
 }
 
 /**
@@ -329,17 +404,28 @@ function createErrorResponse(
 /**
  * Create Anthropic-compatible message response using Antigravity
  * Note: Both Gemini and Claude models use the same endpoint and Gemini-style format
+ *
+ * Features:
+ * - Endpoint fallback (daily → prod)
+ * - Per-model-family rate limit tracking
+ * - Exponential backoff for consecutive errors
+ * - Smart retry for short delays (≤5s on same endpoint)
  */
 const MAX_RETRIES = 5
+const MAX_ENDPOINT_RETRIES = 2 // Try each endpoint up to 2 times before switching
 
 async function executeAntigravityRequest(
   request: AnthropicMessageRequest,
 ): Promise<Response> {
-  const endpoint =
-    request.stream ? ANTIGRAVITY_STREAM_URL : ANTIGRAVITY_NO_STREAM_URL
-  const body = buildGeminiRequest(request)
+  // Get project ID for the request
+  const projectId = await getCurrentProjectId()
+  const body = buildGeminiRequest(request, projectId)
+  let endpointRetries = 0
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const host = getCurrentHost()
+    const endpoint = request.stream ? getStreamUrl(host) : getNoStreamUrl(host)
+
     const accessToken = await getValidAccessToken()
 
     if (!accessToken) {
@@ -354,7 +440,7 @@ async function executeAntigravityRequest(
       const response = await fetch(endpoint, {
         method: "POST",
         headers: {
-          Host: ANTIGRAVITY_API_HOST,
+          Host: host,
           "User-Agent": ANTIGRAVITY_USER_AGENT,
           Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
@@ -364,16 +450,41 @@ async function executeAntigravityRequest(
       })
 
       if (response.ok) {
+        // Success - clear rate limit tracker for this model family
+        clearRateLimitTracker(request.model)
         return request.stream ?
             transformStreamResponse(response, request.model)
           : await transformNonStreamResponse(response, request.model)
       }
 
-      const errorResult = await handleApiError(response)
+      const errorResult = await handleApiError(response, request.model)
 
       if (errorResult.shouldRetry && attempt < MAX_RETRIES) {
-        consola.info(`Rate limited, retrying in ${errorResult.retryDelayMs}ms`)
-        await sleep(errorResult.retryDelayMs)
+        // Track rate limit for exponential backoff
+        trackRateLimit(request.model)
+
+        // Calculate delay with backoff
+        const backoffDelay = getBackoffDelay(
+          request.model,
+          errorResult.retryDelayMs,
+        )
+
+        // If delay is short (≤5s), retry on same endpoint
+        // Otherwise, try switching endpoint
+        if (backoffDelay <= 5000 || endpointRetries >= MAX_ENDPOINT_RETRIES) {
+          consola.info(
+            `Rate limited, retrying in ${backoffDelay}ms (attempt ${attempt + 1}/${MAX_RETRIES})`,
+          )
+          await sleep(backoffDelay)
+        } else {
+          // Try switching endpoint
+          rotateEndpoint()
+          endpointRetries++
+          consola.info(
+            `Switching endpoint, retrying in ${errorResult.retryDelayMs}ms`,
+          )
+          await sleep(errorResult.retryDelayMs)
+        }
         continue
       }
 
@@ -381,6 +492,11 @@ async function executeAntigravityRequest(
     } catch (error) {
       consola.error("Antigravity request error:", error)
       if (attempt < MAX_RETRIES) {
+        // On network error, try switching endpoint
+        if (endpointRetries < MAX_ENDPOINT_RETRIES) {
+          rotateEndpoint()
+          endpointRetries++
+        }
         await sleep(500)
         continue
       }
@@ -409,11 +525,16 @@ interface ApiErrorResult {
 
 /**
  * Parse retry delay from error response
+ * Supports multiple formats:
+ * - RetryInfo.retryDelay: "3.5s"
+ * - quotaResetDelay: "3000ms" or "3s"
+ * - message: "Your quota will reset after 3s"
  */
 function parseRetryDelay(errorText: string): number {
   try {
     const errorData = JSON.parse(errorText) as {
       error?: {
+        message?: string
         details?: Array<{
           "@type"?: string
           retryDelay?: string
@@ -421,6 +542,8 @@ function parseRetryDelay(errorText: string): number {
         }>
       }
     }
+
+    // Check details array first
     const details = errorData.error?.details ?? []
     for (const detail of details) {
       // Check RetryInfo first
@@ -439,6 +562,13 @@ function parseRetryDelay(errorText: string): number {
         }
       }
     }
+
+    // Check message for "Your quota will reset after Xs" pattern
+    const message = errorData.error?.message ?? ""
+    const resetMatch = /quota will reset after (\d+(?:\.\d+)?)s/i.exec(message)
+    if (resetMatch) {
+      return Math.ceil(Number.parseFloat(resetMatch[1]) * 1000)
+    }
   } catch {
     // Ignore parse errors
   }
@@ -448,7 +578,10 @@ function parseRetryDelay(errorText: string): number {
 /**
  * Handle API error response
  */
-async function handleApiError(response: Response): Promise<ApiErrorResult> {
+async function handleApiError(
+  response: Response,
+  _model?: string,
+): Promise<ApiErrorResult> {
   const errorText = await response.text()
   consola.error(`Antigravity error: ${response.status} ${errorText}`)
 

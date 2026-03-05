@@ -66,12 +66,12 @@ export function getApiKey(): string | null {
 }
 
 // Default OAuth credentials (from reference projects: gcli2api, antigravity2api-nodejs, Antigravity-Manager)
-const DEFAULT_CLIENT_ID = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com"
+const DEFAULT_CLIENT_ID =
+  "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com"
 const DEFAULT_CLIENT_SECRET = "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"
 
 // OAuth credentials - can be set via env, CLI, or defaults
-let GOOGLE_CLIENT_ID =
-  process.env.ANTIGRAVITY_CLIENT_ID || DEFAULT_CLIENT_ID
+let GOOGLE_CLIENT_ID = process.env.ANTIGRAVITY_CLIENT_ID || DEFAULT_CLIENT_ID
 let GOOGLE_CLIENT_SECRET =
   process.env.ANTIGRAVITY_CLIENT_SECRET || DEFAULT_CLIENT_SECRET
 const GOOGLE_REDIRECT_URI = "http://localhost:8046/callback"
@@ -89,7 +89,10 @@ const OAUTH_SCOPES = [
  * Set OAuth credentials from CLI arguments
  * This overrides environment variables and defaults
  */
-export function setOAuthCredentials(clientId: string, clientSecret: string): void {
+export function setOAuthCredentials(
+  clientId: string,
+  clientSecret: string,
+): void {
   GOOGLE_CLIENT_ID = clientId
   GOOGLE_CLIENT_SECRET = clientSecret
 }
@@ -110,7 +113,7 @@ export async function saveAntigravityAuth(
   await ensurePaths()
   const authPath = getAntigravityAuthPath()
   const fs = await import("node:fs/promises")
-  await fs.writeFile(authPath, JSON.stringify(auth, null, 2), "utf-8")
+  await fs.writeFile(authPath, JSON.stringify(auth, null, 2), "utf8")
   consola.success("Antigravity accounts saved to", authPath)
 }
 
@@ -129,7 +132,7 @@ export async function loadAntigravityAuth(): Promise<AntigravityAuth | null> {
       return null
     }
 
-    const content = await fs.readFile(authPath, "utf-8")
+    const content = await fs.readFile(authPath)
     const data = JSON.parse(content)
 
     // Handle both array format (legacy) and object format
@@ -342,6 +345,29 @@ export async function getValidAccessToken(): Promise<string | null> {
 }
 
 /**
+ * Get current project ID
+ */
+export async function getCurrentProjectId(): Promise<string | null> {
+  const auth = await loadAntigravityAuth()
+
+  if (!auth || auth.accounts.length === 0) {
+    return null
+  }
+
+  let account = auth.accounts[auth.currentIndex]
+
+  if (!account || !account.enable) {
+    const enabledAccount = auth.accounts.find((a) => a.enable)
+    if (!enabledAccount) {
+      return null
+    }
+    account = enabledAccount
+  }
+
+  return account.project_id ?? null
+}
+
+/**
  * Generate a random project ID for Pro accounts
  */
 export function generateRandomProjectId(): string {
@@ -424,7 +450,9 @@ export async function exchangeCodeForTokens(
  *
  * @param onServerReady - Callback function called when server is ready to accept connections
  */
-async function startOAuthCallbackServer(onServerReady?: () => void): Promise<string> {
+async function startOAuthCallbackServer(
+  onServerReady?: () => void,
+): Promise<string> {
   const http = await import("node:http")
 
   return new Promise((resolve, reject) => {
@@ -438,7 +466,7 @@ async function startOAuthCallbackServer(onServerReady?: () => void): Promise<str
         if (error) {
           res.writeHead(200, { "Content-Type": "text/html" })
           res.end(
-            `<html><body><h1>Authorization Failed</h1><p>Error: ${error}</p><p>You can close this window.</p></body></html>`
+            `<html><body><h1>Authorization Failed</h1><p>Error: ${error}</p><p>You can close this window.</p></body></html>`,
           )
           setTimeout(() => server.close(), 100)
           reject(new Error(`OAuth error: ${error}`))
@@ -448,7 +476,7 @@ async function startOAuthCallbackServer(onServerReady?: () => void): Promise<str
         if (code) {
           res.writeHead(200, { "Content-Type": "text/html" })
           res.end(
-            `<html><body><h1>Authorization Successful!</h1><p>You can close this window and return to the terminal.</p></body></html>`
+            `<html><body><h1>Authorization Successful!</h1><p>You can close this window and return to the terminal.</p></body></html>`,
           )
           setTimeout(() => server.close(), 100)
           resolve(code)
@@ -474,10 +502,15 @@ async function startOAuthCallbackServer(onServerReady?: () => void): Promise<str
     })
 
     // Timeout after 5 minutes
-    setTimeout(() => {
-      server.close()
-      reject(new Error("OAuth timeout - no callback received within 5 minutes"))
-    }, 5 * 60 * 1000)
+    setTimeout(
+      () => {
+        server.close()
+        reject(
+          new Error("OAuth timeout - no callback received within 5 minutes"),
+        )
+      },
+      5 * 60 * 1000,
+    )
   })
 }
 
@@ -640,9 +673,5 @@ export async function setupAntigravity(): Promise<void> {
     ],
   })
 
-  if (method === "web") {
-    await setupAntigravityWeb()
-  } else {
-    await setupAntigravityManual()
-  }
+  await (method === "web" ? setupAntigravityWeb() : setupAntigravityManual())
 }
