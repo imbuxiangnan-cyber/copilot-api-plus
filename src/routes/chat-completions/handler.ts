@@ -4,6 +4,7 @@ import consola from "consola"
 import { streamSSE, type SSEMessage } from "hono/streaming"
 
 import { awaitApproval } from "~/lib/approval"
+import { truncateMessages } from "~/lib/context-compression"
 import { checkRateLimit } from "~/lib/rate-limit"
 import { state } from "~/lib/state"
 import { getTokenCount } from "~/lib/tokenizer"
@@ -14,38 +15,57 @@ import {
   type ChatCompletionsPayload,
 } from "~/services/copilot/create-chat-completions"
 
-export async function handleCompletion(c: Context) {
-  await checkRateLimit(state)
-
-  let payload = await c.req.json<ChatCompletionsPayload>()
-  consola.debug("Request payload:", JSON.stringify(payload).slice(-400))
-
-  // Find the selected model
+/**
+ * Calculate token count, log it, and auto-truncate if needed.
+ */
+async function processPayloadTokens(
+  payload: ChatCompletionsPayload,
+): Promise<ChatCompletionsPayload> {
   const selectedModel = state.models?.data.find(
     (model) => model.id === payload.model,
   )
 
-  // Calculate and display token count
+  if (!selectedModel) {
+    consola.warn("No model selected, skipping token count calculation")
+    return payload
+  }
+
   try {
-    if (selectedModel) {
-      const tokenCount = await getTokenCount(payload, selectedModel)
-      consola.info("Current token count:", tokenCount)
-    } else {
-      consola.warn("No model selected, skipping token count calculation")
+    const tokenCount = await getTokenCount(payload, selectedModel)
+    consola.info("Current token count:", tokenCount)
+
+    // Auto-truncate if prompt tokens exceed model limit
+    const truncated = await truncateMessages(payload, selectedModel)
+
+    // Set max_tokens if not provided
+    if (isNullish(truncated.max_tokens)) {
+      const withMaxTokens = {
+        ...truncated,
+        max_tokens: selectedModel.capabilities.limits.max_output_tokens,
+      }
+      consola.debug(
+        "Set max_tokens to:",
+        JSON.stringify(withMaxTokens.max_tokens),
+      )
+      return withMaxTokens
     }
+
+    return truncated
   } catch (error) {
     consola.warn("Failed to calculate token count:", error)
+    return payload
   }
+}
+
+export async function handleCompletion(c: Context) {
+  await checkRateLimit(state)
+
+  const rawPayload = await c.req.json<ChatCompletionsPayload>()
+  consola.debug("Request payload:", JSON.stringify(rawPayload).slice(-400))
+
+  const payload = await processPayloadTokens(rawPayload)
 
   if (state.manualApprove) await awaitApproval()
-
-  if (isNullish(payload.max_tokens)) {
-    payload = {
-      ...payload,
-      max_tokens: selectedModel?.capabilities.limits.max_output_tokens,
-    }
-    consola.debug("Set max_tokens to:", JSON.stringify(payload.max_tokens))
-  }
 
   const response = await createChatCompletions(payload)
 
