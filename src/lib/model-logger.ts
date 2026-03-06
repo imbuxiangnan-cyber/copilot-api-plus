@@ -40,7 +40,7 @@ function formatDuration(ms: number): string {
 /**
  * Format token usage for log output
  */
-function formatTokenUsage(usage: TokenUsage): string {
+export function formatTokenUsage(usage: TokenUsage): string {
   const parts = [`in:${usage.inputTokens}`, `out:${usage.outputTokens}`]
   if (usage.cacheReadTokens) {
     parts.push(`cache_read:${usage.cacheReadTokens}`)

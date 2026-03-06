@@ -131,8 +131,8 @@ export const truncateMessages = async (
     return payload
   }
 
-  consola.warn(
-    `Prompt tokens (${tokenCount.input}) exceed safe limit (${safeLimit}/${maxPromptTokens}). Auto-truncating context...`,
+  console.log(
+    `WARN  Prompt tokens (${tokenCount.input}) exceed safe limit (${safeLimit}/${maxPromptTokens}). Auto-truncating context...`,
   )
 
   const groups = groupMessages(payload.messages)
@@ -173,8 +173,8 @@ export const truncateMessages = async (
         const droppedMessages = conversationGroups
           .slice(0, dropCount)
           .reduce((sum, g) => sum + g.messages.length, 0)
-        consola.info(
-          `Truncated ${droppedMessages} messages (${dropCount} conversation groups). `
+        console.log(
+          `Truncated ${droppedMessages} messages (${dropCount} groups). `
             + `Tokens: ${tokenCount.input} -> ${newTokenCount.input} (limit: ${maxPromptTokens})`,
         )
       }

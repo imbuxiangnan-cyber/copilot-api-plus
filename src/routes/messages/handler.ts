@@ -5,7 +5,7 @@ import { streamSSE } from "hono/streaming"
 
 import { awaitApproval } from "~/lib/approval"
 import { truncateMessages } from "~/lib/context-compression"
-import { setTokenUsage } from "~/lib/model-logger"
+import { formatTokenUsage, setTokenUsage } from "~/lib/model-logger"
 import { checkRateLimit } from "~/lib/rate-limit"
 import { state } from "~/lib/state"
 import { findModel } from "~/lib/utils"
@@ -100,20 +100,15 @@ export async function handleCompletion(c: Context) {
 
       // Record token usage from the final chunk (which contains usage stats)
       if (chunk.usage) {
-        setTokenUsage({
+        const usage = {
           inputTokens:
             chunk.usage.prompt_tokens
             - (chunk.usage.prompt_tokens_details?.cached_tokens ?? 0),
           outputTokens: chunk.usage.completion_tokens,
           cacheReadTokens: chunk.usage.prompt_tokens_details?.cached_tokens,
-        })
-        consola.info(
-          `Token usage: in:${chunk.usage.prompt_tokens - (chunk.usage.prompt_tokens_details?.cached_tokens ?? 0)}`
-            + ` out:${chunk.usage.completion_tokens}`
-            + (chunk.usage.prompt_tokens_details?.cached_tokens ?
-              ` cache_read:${chunk.usage.prompt_tokens_details.cached_tokens}`
-            : ""),
-        )
+        }
+        setTokenUsage(usage)
+        console.log(`[${formatTokenUsage(usage)}]`)
       }
 
       for (const event of events) {
