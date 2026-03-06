@@ -4,6 +4,9 @@ node_modules/
 # local env
 *.local
 
+# Claude Code local settings
+.claude/
+
 # aider
 .aider*
 
