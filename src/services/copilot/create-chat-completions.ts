@@ -34,10 +34,17 @@ export const createChatCompletions = async (
   })
 
   const url = `${copilotBaseUrl(state)}/chat/completions`
+
+  // Request usage stats in the final stream chunk
+  const body =
+    payload.stream ?
+      { ...payload, stream_options: { include_usage: true } }
+    : payload
+
   const fetchOptions: RequestInit = {
     method: "POST",
     headers,
-    body: JSON.stringify(payload),
+    body: JSON.stringify(body),
   }
 
   // Retry on transient network errors (TLS disconnect, connection reset, etc.)

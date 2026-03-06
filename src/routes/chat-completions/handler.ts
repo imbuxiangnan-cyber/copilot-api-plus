@@ -106,6 +106,13 @@ export async function handleCompletion(c: Context) {
               cacheReadTokens:
                 parsed.usage.prompt_tokens_details?.cached_tokens,
             })
+            consola.info(
+              `Token usage: in:${parsed.usage.prompt_tokens ?? 0}`
+                + ` out:${parsed.usage.completion_tokens ?? 0}`
+                + (parsed.usage.prompt_tokens_details?.cached_tokens ?
+                  ` cache_read:${parsed.usage.prompt_tokens_details.cached_tokens}`
+                : ""),
+            )
           }
         }
       } catch {

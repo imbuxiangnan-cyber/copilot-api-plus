@@ -107,6 +107,13 @@ export async function handleCompletion(c: Context) {
           outputTokens: chunk.usage.completion_tokens,
           cacheReadTokens: chunk.usage.prompt_tokens_details?.cached_tokens,
         })
+        consola.info(
+          `Token usage: in:${chunk.usage.prompt_tokens - (chunk.usage.prompt_tokens_details?.cached_tokens ?? 0)}`
+            + ` out:${chunk.usage.completion_tokens}`
+            + (chunk.usage.prompt_tokens_details?.cached_tokens ?
+              ` cache_read:${chunk.usage.prompt_tokens_details.cached_tokens}`
+            : ""),
+        )
       }
 
       for (const event of events) {
