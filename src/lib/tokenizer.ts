@@ -326,23 +326,17 @@ export const getTokenCount = async (
   // Get corresponding encoder module
   const encoder = await getEncodeChatFunction(tokenizer)
 
-  const simplifiedMessages = payload.messages
-  const inputMessages = simplifiedMessages.filter(
-    (msg) => msg.role !== "assistant",
-  )
-  const outputMessages = simplifiedMessages.filter(
-    (msg) => msg.role === "assistant",
-  )
-
   const constants = getModelConstants(model)
-  let inputTokens = calculateTokens(inputMessages, encoder, constants)
+
+  // All messages in the payload are prompt tokens (the full conversation context).
+  // "Output" tokens are only the NEW response from the model, not historical assistant turns.
+  let inputTokens = calculateTokens(payload.messages, encoder, constants)
   if (payload.tools && payload.tools.length > 0) {
     inputTokens += numTokensForTools(payload.tools, encoder, constants)
   }
-  const outputTokens = calculateTokens(outputMessages, encoder, constants)
 
   return {
     input: inputTokens,
-    output: outputTokens,
+    output: 0,
   }
 }
