@@ -1,7 +1,5 @@
 # Copilot API Plus
 
-> **Fork of [ericc-ch/copilot-api](https://github.com/ericc-ch/copilot-api)** with bug fixes and improvements.
-
 将 GitHub Copilot、OpenCode Zen、Google Antigravity 等 AI 服务转换为 **OpenAI** 和 **Anthropic** 兼容 API，支持与 [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview)、[opencode](https://github.com/sst/opencode) 等工具无缝集成。
 
 ---
@@ -18,7 +16,9 @@
 - [Claude Code 集成](#-claude-code-集成)
 - [opencode 集成](#-opencode-集成)
 - [API 端点](#-api-端点)
-- [命令行参考](#-命令行参考)
+- [API Key 认证](#-api-key-认证)
+- [技术细节](#-技术细节)
+- [命令行参考](#️-命令行参考)
 - [Docker 部署](#-docker-部署)
 - [常见问题](#-常见问题)
 
@@ -36,6 +36,10 @@
 | ⚡ **速率限制** | 内置请求频率控制，避免触发限制 |
 | 🌐 **代理支持** | 支持 HTTP/HTTPS 代理，配置持久化 |
 | 🐳 **Docker 支持** | 提供完整的 Docker 部署方案 |
+| 🔑 **API Key 认证** | 可选的 API Key 鉴权，保护公开部署的服务 |
+| ✂️ **智能上下文压缩** | Prompt 超过模型 Token 限制时自动截断，保留系统消息和最近对话 |
+| 🔍 **智能模型匹配** | 自动处理模型名格式差异（日期后缀、dash/dot 版本号等） |
+| 🔁 **Antigravity 端点容错** | 双端点自动切换，按模型族追踪速率限制，指数退避重试 |
 
 ---
 
@@ -558,6 +562,7 @@ curl http://localhost:4141/v1/messages \
 | `--github-token` | `-g` | - | 直接提供 GitHub Token |
 | `--show-token` | - | false | 显示 Token 信息 |
 | `--proxy-env` | - | false | 从环境变量读取代理 |
+| `--api-key` | - | - | API Key 鉴权（可多次指定） |
 
 ### proxy 命令参数
 
@@ -601,6 +606,72 @@ npx copilot-api-plus@latest antigravity list     # 列出账户
 npx copilot-api-plus@latest antigravity remove 0 # 删除索引为 0 的账户
 npx copilot-api-plus@latest antigravity clear    # 清除所有账户
 ```
+
+---
+
+## 🔑 API Key 认证
+
+如果你将服务暴露到公网，可以启用 API Key 认证来保护接口：
+
+```bash
+# 单个 Key
+npx copilot-api-plus@latest start --api-key my-secret-key
+
+# 多个 Key
+npx copilot-api-plus@latest start --api-key key1 --api-key key2
+```
+
+启用后，所有请求需要携带 API Key：
+
+```bash
+# OpenAI 格式 - 通过 Authorization header
+curl http://localhost:4141/v1/chat/completions \
+  -H "Authorization: Bearer my-secret-key" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "claude-sonnet-4", "messages": [{"role": "user", "content": "Hello"}]}'
+
+# Anthropic 格式 - 通过 x-api-key header
+curl http://localhost:4141/v1/messages \
+  -H "x-api-key: my-secret-key" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "claude-sonnet-4", "max_tokens": 1024, "messages": [{"role": "user", "content": "Hello"}]}'
+```
+
+在 Claude Code 中使用时，将 `ANTHROPIC_AUTH_TOKEN` 设为你的 API Key 即可。
+
+---
+
+## 🔧 技术细节
+
+### 智能上下文压缩
+
+当 Prompt Token 数量超过模型的上下文窗口限制时，代理层会自动截断消息以避免上游 API 返回 400 错误：
+
+- **保留系统/开发者消息**：system 和 developer 角色的消息始终保留
+- **保留最近对话**：优先丢弃最早的消息，保留最近的上下文
+- **工具调用分组**：assistant 的 tool_calls 和对应的 tool result 消息作为一组，不会被拆散
+- **5% 安全余量**：实际限制为模型上下文窗口的 95%，避免边界情况
+
+### 智能模型名匹配
+
+Anthropic 格式的模型名（如 `claude-opus-4-6`）和 Copilot 的模型列表 ID 可能存在格式差异。代理使用多策略精确匹配：
+
+| 策略 | 示例 |
+|------|------|
+| 精确匹配 | `claude-opus-4-6` → `claude-opus-4-6` |
+| 去日期后缀 | `claude-opus-4-6-20251101` → `claude-opus-4-6` |
+| Dash → Dot | `claude-opus-4-5` → `claude-opus-4.5` |
+| Dot → Dash | `claude-opus-4.5` → `claude-opus-4-5` |
+
+对于 Anthropic 端点（`/v1/messages`），还会先通过 `translateModelName` 做格式转换（包括旧格式 `claude-3-5-sonnet` → `claude-sonnet-4.5` 的映射），再通过上述策略匹配。
+
+### Antigravity 端点容错
+
+Google Antigravity 模式内置了可靠性保障：
+
+- **双端点自动切换**：daily sandbox 和 production 两个端点，一个失败自动切换到另一个
+- **按模型族速率追踪**：分别追踪 Gemini 和 Claude 模型族的速率限制状态
+- **指数退避重试**：429/503 等限流错误自动退避重试，短间隔走同端点，长间隔切换端点
 
 ---
 
