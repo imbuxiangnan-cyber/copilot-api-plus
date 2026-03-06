@@ -1,5 +1,10 @@
 # Copilot API Plus
 
+[![npm version](https://img.shields.io/npm/v/copilot-api-plus.svg)](https://www.npmjs.com/package/copilot-api-plus)
+[![license](https://img.shields.io/npm/l/copilot-api-plus.svg)](https://github.com/imbuxiangnan-cyber/copilot-api-plus/blob/main/LICENSE)
+
+> A proxy that converts GitHub Copilot, OpenCode Zen, and Google Antigravity into OpenAI & Anthropic compatible APIs. Works with Claude Code, opencode, and more.
+
 将 GitHub Copilot、OpenCode Zen、Google Antigravity 等 AI 服务转换为 **OpenAI** 和 **Anthropic** 兼容 API，支持与 [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview)、[opencode](https://github.com/sst/opencode) 等工具无缝集成。
 
 ---
@@ -672,6 +677,32 @@ Google Antigravity 模式内置了可靠性保障：
 - **双端点自动切换**：daily sandbox 和 production 两个端点，一个失败自动切换到另一个
 - **按模型族速率追踪**：分别追踪 Gemini 和 Claude 模型族的速率限制状态
 - **指数退避重试**：429/503 等限流错误自动退避重试，短间隔走同端点，长间隔切换端点
+
+### 请求日志
+
+每次 API 请求会输出一行日志，包含模型名、耗时和 token 用量：
+
+```
+[claude-opus-4-6] 13:13:39 --> POST /v1/messages?beta=true 200 20.1s [in:87356 out:171 cache_read:13016]
+```
+
+- `in` — 输入 token 数（不含缓存命中部分）
+- `out` — 输出 token 数
+- `cache_read` — 缓存命中的 token 数（仅在有缓存时显示）
+
+触发上下文压缩时会额外输出一行：
+
+```
+Truncated: 190385 -> 117537 tokens (-59 msgs)
+```
+
+### 网络重试
+
+对上游 API 的请求内置了瞬时网络错误重试（TLS 断开、连接重置等）：
+
+- 最多重试 2 次（共 3 次尝试）
+- 退避间隔：1s、2s
+- 仅重试网络层错误，HTTP 错误码（如 400/500）不重试
 
 ---
 
