@@ -1,6 +1,6 @@
 {
   "name": "copilot-api-plus",
-  "version": "1.0.41",
+  "version": "1.0.42",
   "description": "Turn GitHub Copilot, OpenCode Zen, or Google Antigravity into OpenAI/Anthropic API compatible server. Features: auto context compression, smart model matching, dual-endpoint failover, API key auth, and more.",
   "keywords": [
     "proxy",
