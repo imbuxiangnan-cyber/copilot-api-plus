@@ -7,6 +7,7 @@ import { awaitApproval } from "~/lib/approval"
 import { truncateMessages } from "~/lib/context-compression"
 import { checkRateLimit } from "~/lib/rate-limit"
 import { state } from "~/lib/state"
+import { findModel } from "~/lib/utils"
 import {
   createChatCompletions,
   type ChatCompletionChunk,
@@ -26,13 +27,14 @@ import { translateChunkToAnthropicEvents } from "./stream-translation"
 
 /**
  * Auto-truncate OpenAI payload if prompt tokens exceed model limit.
+ *
+ * Uses multi-strategy exact matching via findModel() to handle
+ * mismatches between Anthropic and Copilot model naming conventions.
  */
 async function autoTruncatePayload(
   payload: ChatCompletionsPayload,
 ): Promise<ChatCompletionsPayload> {
-  const selectedModel = state.models?.data.find(
-    (model) => model.id === payload.model,
-  )
+  const selectedModel = findModel(payload.model)
 
   if (!selectedModel) {
     consola.warn(

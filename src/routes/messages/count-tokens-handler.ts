@@ -2,14 +2,18 @@ import type { Context } from "hono"
 
 import consola from "consola"
 
-import { state } from "~/lib/state"
 import { getTokenCount } from "~/lib/tokenizer"
+import { findModel } from "~/lib/utils"
 
 import { type AnthropicMessagesPayload } from "./anthropic-types"
-import { translateToOpenAI } from "./non-stream-translation"
+import { translateModelName, translateToOpenAI } from "./non-stream-translation"
 
 /**
- * Handles token counting for Anthropic messages
+ * Handles token counting for Anthropic messages.
+ *
+ * Uses multi-strategy model matching:
+ * 1. findModel(translatedName) — translated Copilot name with format variants
+ * 2. findModel(originalName) — original Anthropic name with format variants
  */
 export async function handleCountTokens(c: Context) {
   try {
@@ -19,12 +23,17 @@ export async function handleCountTokens(c: Context) {
 
     const openAIPayload = translateToOpenAI(anthropicPayload)
 
-    const selectedModel = state.models?.data.find(
-      (model) => model.id === anthropicPayload.model,
-    )
+    // Multi-strategy model matching:
+    // Try translated name first (most likely to match Copilot model IDs),
+    // then fall back to original Anthropic name with format variants
+    const translatedModelName = translateModelName(anthropicPayload.model)
+    const selectedModel =
+      findModel(translatedModelName) ?? findModel(anthropicPayload.model)
 
     if (!selectedModel) {
-      consola.warn("Model not found, returning default token count")
+      consola.warn(
+        `Model not found for "${anthropicPayload.model}" (translated: "${translatedModelName}"), returning default token count`,
+      )
       return c.json({
         input_tokens: 1,
       })

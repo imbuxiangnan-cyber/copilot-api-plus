@@ -2,11 +2,9 @@
 
 // Load environment variables from .env file
 import "dotenv/config"
-
 /* eslint-disable require-atomic-updates */
 /* eslint-disable max-lines-per-function */
 /* eslint-disable complexity */
-
 import { defineCommand } from "citty"
 import clipboard from "clipboardy"
 import consola from "consola"
@@ -151,14 +149,19 @@ export async function runServer(options: RunServerOptions): Promise<void> {
 
     // Set CLI-provided OAuth credentials if available
     if (options.antigravityClientId && options.antigravityClientSecret) {
-      setOAuthCredentials(options.antigravityClientId, options.antigravityClientSecret)
+      setOAuthCredentials(
+        options.antigravityClientId,
+        options.antigravityClientSecret,
+      )
       consola.info("Using provided OAuth credentials from CLI")
     }
 
     // Check for API Key first (simplest authentication)
     if (hasApiKey()) {
-      consola.info("Using Gemini API Key for authentication (from GEMINI_API_KEY)")
-      consola.info("API Key: " + getApiKey()?.slice(0, 10) + "...")
+      consola.info(
+        "Using Gemini API Key for authentication (from GEMINI_API_KEY)",
+      )
+      consola.info(`API Key: ${getApiKey()?.slice(0, 10) ?? ""}...`)
     } else {
       // Fall back to OAuth authentication
       const existingAuth = await loadAntigravityAuth()
@@ -170,14 +173,18 @@ export async function runServer(options: RunServerOptions): Promise<void> {
         consola.info("")
         consola.info("Method 1: API Key (Recommended - Simplest)")
         consola.info("  Set environment variable: GEMINI_API_KEY=your_api_key")
-        consola.info("  Get your API key from: https://aistudio.google.com/apikey")
+        consola.info(
+          "  Get your API key from: https://aistudio.google.com/apikey",
+        )
         consola.info("")
         consola.info("Method 2: OAuth (Current setup)")
         consola.info("  Will proceed with OAuth login flow...")
         consola.info("")
         await setupAntigravity()
       } else {
-        const enabledCount = existingAuth.accounts.filter((a) => a.enable).length
+        const enabledCount = existingAuth.accounts.filter(
+          (a) => a.enable,
+        ).length
         consola.info(
           `Found ${existingAuth.accounts.length} Antigravity accounts (${enabledCount} enabled)`,
         )

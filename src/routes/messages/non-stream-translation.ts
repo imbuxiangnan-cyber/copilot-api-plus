@@ -47,7 +47,7 @@ export function translateToOpenAI(
   }
 }
 
-function translateModelName(model: string): string {
+export function translateModelName(model: string): string {
   // Claude Code 发送的模型名称可能与 GitHub Copilot 支持的不一致
   // 需要智能匹配到 Copilot 实际支持的模型
 
@@ -98,24 +98,7 @@ function translateModelName(model: string): string {
     }
   }
 
-  // 6. 回退：按模型系列查找可用模型
-  let modelFamily: string | null = null
-  if (model.includes("opus")) {
-    modelFamily = "opus"
-  } else if (model.includes("sonnet")) {
-    modelFamily = "sonnet"
-  } else if (model.includes("haiku")) {
-    modelFamily = "haiku"
-  }
-
-  if (modelFamily) {
-    const familyModel = supportedModels.find((m) => m.includes(modelFamily))
-    if (familyModel) {
-      return familyModel
-    }
-  }
-
-  // 7. 如果都找不到，返回原始模型名
+  // 6. 如果都找不到，返回原始模型名
   return model
 }
 

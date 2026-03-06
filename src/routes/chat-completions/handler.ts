@@ -8,7 +8,7 @@ import { truncateMessages } from "~/lib/context-compression"
 import { checkRateLimit } from "~/lib/rate-limit"
 import { state } from "~/lib/state"
 import { getTokenCount } from "~/lib/tokenizer"
-import { isNullish } from "~/lib/utils"
+import { findModel, isNullish } from "~/lib/utils"
 import {
   createChatCompletions,
   type ChatCompletionResponse,
@@ -17,13 +17,14 @@ import {
 
 /**
  * Calculate token count, log it, and auto-truncate if needed.
+ *
+ * Uses multi-strategy exact matching via findModel() to handle
+ * mismatches between requested and available model names.
  */
 async function processPayloadTokens(
   payload: ChatCompletionsPayload,
 ): Promise<ChatCompletionsPayload> {
-  const selectedModel = state.models?.data.find(
-    (model) => model.id === payload.model,
-  )
+  const selectedModel = findModel(payload.model)
 
   if (!selectedModel) {
     consola.warn("No model selected, skipping token count calculation")
