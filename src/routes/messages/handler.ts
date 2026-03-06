@@ -1,19 +1,15 @@
 import type { Context } from "hono"
 
-import consola from "consola"
 import { streamSSE } from "hono/streaming"
 
 import { awaitApproval } from "~/lib/approval"
-import { truncateMessages } from "~/lib/context-compression"
 import { setTokenUsage, signalStreamDone } from "~/lib/model-logger"
 import { checkRateLimit } from "~/lib/rate-limit"
 import { state } from "~/lib/state"
-import { findModel } from "~/lib/utils"
 import {
   createChatCompletions,
   type ChatCompletionChunk,
   type ChatCompletionResponse,
-  type ChatCompletionsPayload,
 } from "~/services/copilot/create-chat-completions"
 
 import {
@@ -26,40 +22,11 @@ import {
 } from "./non-stream-translation"
 import { translateChunkToAnthropicEvents } from "./stream-translation"
 
-/**
- * Auto-truncate OpenAI payload if prompt tokens exceed model limit.
- *
- * Uses multi-strategy exact matching via findModel() to handle
- * mismatches between Anthropic and Copilot model naming conventions.
- */
-async function autoTruncatePayload(
-  payload: ChatCompletionsPayload,
-): Promise<ChatCompletionsPayload> {
-  const selectedModel = findModel(payload.model)
-
-  if (!selectedModel) {
-    consola.warn(
-      "No model selected for Anthropic endpoint, skipping auto-truncation",
-    )
-    return payload
-  }
-
-  try {
-    return await truncateMessages(payload, selectedModel)
-  } catch (error) {
-    consola.warn("Failed to auto-truncate context:", error)
-    return payload
-  }
-}
-
 export async function handleCompletion(c: Context) {
   await checkRateLimit(state)
 
   const anthropicPayload = await c.req.json<AnthropicMessagesPayload>()
-  const rawOpenAIPayload = translateToOpenAI(anthropicPayload)
-
-  // Auto-truncate if prompt tokens exceed model limit
-  const openAIPayload = await autoTruncatePayload(rawOpenAIPayload)
+  const openAIPayload = translateToOpenAI(anthropicPayload)
 
   if (state.manualApprove) {
     await awaitApproval()

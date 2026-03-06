@@ -17,11 +17,14 @@ usageRoute.get("/", async (c) => {
 
     if (state.zenMode) {
       // Zen doesn't have a public usage API
-      return c.json({
-        error: "Usage statistics not available for Zen mode",
-        message: "Please check your usage at https://console.opencode.ai",
-        mode: "zen",
-      }, 200)
+      return c.json(
+        {
+          error: "Usage statistics not available for Zen mode",
+          message: "Please check your usage at https://console.opencode.ai",
+          mode: "zen",
+        },
+        200,
+      )
     }
 
     // Default: Copilot mode

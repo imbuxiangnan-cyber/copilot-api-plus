@@ -65,7 +65,7 @@ export async function handleCountTokens(c: Context) {
       finalTokenCount = Math.round(finalTokenCount * 1.03)
     }
 
-    consola.debug("Token count:", finalTokenCount)
+    console.log("Token count:", finalTokenCount)
 
     return c.json({
       input_tokens: finalTokenCount,

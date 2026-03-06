@@ -147,16 +147,19 @@ async function fetchModelsFromApi(): Promise<Array<AntigravityModel> | null> {
     // API returns models as object (dictionary), not array
     // Format: { "models": { "model-id": { "quotaInfo": {...}, "apiProvider": "...", ... }, ... } }
     const data = (await response.json()) as {
-      models?: Record<string, {
-        displayName?: string
-        maxTokens?: number
-        apiProvider?: string
-        model?: string
-        quotaInfo?: {
-          remainingFraction?: number
-          resetTime?: string
+      models?: Record<
+        string,
+        {
+          displayName?: string
+          maxTokens?: number
+          apiProvider?: string
+          model?: string
+          quotaInfo?: {
+            remainingFraction?: number
+            resetTime?: string
+          }
         }
-      }>
+      >
     }
 
     if (!data.models || typeof data.models !== "object") {
@@ -172,25 +175,30 @@ async function fetchModelsFromApi(): Promise<Array<AntigravityModel> | null> {
     const models: Array<AntigravityModel> = modelEntries
       .filter(([modelId, info]) => {
         // Only include gemini, learnlm, and claude models
-        const isPublicModel = modelId.startsWith("gemini") ||
-                              modelId.startsWith("learnlm") ||
-                              modelId.startsWith("claude")
+        const isPublicModel =
+          modelId.startsWith("gemini")
+          || modelId.startsWith("learnlm")
+          || modelId.startsWith("claude")
         // Filter out models with no remaining quota
         const remaining = info.quotaInfo?.remainingFraction ?? 1
         return isPublicModel && remaining > 0
       })
       .map(([modelId, info]) => {
-        const isGoogle = modelId.startsWith("gemini") || modelId.startsWith("learnlm")
+        const isGoogle =
+          modelId.startsWith("gemini") || modelId.startsWith("learnlm")
 
         return {
           id: modelId,
           object: "model",
           created: 1700000000,
           owned_by: isGoogle ? "google" : "anthropic",
-          quotaInfo: info.quotaInfo ? {
-            remainingFraction: info.quotaInfo.remainingFraction ?? 1,
-            resetTime: info.quotaInfo.resetTime ?? "",
-          } : undefined,
+          quotaInfo:
+            info.quotaInfo ?
+              {
+                remainingFraction: info.quotaInfo.remainingFraction ?? 1,
+                resetTime: info.quotaInfo.resetTime ?? "",
+              }
+            : undefined,
         }
       })
 
@@ -246,11 +254,14 @@ export interface AntigravityUsageResponse {
   copilot_plan: string
   quota_reset_date: string
   quota_snapshots: {
-    models: Record<string, {
-      remaining_fraction: number
-      reset_time: string
-      percent_remaining: number
-    }>
+    models: Record<
+      string,
+      {
+        remaining_fraction: number
+        reset_time: string
+        percent_remaining: number
+      }
+    >
   }
 }
 
@@ -266,11 +277,14 @@ export async function getAntigravityUsage(): Promise<AntigravityUsageResponse> {
 
   // Find earliest reset time
   let earliestResetTime = ""
-  const modelsQuota: Record<string, {
-    remaining_fraction: number
-    reset_time: string
-    percent_remaining: number
-  }> = {}
+  const modelsQuota: Record<
+    string,
+    {
+      remaining_fraction: number
+      reset_time: string
+      percent_remaining: number
+    }
+  > = {}
 
   let modelsWithQuota = 0
   for (const model of modelsResponse.data) {
@@ -289,7 +303,9 @@ export async function getAntigravityUsage(): Promise<AntigravityUsageResponse> {
     }
   }
 
-  consola.debug(`Antigravity usage: ${modelsWithQuota}/${modelsResponse.data.length} models have quota info`)
+  consola.debug(
+    `Antigravity usage: ${modelsWithQuota}/${modelsResponse.data.length} models have quota info`,
+  )
 
   return {
     copilot_plan: "antigravity",

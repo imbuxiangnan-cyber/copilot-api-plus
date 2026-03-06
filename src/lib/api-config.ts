@@ -19,8 +19,8 @@ export const copilotBaseUrl = (state: State) => {
   if (state.copilotApiEndpoint) {
     return state.copilotApiEndpoint
   }
-  return state.accountType === "individual"
-    ? "https://api.githubcopilot.com"
+  return state.accountType === "individual" ?
+      "https://api.githubcopilot.com"
     : `https://api.${state.accountType}.githubcopilot.com`
 }
 export const copilotHeaders = (state: State, vision: boolean = false) => {
