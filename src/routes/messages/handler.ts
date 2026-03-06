@@ -5,6 +5,7 @@ import { streamSSE } from "hono/streaming"
 
 import { awaitApproval } from "~/lib/approval"
 import { truncateMessages } from "~/lib/context-compression"
+import { setTokenUsage } from "~/lib/model-logger"
 import { checkRateLimit } from "~/lib/rate-limit"
 import { state } from "~/lib/state"
 import { findModel } from "~/lib/utils"
@@ -68,6 +69,12 @@ export async function handleCompletion(c: Context) {
 
   if (isNonStreaming(response)) {
     const anthropicResponse = translateToAnthropic(response)
+    setTokenUsage({
+      inputTokens: anthropicResponse.usage.input_tokens,
+      outputTokens: anthropicResponse.usage.output_tokens,
+      cacheReadTokens: anthropicResponse.usage.cache_read_input_tokens,
+      cacheCreationTokens: anthropicResponse.usage.cache_creation_input_tokens,
+    })
     return c.json(anthropicResponse)
   }
 
@@ -90,6 +97,17 @@ export async function handleCompletion(c: Context) {
 
       const chunk = JSON.parse(rawEvent.data) as ChatCompletionChunk
       const events = translateChunkToAnthropicEvents(chunk, streamState)
+
+      // Record token usage from the final chunk (which contains usage stats)
+      if (chunk.usage) {
+        setTokenUsage({
+          inputTokens:
+            chunk.usage.prompt_tokens
+            - (chunk.usage.prompt_tokens_details?.cached_tokens ?? 0),
+          outputTokens: chunk.usage.completion_tokens,
+          cacheReadTokens: chunk.usage.prompt_tokens_details?.cached_tokens,
+        })
+      }
 
       for (const event of events) {
         await stream.writeSSE({

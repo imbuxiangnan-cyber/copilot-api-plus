@@ -5,6 +5,24 @@
 import type { Context, MiddlewareHandler, Next } from "hono"
 
 /**
+ * Global token usage store for passing usage info from handlers to logger.
+ * Handlers call setTokenUsage() when usage is available,
+ * logger reads and clears it after await next().
+ */
+let pendingTokenUsage: TokenUsage | undefined
+
+export interface TokenUsage {
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens?: number
+  cacheCreationTokens?: number
+}
+
+export function setTokenUsage(usage: TokenUsage): void {
+  pendingTokenUsage = usage
+}
+
+/**
  * Get timestamp string in format HH:mm:ss
  */
 function getTime(): string {
@@ -17,6 +35,20 @@ function getTime(): string {
 function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`
   return `${(ms / 1000).toFixed(1)}s`
+}
+
+/**
+ * Format token usage for log output
+ */
+function formatTokenUsage(usage: TokenUsage): string {
+  const parts = [`in:${usage.inputTokens}`, `out:${usage.outputTokens}`]
+  if (usage.cacheReadTokens) {
+    parts.push(`cache_read:${usage.cacheReadTokens}`)
+  }
+  if (usage.cacheCreationTokens) {
+    parts.push(`cache_create:${usage.cacheCreationTokens}`)
+  }
+  return parts.join(" ")
 }
 
 /**
@@ -38,7 +70,7 @@ async function extractModel(c: Context): Promise<string | undefined> {
  *
  * Output format:
  * [model] HH:mm:ss <-- METHOD /path
- * [model] HH:mm:ss --> METHOD /path STATUS DURATION
+ * [model] HH:mm:ss --> METHOD /path STATUS DURATION [in:N out:N]
  */
 export function modelLogger(): MiddlewareHandler {
   return async (c: Context, next: Next) => {
@@ -57,6 +89,9 @@ export function modelLogger(): MiddlewareHandler {
     const modelPrefix = model ? `[${model}] ` : ""
     const startTime = getTime()
 
+    // Clear any stale usage before handling
+    pendingTokenUsage = undefined
+
     // Log incoming request
     console.log(`${modelPrefix}${startTime} <-- ${method} ${fullPath}`)
 
@@ -65,9 +100,15 @@ export function modelLogger(): MiddlewareHandler {
     const duration = Date.now() - start
     const endTime = getTime()
 
+    // Read and clear token usage (set by handlers during await next())
+    const usage = pendingTokenUsage
+    pendingTokenUsage = undefined
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    const usageSuffix = usage ? ` [${formatTokenUsage(usage)}]` : ""
+
     // Log outgoing response
     console.log(
-      `${modelPrefix}${endTime} --> ${method} ${fullPath} ${c.res.status} ${formatDuration(duration)}`,
+      `${modelPrefix}${endTime} --> ${method} ${fullPath} ${c.res.status} ${formatDuration(duration)}${usageSuffix}`,
     )
   }
 }
