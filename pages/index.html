@@ -99,35 +99,50 @@
     <div id="app" class="min-h-screen p-4 sm:p-6">
       <div class="max-w-7xl mx-auto">
         <!-- Header Section -->
-        <header class="mb-6">
-          <h1
-            class="text-2xl font-bold flex items-center gap-2"
-            style="color: var(--color-fg-lightest)"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              class="lucide lucide-gauge-circle h-7 w-7"
-              style="color: var(--color-aqua-accent)"
+        <header class="mb-6 flex justify-between items-start">
+          <div>
+            <h1
+              class="text-2xl font-bold flex items-center gap-2"
+              style="color: var(--color-fg-lightest)"
             >
-              <path d="M15.6 3.3a10 10 0 1 0 5.1 5.1" />
-              <path
-                d="M12 12a1 1 0 0 0-1-1v4a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1h-3z"
-              />
-              <path d="M12 6.8a10 10 0 0 0 -3.2 7.2" />
-            </svg>
-            <span>API Usage Dashboard</span>
-          </h1>
-          <p class="mt-1 text-sm" style="color: var(--color-gray)">
-            Supports Copilot, Antigravity, and Zen modes
-          </p>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                class="lucide lucide-gauge-circle h-7 w-7"
+                style="color: var(--color-aqua-accent)"
+              >
+                <path d="M15.6 3.3a10 10 0 1 0 5.1 5.1" />
+                <path
+                  d="M12 12a1 1 0 0 0-1-1v4a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1h-3z"
+                />
+                <path d="M12 6.8a10 10 0 0 0 -3.2 7.2" />
+              </svg>
+              <span id="header-title">API Usage Dashboard</span>
+            </h1>
+            <p id="header-subtitle" class="mt-1 text-sm" style="color: var(--color-gray)">
+              Supports Copilot, Antigravity, and Zen modes
+            </p>
+          </div>
+          <button
+            id="lang-toggle"
+            type="button"
+            class="px-3 py-1 text-xs font-semibold border transition-colors"
+            style="
+              background-color: var(--color-bg-light-1);
+              border-color: var(--color-bg-light-3);
+              color: var(--color-fg-medium);
+            "
+            title="Switch language"
+          >
+            中文
+          </button>
         </header>
 
         <!-- Form Section -->
@@ -144,6 +159,7 @@
           >
             <label
               for="endpoint-url"
+              id="endpoint-label"
               class="font-semibold whitespace-nowrap text-sm"
               style="color: var(--color-fg-lightest)"
               >API Endpoint URL</label
@@ -185,7 +201,7 @@
                 <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
                 <path d="M3 21v-5h5" />
               </svg>
-              <span>Fetch</span>
+              <span id="fetch-text">Fetch</span>
             </button>
           </form>
         </div>
@@ -201,6 +217,89 @@
         const endpointUrlInput = document.getElementById("endpoint-url");
         const contentArea = document.getElementById("content-area");
         const fetchButton = document.getElementById("fetch-button");
+        const langToggle = document.getElementById("lang-toggle");
+
+        // --- i18n ---
+        const i18n = {
+          en: {
+            title: "API Usage Dashboard",
+            subtitle: "Supports Copilot, Antigravity, and Zen modes",
+            langBtn: "中文",
+            endpointLabel: "API Endpoint URL",
+            fetch: "Fetch",
+            usageQuotas: "Usage Quotas",
+            antigravityQuotas: "Antigravity Model Quotas",
+            noQuotaInfo: "No quota information available. Models may be using fallback data.",
+            nextReset: "Next reset",
+            geminiModels: "Gemini Models",
+            claudeModels: "Claude Models",
+            otherModels: "Other Models",
+            used: "Used",
+            remaining: "remaining",
+            unlimited: "Unlimited",
+            detailedInfo: "Detailed Information",
+            welcome: "Welcome!",
+            welcomeMsg: 'Enter an API endpoint URL and click "Fetch" to see usage data.',
+            errorTitle: "An Error Occurred",
+            emptyUrl: "Endpoint URL cannot be empty.",
+            zenMode: "OpenCode Zen Mode",
+            zenFallback: "Usage statistics not available for Zen mode.",
+            zenDashboard: "View Usage Dashboard",
+            vibeCoded: "Vibe coded by",
+            basedOn: "Based on",
+          },
+          zh: {
+            title: "API 用量仪表盘",
+            subtitle: "支持 Copilot、Antigravity 和 Zen 模式",
+            langBtn: "EN",
+            endpointLabel: "API 端点 URL",
+            fetch: "获取",
+            usageQuotas: "用量配额",
+            antigravityQuotas: "Antigravity 模型配额",
+            noQuotaInfo: "暂无配额信息，模型可能使用了回退数据。",
+            nextReset: "下次重置",
+            geminiModels: "Gemini 模型",
+            claudeModels: "Claude 模型",
+            otherModels: "其他模型",
+            used: "已用",
+            remaining: "剩余",
+            unlimited: "无限制",
+            detailedInfo: "详细信息",
+            welcome: "欢迎！",
+            welcomeMsg: '输入 API 端点 URL 并点击"获取"查看用量数据。',
+            errorTitle: "发生错误",
+            emptyUrl: "端点 URL 不能为空。",
+            zenMode: "OpenCode Zen 模式",
+            zenFallback: "Zen 模式暂不支持用量统计。",
+            zenDashboard: "查看用量面板",
+            vibeCoded: "由以下工具辅助开发：",
+            basedOn: "基于",
+          },
+        };
+
+        let currentLang = localStorage.getItem("lang") || "en";
+
+        function t(key) {
+          return i18n[currentLang][key] || i18n.en[key] || key;
+        }
+
+        function updateStaticTexts() {
+          document.getElementById("header-title").textContent = t("title");
+          document.getElementById("header-subtitle").textContent = t("subtitle");
+          langToggle.textContent = t("langBtn");
+          document.getElementById("endpoint-label").textContent = t("endpointLabel");
+          document.getElementById("fetch-text").textContent = t("fetch");
+          document.getElementById("footer-vibe").textContent = t("vibeCoded");
+          document.getElementById("footer-based").textContent = t("basedOn");
+          document.title = `${t("title")} - Copilot / Antigravity / Zen`;
+        }
+
+        langToggle.addEventListener("click", () => {
+          currentLang = currentLang === "en" ? "zh" : "en";
+          localStorage.setItem("lang", currentLang);
+          updateStaticTexts();
+          render();
+        });
 
         // Apply hover effect for fetch button via JS
         fetchButton.addEventListener("mouseenter", () => {
@@ -286,12 +385,12 @@
           return `
             <div class="text-center py-16 px-4 border" style="background-color: var(--color-bg-soft); border-color: var(--color-bg-light-2);">
                 <i data-lucide="info" class="mx-auto h-10 w-10" style="color: var(--color-purple-accent);"></i>
-                <h3 class="mt-2 text-lg font-semibold" style="color: var(--color-fg-lightest);">OpenCode Zen Mode</h3>
-                <p class="mt-1 text-sm" style="color: var(--color-gray);">${data.message || 'Usage statistics not available for Zen mode.'}</p>
+                <h3 class="mt-2 text-lg font-semibold" style="color: var(--color-fg-lightest);">${t("zenMode")}</h3>
+                <p class="mt-1 text-sm" style="color: var(--color-gray);">${data.message || t("zenFallback")}</p>
                 <a href="https://console.opencode.ai" target="_blank" rel="noopener noreferrer"
                    class="inline-block mt-4 px-4 py-2 font-semibold transition-colors"
                    style="background-color: var(--color-purple); color: var(--color-bg-darkest);">
-                   View Usage Dashboard
+                   ${t("zenDashboard")}
                 </a>
             </div>
           `;
@@ -310,10 +409,10 @@
             return `
               <section id="usage-quotas" class="mb-6">
                 <h2 class="text-xl font-bold mb-3 flex items-center gap-2" style="color: var(--color-fg-lightest);">
-                    <i data-lucide="bar-chart-big"></i> Antigravity Model Quotas
+                    <i data-lucide="bar-chart-big"></i> ${t("antigravityQuotas")}
                 </h2>
                 <div class="p-4 border text-center" style="background-color: var(--color-bg-soft); border-color: var(--color-bg-light-2);">
-                    <p style="color: var(--color-gray);">No quota information available. Models may be using fallback data.</p>
+                    <p style="color: var(--color-gray);">${t("noQuotaInfo")}</p>
                 </div>
               </section>
             `;
@@ -356,12 +455,12 @@
           return `
             <section id="usage-quotas" class="mb-6">
                 <h2 class="text-xl font-bold mb-3 flex items-center gap-2" style="color: var(--color-fg-lightest);">
-                    <i data-lucide="bar-chart-big"></i> Antigravity Model Quotas
+                    <i data-lucide="bar-chart-big"></i> ${t("antigravityQuotas")}
                 </h2>
-                ${resetDate ? `<p class="text-sm mb-4" style="color: var(--color-gray);">Next reset: ${new Date(resetDate).toLocaleString()}</p>` : ''}
-                ${renderModelGroup('Gemini Models', 'sparkles', geminiModels, 'var(--color-blue-accent)')}
-                ${renderModelGroup('Claude Models', 'message-square', claudeModels, 'var(--color-orange-accent)')}
-                ${renderModelGroup('Other Models', 'box', otherModels, 'var(--color-gray-accent)')}
+                ${resetDate ? `<p class="text-sm mb-4" style="color: var(--color-gray);">${t("nextReset")}: ${new Date(resetDate).toLocaleString()}</p>` : ''}
+                ${renderModelGroup(t("geminiModels"), 'sparkles', geminiModels, 'var(--color-blue-accent)')}
+                ${renderModelGroup(t("claudeModels"), 'message-square', claudeModels, 'var(--color-orange-accent)')}
+                ${renderModelGroup(t("otherModels"), 'box', otherModels, 'var(--color-gray-accent)')}
             </section>
           `;
         }
@@ -386,7 +485,7 @@
             <div class="p-3 border" style="background-color: var(--color-bg); border-color: var(--color-bg-light-2);">
                 <div class="flex justify-between items-center mb-2">
                     <h4 class="text-sm font-medium truncate" style="color: var(--color-fg-lightest);" title="${modelId}">${modelId}</h4>
-                    <span class="text-xs font-mono ml-2 whitespace-nowrap" style="color: var(--color-fg-medium);">${percentUsed.toFixed(0)}% Used</span>
+                    <span class="text-xs font-mono ml-2 whitespace-nowrap" style="color: var(--color-fg-medium);">${percentUsed.toFixed(0)}% ${t("used")}</span>
                 </div>
                 <div class="mb-2">
                      <div class="w-full progress-bar-bg h-1.5">
@@ -394,7 +493,7 @@
                      </div>
                 </div>
                 <div class="flex justify-between items-center text-xs" style="color: var(--color-fg-dark);">
-                    <span>${percentRemaining}% remaining</span>
+                    <span>${percentRemaining}% ${t("remaining")}</span>
                     ${resetTime ? `<span class="flex items-center gap-1" style="color: var(--color-gray-accent);">⏱️ ${new Date(resetTime).toLocaleString()}</span>` : ''}
                 </div>
             </div>
@@ -418,7 +517,7 @@
           return `
                     <section id="usage-quotas" class="mb-6">
                         <h2 class="text-xl font-bold mb-3 flex items-center gap-2" style="color: var(--color-fg-lightest);">
-                            <i data-lucide="bar-chart-big"></i> Usage Quotas
+                            <i data-lucide="bar-chart-big"></i> ${t("usageQuotas")}
                         </h2>
                         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                             ${quotaCards}
@@ -453,8 +552,8 @@
                             <h3 class="text-md font-semibold capitalize" style="color: var(--color-fg-lightest);">${title.replace(/_/g, " ")}</h3>
                             ${
                               unlimited
-                                ? `<span class="px-2 py-0.5 text-xs font-medium" style="color: var(--color-blue-accent); background-color: var(--color-bg-light-1);">Unlimited</span>`
-                                : `<span class="text-sm font-mono" style="color: var(--color-fg-medium);">${percentUsed.toFixed(1)}% Used</span>`
+                                ? `<span class="px-2 py-0.5 text-xs font-medium" style="color: var(--color-blue-accent); background-color: var(--color-bg-light-1);">${t("unlimited")}</span>`
+                                : `<span class="text-sm font-mono" style="color: var(--color-fg-medium);">${percentUsed.toFixed(1)}% ${t("used")}</span>`
                             }
                         </div>
                         <div class="mb-3">
@@ -464,7 +563,7 @@
                         </div>
                         <div class="flex justify-between text-xs font-mono" style="color: var(--color-fg-dark);">
                             <span>${used} / ${unlimited ? "∞" : entitlement.toLocaleString()}</span>
-                            <span>${unlimited ? "∞" : remaining.toLocaleString()} remaining</span>
+                            <span>${unlimited ? "∞" : remaining.toLocaleString()} ${t("remaining")}</span>
                         </div>
                     </div>
                 `;
@@ -520,7 +619,7 @@
           return `
                     <section id="detailed-data">
                         <h2 class="text-xl font-bold mb-3 flex items-center gap-2" style="color: var(--color-fg-lightest);">
-                           <i data-lucide="file-text"></i> Detailed Information
+                           <i data-lucide="file-text"></i> ${t("detailedInfo")}
                         </h2>
                         <div class="border p-4 relative font-mono text-xs" style="background-color: var(--color-bg-darkest); border-color: var(--color-bg-light-2);">
                             ${formattedDetails}
@@ -557,7 +656,7 @@
                 <div class="flex items-center">
                     <i data-lucide="alert-triangle" class="h-5 w-5 mr-3"></i>
                     <div>
-                        <p class="font-bold text-sm">An Error Occurred</p>
+                        <p class="font-bold text-sm">${t("errorTitle")}</p>
                         <p class="text-xs">${message}</p>
                     </div>
                 </div>
@@ -581,8 +680,8 @@
           return `
             <div class="text-center py-16 px-4 border" style="background-color: var(--color-bg-soft); border-color: var(--color-bg-light-2);">
                 <i data-lucide="info" class="mx-auto h-10 w-10" style="color: var(--color-gray-accent);"></i>
-                <h3 class="mt-2 text-lg font-semibold" style="color: var(--color-fg-lightest);">Welcome!</h3>
-                <p class="mt-1 text-sm" style="color: var(--color-gray);">Enter an API endpoint URL and click "Fetch" to see usage data.</p>
+                <h3 class="mt-2 text-lg font-semibold" style="color: var(--color-fg-lightest);">${t("welcome")}</h3>
+                <p class="mt-1 text-sm" style="color: var(--color-gray);">${t("welcomeMsg")}</p>
             </div>
           `;
         }
@@ -595,7 +694,7 @@
         async function fetchData() {
           const url = endpointUrlInput.value.trim();
           if (!url) {
-            state.error = "Endpoint URL cannot be empty.";
+            state.error = t("emptyUrl");
             state.isLoading = false;
             render();
             return;
@@ -651,6 +750,7 @@
          */
         function init() {
           endpointForm.addEventListener("submit", handleFormSubmit);
+          updateStaticTexts();
 
           // Get endpoint from URL param on load
           const urlParams = new URLSearchParams(window.location.search);
@@ -671,11 +771,12 @@
     </script>
 
     <footer
+      id="footer"
       class="text-center py-4 text-xs"
       style="color: var(--color-gray-accent)"
     >
       <p>
-        Vibe coded by
+        <span id="footer-vibe">Vibe coded by</span>
         <a
           href="https://gemini.google.com"
           target="_blank"
@@ -687,7 +788,7 @@
         >
           Gemini
         </a>
-        - Based on
+        - <span id="footer-based">Based on</span>
         <a
           href="https://github.com/uheej0625/copilot-usage-viewer"
           target="_blank"

@@ -33,11 +33,38 @@ export const createChatCompletions = async (
     endpoint: `${copilotBaseUrl(state)}/chat/completions`,
   })
 
-  const response = await fetch(`${copilotBaseUrl(state)}/chat/completions`, {
+  const url = `${copilotBaseUrl(state)}/chat/completions`
+  const fetchOptions: RequestInit = {
     method: "POST",
     headers,
     body: JSON.stringify(payload),
-  })
+  }
+
+  // Retry on transient network errors (TLS disconnect, connection reset, etc.)
+  const maxRetries = 2
+  let lastError: unknown
+  let response: Response | undefined
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      response = await fetch(url, fetchOptions)
+      break
+    } catch (error: unknown) {
+      lastError = error
+      if (attempt < maxRetries) {
+        const delay = 1000 * (attempt + 1)
+        consola.warn(
+          `Network error on attempt ${attempt + 1}/${maxRetries + 1}, retrying in ${delay}ms:`,
+          error instanceof Error ? error.message : error,
+        )
+        await new Promise((r) => setTimeout(r, delay))
+      }
+    }
+  }
+
+  if (!response) {
+    throw lastError
+  }
 
   if (!response.ok) {
     const errorBody = await response.text()
