@@ -16,7 +16,14 @@ export async function forwardError(c: Context, error: unknown) {
   consola.error("Error occurred:", error)
 
   if (error instanceof HTTPError) {
-    const errorText = await error.response.text()
+    // Try to read error body, but it may already be consumed by the caller
+    let errorText: string
+    try {
+      errorText = await error.response.text()
+    } catch {
+      // Body already read — fall back to the error message
+      errorText = error.message
+    }
     let errorJson: unknown
     try {
       errorJson = JSON.parse(errorText)

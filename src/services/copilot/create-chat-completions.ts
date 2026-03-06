@@ -4,6 +4,7 @@ import { events } from "fetch-event-stream"
 import { copilotHeaders, copilotBaseUrl } from "~/lib/api-config"
 import { HTTPError } from "~/lib/error"
 import { state } from "~/lib/state"
+import { refreshCopilotToken } from "~/lib/token"
 
 export const createChatCompletions = async (
   payload: ChatCompletionsPayload,
@@ -22,11 +23,11 @@ export const createChatCompletions = async (
     ["assistant", "tool"].includes(msg.role),
   )
 
-  // Build headers and add X-Initiator
-  const headers: Record<string, string> = {
+  // Build headers fresh each call (token may be refreshed between attempts)
+  const buildHeaders = (): Record<string, string> => ({
     ...copilotHeaders(state, enableVision),
     "X-Initiator": isAgentCall ? "agent" : "user",
-  }
+  })
 
   consola.debug("Sending request to Copilot:", {
     model: payload.model,
@@ -41,11 +42,7 @@ export const createChatCompletions = async (
       { ...payload, stream_options: { include_usage: true } }
     : payload
 
-  const fetchOptions: RequestInit = {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-  }
+  const bodyString = JSON.stringify(body)
 
   // Retry on transient network errors (TLS disconnect, connection reset, etc.)
   const maxRetries = 2
@@ -54,7 +51,11 @@ export const createChatCompletions = async (
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      response = await fetch(url, fetchOptions)
+      response = await fetch(url, {
+        method: "POST",
+        headers: buildHeaders(),
+        body: bodyString,
+      })
       break
     } catch (error: unknown) {
       lastError = error
@@ -71,6 +72,22 @@ export const createChatCompletions = async (
 
   if (!response) {
     throw lastError
+  }
+
+  // On 401 (token expired), refresh the Copilot token and retry once
+  if (response.status === 401) {
+    consola.warn("Copilot token expired, refreshing and retrying...")
+    try {
+      await refreshCopilotToken()
+      response = await fetch(url, {
+        method: "POST",
+        headers: buildHeaders(),
+        body: bodyString,
+      })
+    } catch (refreshError) {
+      consola.error("Failed to refresh token:", refreshError)
+      // Fall through to the error handling below
+    }
   }
 
   if (!response.ok) {

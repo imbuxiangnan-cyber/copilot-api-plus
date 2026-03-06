@@ -5,7 +5,7 @@ import { streamSSE } from "hono/streaming"
 
 import { awaitApproval } from "~/lib/approval"
 import { truncateMessages } from "~/lib/context-compression"
-import { setTokenUsage } from "~/lib/model-logger"
+import { setTokenUsage, signalStreamDone } from "~/lib/model-logger"
 import { checkRateLimit } from "~/lib/rate-limit"
 import { state } from "~/lib/state"
 import { findModel } from "~/lib/utils"
@@ -117,6 +117,7 @@ export async function handleCompletion(c: Context) {
         })
       }
     }
+    signalStreamDone()
   })
 }
 

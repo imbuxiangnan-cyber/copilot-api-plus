@@ -1,14 +1,40 @@
+import consola from "consola"
+
 import { GITHUB_API_BASE_URL, githubHeaders } from "~/lib/api-config"
 import { HTTPError } from "~/lib/error"
 import { state } from "~/lib/state"
 
 export const getCopilotToken = async () => {
-  const response = await fetch(
-    `${GITHUB_API_BASE_URL}/copilot_internal/v2/token`,
-    {
-      headers: githubHeaders(state),
-    },
-  )
+  const url = `${GITHUB_API_BASE_URL}/copilot_internal/v2/token`
+  const fetchOptions: RequestInit = {
+    headers: githubHeaders(state),
+  }
+
+  // Retry on transient network errors (TLS disconnect, connection timeout, etc.)
+  const maxRetries = 2
+  let lastError: unknown
+  let response: Response | undefined
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      response = await fetch(url, fetchOptions)
+      break
+    } catch (error: unknown) {
+      lastError = error
+      if (attempt < maxRetries) {
+        const delay = 1000 * (attempt + 1)
+        consola.warn(
+          `Token fetch error on attempt ${attempt + 1}/${maxRetries + 1}, retrying in ${delay}ms:`,
+          error instanceof Error ? error.message : error,
+        )
+        await new Promise((r) => setTimeout(r, delay))
+      }
+    }
+  }
+
+  if (!response) {
+    throw lastError
+  }
 
   if (!response.ok) throw new HTTPError("Failed to get Copilot token", response)
 
@@ -16,6 +42,7 @@ export const getCopilotToken = async () => {
 
   // Store the API endpoint if available
   if (data.endpoints?.api) {
+    // eslint-disable-next-line require-atomic-updates
     state.copilotApiEndpoint = data.endpoints.api
   }
 

@@ -5,7 +5,7 @@ import { streamSSE, type SSEMessage } from "hono/streaming"
 
 import { awaitApproval } from "~/lib/approval"
 import { truncateMessages } from "~/lib/context-compression"
-import { setTokenUsage } from "~/lib/model-logger"
+import { setTokenUsage, signalStreamDone } from "~/lib/model-logger"
 import { checkRateLimit } from "~/lib/rate-limit"
 import { state } from "~/lib/state"
 import { getTokenCount } from "~/lib/tokenizer"
@@ -34,7 +34,7 @@ async function processPayloadTokens(
 
   try {
     const tokenCount = await getTokenCount(payload, selectedModel)
-    consola.info("Current token count:", tokenCount)
+    consola.debug("Current token count:", tokenCount)
 
     // Auto-truncate if prompt tokens exceed model limit
     const truncated = await truncateMessages(payload, selectedModel)
@@ -115,6 +115,7 @@ export async function handleCompletion(c: Context) {
 
       await stream.writeSSE(chunk as SSEMessage)
     }
+    signalStreamDone()
   })
 }
 

@@ -40,12 +40,7 @@ export const setupCopilotToken = async () => {
   setInterval(async () => {
     consola.debug("Refreshing Copilot token")
     try {
-      const { token } = await getCopilotToken()
-      state.copilotToken = token
-      consola.debug("Copilot token refreshed")
-      if (state.showToken) {
-        consola.info("Refreshed Copilot token:", token)
-      }
+      await refreshCopilotToken()
     } catch (error) {
       consola.error("Failed to refresh Copilot token:", error)
 
@@ -61,6 +56,18 @@ export const setupCopilotToken = async () => {
       // Don't throw here - it would cause an unhandled rejection in setInterval
     }
   }, refreshInterval)
+}
+
+/**
+ * Refresh the Copilot token on demand (e.g. after a 401 error).
+ */
+export async function refreshCopilotToken(): Promise<void> {
+  const { token } = await getCopilotToken()
+  state.copilotToken = token
+  consola.debug("Copilot token refreshed")
+  if (state.showToken) {
+    consola.info("Refreshed Copilot token:", token)
+  }
 }
 
 interface SetupGitHubTokenOptions {

@@ -8,8 +8,15 @@ import type { Context, MiddlewareHandler, Next } from "hono"
  * Global token usage store for passing usage info from handlers to logger.
  * Handlers call setTokenUsage() when usage is available,
  * logger reads and clears it after await next().
+ *
+ * For streaming responses, usage arrives after next() returns.
+ * In that case the handler calls signalStreamDone() when the stream ends,
+ * and the logger waits for it with a timeout.
  */
 let pendingTokenUsage: TokenUsage | undefined
+
+// eslint-disable-next-line @typescript-eslint/no-invalid-void-type
+let streamDoneResolve: ((value: void) => void) | undefined
 
 export interface TokenUsage {
   inputTokens: number
@@ -20,6 +27,14 @@ export interface TokenUsage {
 
 export function setTokenUsage(usage: TokenUsage): void {
   pendingTokenUsage = usage
+}
+
+/**
+ * Notify the logger that a streaming response has finished sending.
+ * Must be called at the end of streamSSE callbacks.
+ */
+export function signalStreamDone(): void {
+  streamDoneResolve?.()
 }
 
 /**
@@ -89,18 +104,35 @@ export function modelLogger(): MiddlewareHandler {
     const modelPrefix = model ? `[${model}] ` : ""
     const startTime = getTime()
 
-    // Clear any stale usage before handling
+    // Clear any stale state before handling
     pendingTokenUsage = undefined
+    const localStreamDone = new Promise<void>((resolve) => {
+      streamDoneResolve = resolve
+    })
 
     // Log incoming request
     console.log(`${modelPrefix}${startTime} <-- ${method} ${fullPath}`)
 
     const start = Date.now()
     await next()
+
+    // For streaming responses, usage arrives after next() returns.
+    // Wait for signalStreamDone() with a generous timeout.
+    const isStreaming = c.res.headers
+      .get("content-type")
+      ?.includes("text/event-stream")
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    if (isStreaming && !pendingTokenUsage) {
+      const timeout = new Promise<void>((resolve) =>
+        setTimeout(resolve, 120_000),
+      )
+      await Promise.race([localStreamDone, timeout])
+    }
+
     const duration = Date.now() - start
     const endTime = getTime()
 
-    // Read and clear token usage (set by handlers during await next())
+    // Read and clear token usage
     const usage = pendingTokenUsage
     pendingTokenUsage = undefined
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
