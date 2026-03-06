@@ -3,6 +3,8 @@
 [![npm version](https://img.shields.io/npm/v/copilot-api-plus.svg)](https://www.npmjs.com/package/copilot-api-plus)
 [![license](https://img.shields.io/npm/l/copilot-api-plus.svg)](https://github.com/imbuxiangnan-cyber/copilot-api-plus/blob/main/LICENSE)
 
+[English](README.en.md) | 简体中文
+
 > A proxy that converts GitHub Copilot, OpenCode Zen, and Google Antigravity into OpenAI & Anthropic compatible APIs. Works with Claude Code, opencode, and more.
 
 将 GitHub Copilot、OpenCode Zen、Google Antigravity 等 AI 服务转换为 **OpenAI** 和 **Anthropic** 兼容 API，支持与 [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview)、[opencode](https://github.com/sst/opencode) 等工具无缝集成。
