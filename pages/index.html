@@ -247,6 +247,8 @@
             zenDashboard: "View Usage Dashboard",
             vibeCoded: "Vibe coded by",
             basedOn: "Based on",
+            // Detail keys - no translation needed for English
+            detailKeys: {},
           },
           zh: {
             title: "API 用量仪表盘",
@@ -274,6 +276,45 @@
             zenDashboard: "查看用量面板",
             vibeCoded: "由以下工具辅助开发：",
             basedOn: "基于",
+            detailKeys: {
+              login: "登录名",
+              access_type_sku: "访问类型",
+              analytics_tracking_id: "分析追踪 ID",
+              assigned_date: "分配日期",
+              can_signup_for_limited: "可注册受限版",
+              chat_enabled: "聊天已启用",
+              copilotignore_enabled: "Copilot 忽略已启用",
+              copilot_plan: "Copilot 计划",
+              is_mcp_enabled: "MCP 已启用",
+              organization_login_list: "组织登录列表",
+              organization_list: "组织列表",
+              restricted_telemetry: "受限遥测",
+              endpoints: "端点",
+              api: "API",
+              proxy: "代理",
+              telemetry: "遥测",
+              "origin-tracker": "来源追踪",
+              quota_reset_date: "配额重置日期",
+              quota_reset_date_utc: "配额重置日期 (UTC)",
+              quota_snapshots: "配额快照",
+              chat: "聊天",
+              completions: "代码补全",
+              premium_interactions: "高级交互",
+              entitlement: "配额上限",
+              overage_count: "超额次数",
+              overage_permitted: "允许超额",
+              percent_remaining: "剩余百分比",
+              quota_id: "配额 ID",
+              quota_remaining: "配额剩余",
+              remaining: "剩余",
+              unlimited: "无限制",
+              timestamp_utc: "时间戳 (UTC)",
+              models: "模型",
+              percent_used: "已用百分比",
+              remaining_fraction: "剩余比例",
+              reset_time: "重置时间",
+              quota_limit: "配额限制",
+            },
           },
         };
 
@@ -579,11 +620,13 @@
             return `<span style="color: var(--color-green-accent);">${JSON.stringify(obj)}</span>`;
           }
 
+          const keyMap = i18n[currentLang].detailKeys || {};
+
           return (
             '<div class="pl-4">' +
             Object.entries(obj)
               .map(([key, value]) => {
-                const formattedKey = key.replace(/_/g, " ");
+                const formattedKey = keyMap[key] || key.replace(/_/g, " ");
                 let displayValue;
 
                 if (Array.isArray(value)) {
