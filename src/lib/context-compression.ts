@@ -131,10 +131,6 @@ export const truncateMessages = async (
     return payload
   }
 
-  console.log(
-    `Context too long (${tokenCount.input}/${maxPromptTokens} tokens), truncating...`,
-  )
-
   const groups = groupMessages(payload.messages)
 
   // Separate system groups from conversation groups
@@ -174,7 +170,7 @@ export const truncateMessages = async (
           .slice(0, dropCount)
           .reduce((sum, g) => sum + g.messages.length, 0)
         console.log(
-          `Truncated ${droppedMessages} msgs. Tokens: ${tokenCount.input} -> ${newTokenCount.input}`,
+          `Truncated: ${tokenCount.input} -> ${newTokenCount.input} tokens (-${droppedMessages} msgs)`,
         )
       }
       return truncatedPayload
