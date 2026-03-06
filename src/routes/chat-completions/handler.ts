@@ -5,7 +5,7 @@ import { streamSSE, type SSEMessage } from "hono/streaming"
 
 import { awaitApproval } from "~/lib/approval"
 import { truncateMessages } from "~/lib/context-compression"
-import { formatTokenUsage, setTokenUsage } from "~/lib/model-logger"
+import { setTokenUsage } from "~/lib/model-logger"
 import { checkRateLimit } from "~/lib/rate-limit"
 import { state } from "~/lib/state"
 import { getTokenCount } from "~/lib/tokenizer"
@@ -107,7 +107,6 @@ export async function handleCompletion(c: Context) {
                 parsed.usage.prompt_tokens_details?.cached_tokens,
             }
             setTokenUsage(usage)
-            console.log(`[${formatTokenUsage(usage)}]`)
           }
         }
       } catch {
