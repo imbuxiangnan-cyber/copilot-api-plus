@@ -13,8 +13,6 @@ export class HTTPError extends Error {
 }
 
 export async function forwardError(c: Context, error: unknown) {
-  consola.error("Error occurred:", error)
-
   if (error instanceof HTTPError) {
     // Try to read error body, but it may already be consumed by the caller
     let errorText: string
@@ -24,13 +22,21 @@ export async function forwardError(c: Context, error: unknown) {
       // Body already read — fall back to the error message
       errorText = error.message
     }
-    let errorJson: unknown
-    try {
-      errorJson = JSON.parse(errorText)
-    } catch {
-      errorJson = errorText
+
+    // 400 errors: concise log, already detailed upstream
+    if (error.response.status === 400) {
+      // no extra logging, upstream already printed details
+    } else {
+      let errorJson: unknown
+      try {
+        errorJson = JSON.parse(errorText)
+      } catch {
+        errorJson = errorText
+      }
+      consola.error("Error occurred:", error)
+      consola.error("HTTP error:", errorJson)
     }
-    consola.error("HTTP error:", errorJson)
+
     return c.json(
       {
         error: {
@@ -42,6 +48,7 @@ export async function forwardError(c: Context, error: unknown) {
     )
   }
 
+  consola.error("Error occurred:", error)
   return c.json(
     {
       error: {

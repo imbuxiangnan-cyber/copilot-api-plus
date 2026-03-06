@@ -678,15 +678,12 @@ Google Antigravity 模式内置了可靠性保障：
 
 ### 请求日志
 
-每次 API 请求会输出一行日志，包含模型名、耗时和 token 用量：
+每次 API 请求会输出一行日志，包含模型名、状态码和耗时：
 
+```log
+[claude-opus-4-6] 13:13:39 <-- POST /v1/messages?beta=true
+[claude-opus-4-6] 13:13:59 --> POST /v1/messages?beta=true 200 20.1s
 ```
-[claude-opus-4-6] 13:13:39 --> POST /v1/messages?beta=true 200 20.1s [in:87356 out:171 cache_read:13016]
-```
-
-- `in` — 输入 token 数（不含缓存命中部分）
-- `out` — 输出 token 数
-- `cache_read` — 缓存命中的 token 数（仅在有缓存时显示）
 
 ### 网络重试
 
