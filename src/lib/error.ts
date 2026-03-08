@@ -48,7 +48,14 @@ export async function forwardError(c: Context, error: unknown) {
     )
   }
 
-  consola.error("Error occurred:", error)
+  // Network errors (fetch failed, TLS disconnect, etc.) — concise log
+  const message = (error as Error).message || String(error)
+  const cause = (error as { cause?: Error }).cause
+  if (cause) {
+    consola.error(`${message}: ${cause.message}`)
+  } else {
+    consola.error(message)
+  }
   return c.json(
     {
       error: {
