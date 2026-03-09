@@ -31,7 +31,7 @@ antigravityMessagesRoute.post("/", async (c) => {
     const body: AnthropicMessageRequest = await c.req.json()
     consola.debug("Antigravity message request:", body.model)
 
-    const response = await createAntigravityMessages(body)
+    const response = await createAntigravityMessages(body, c.req.raw.headers)
 
     // Handle streaming
     if (body.stream) {

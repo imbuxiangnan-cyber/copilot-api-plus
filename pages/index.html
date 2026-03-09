@@ -1,849 +1,2154 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>API Usage Dashboard - Copilot / Antigravity / Zen</title>
+    <title>Copilot API 用量仪表盘</title>
 
     <script src="https://cdn.tailwindcss.com"></script>
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
 
-    <script src="https://unpkg.com/lucide-react@0.378.0/dist/umd/lucide.min.js"></script>
-
     <style>
-      /* Gruvbox-themed color palette */
       :root {
-        /* Main Color Palette */
-        --color-red: #cc241d;
-        --color-green: #98971a;
-        --color-yellow: #d79921;
-        --color-blue: #458588;
-        --color-purple: #b16286;
-        --color-aqua: #689d6a;
-        --color-orange: #d65d0e;
-        --color-gray: #a89984;
-
-        /* Accent/Lighter/Darker Shades of Main Colors */
-        --color-red-accent: #fb4934;
-        --color-green-accent: #b8bb26;
-        --color-yellow-accent: #fabd2f;
-        --color-blue-accent: #83a598;
-        --color-purple-accent: #d3869b;
-        --color-aqua-accent: #8ec07c;
-        --color-orange-accent: #fe8019;
-        --color-gray-accent: #928374;
-
-        /* Background Colors */
-        --color-bg-darkest: #1d2021; /* bg0_h */
-        --color-bg: #282828; /* bg and bg0 */
-        --color-bg-light-1: #3c3836; /* bg1 */
-        --color-bg-light-2: #504945; /* bg2 */
-        --color-bg-light-3: #665c54; /* bg3 */
-        --color-bg-light-4: #7c6f64; /* bg4 */
-        --color-bg-soft: #32302f; /* bg0_s */
-
-        /* Foreground Colors */
-        --color-fg-darker: #a89984; /* fg4 - duplicate of gray */
-        --color-fg-dark: #bdae93; /* fg3 */
-        --color-fg-medium: #d5c4a1; /* fg2 */
-        --color-fg-light: #ebdbb2; /* fg and fg1 */
-        --color-fg-lightest: #fbf1c7; /* fg0 */
+        color-scheme: light;
+        --bg: #f4efe7;
+        --bg-accent: #efe6d9;
+        --surface: rgba(255, 252, 247, 0.88);
+        --surface-strong: #fffdf9;
+        --panel: rgba(19, 52, 59, 0.06);
+        --panel-strong: #f1ece3;
+        --line: rgba(22, 55, 63, 0.12);
+        --line-strong: rgba(22, 55, 63, 0.2);
+        --text: #16252b;
+        --muted: #5e6d72;
+        --brand: #16606e;
+        --brand-strong: #0f4b56;
+        --brand-soft: rgba(22, 96, 110, 0.12);
+        --success: #167a62;
+        --success-soft: rgba(22, 122, 98, 0.12);
+        --warning: #b2681f;
+        --warning-soft: rgba(178, 104, 31, 0.14);
+        --danger: #b2473f;
+        --danger-soft: rgba(178, 71, 63, 0.14);
+        --shadow: 0 24px 60px rgba(16, 39, 45, 0.08);
+        --radius-xl: 28px;
+        --radius-lg: 22px;
+        --radius-md: 16px;
       }
 
-      /* Custom styles using the new palette */
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
       body {
-        font-family: "Inter", sans-serif;
-        background-color: var(--color-bg-darkest);
-        color: var(--color-fg-light);
+        margin: 0;
+        font-family: "Noto Sans SC", sans-serif;
+        background:
+          radial-gradient(circle at top left, rgba(22, 96, 110, 0.14), transparent 30%),
+          radial-gradient(circle at top right, rgba(178, 104, 31, 0.12), transparent 32%),
+          linear-gradient(180deg, #f8f4ed 0%, var(--bg) 100%);
+        color: var(--text);
       }
 
-      /* Custom progress bar styles */
-      .progress-bar-bg {
-        background-color: var(--color-bg-light-1);
-      }
-      .progress-bar-fg {
-        transition: width 0.5s ease-in-out;
+      .page-shell {
+        position: relative;
+        min-height: 100vh;
       }
 
-      /* Custom scrollbar for the raw data view */
-      .code-block::-webkit-scrollbar {
-        width: 8px;
-        height: 8px;
-      }
-      .code-block::-webkit-scrollbar-track {
-        background: var(--color-bg);
-      }
-      .code-block::-webkit-scrollbar-thumb {
-        background: var(--color-bg-light-3);
-      }
-      .code-block::-webkit-scrollbar-thumb:hover {
-        background: var(--color-bg-light-4);
+      .page-shell::before {
+        content: "";
+        position: fixed;
+        inset: auto -10vw -22vh auto;
+        width: 30rem;
+        height: 30rem;
+        background: radial-gradient(circle, rgba(22, 96, 110, 0.12), transparent 72%);
+        pointer-events: none;
+        filter: blur(10px);
       }
 
-      /* Style for focus rings to use variables */
-      .input-focus:focus {
-        --tw-ring-color: var(--color-blue);
-        border-color: var(--color-blue);
+      .dashboard-card {
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        background: var(--surface);
+        backdrop-filter: blur(14px);
+        box-shadow: var(--shadow);
       }
 
+      .dashboard-card-strong {
+        border: 1px solid var(--line-strong);
+        border-radius: var(--radius-xl);
+        background: linear-gradient(180deg, rgba(255, 253, 249, 0.98), rgba(248, 243, 235, 0.94));
+        box-shadow: var(--shadow);
+      }
 
+      .metric-card {
+        position: relative;
+        overflow: hidden;
+      }
+
+      .metric-card::after {
+        content: "";
+        position: absolute;
+        inset: auto -32px -42px auto;
+        width: 110px;
+        height: 110px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.5);
+        pointer-events: none;
+      }
+
+      .section-title {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+      }
+
+      .section-icon,
+      .inline-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+      }
+
+      .section-icon svg,
+      .inline-icon svg {
+        width: 100%;
+        height: 100%;
+      }
+
+      .section-icon {
+        width: 2.6rem;
+        height: 2.6rem;
+        border-radius: 14px;
+        background: var(--brand-soft);
+        color: var(--brand);
+      }
+
+      .inline-icon {
+        width: 1.05rem;
+        height: 1.05rem;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem 0.8rem;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.72);
+        border: 1px solid var(--line);
+        color: var(--brand);
+        font-size: 0.78rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        padding: 0.42rem 0.7rem;
+        border-radius: 999px;
+        border: 1px solid transparent;
+        font-size: 0.78rem;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+
+      .pill-neutral {
+        background: rgba(22, 37, 43, 0.06);
+        border-color: rgba(22, 37, 43, 0.08);
+        color: var(--text);
+      }
+
+      .pill-brand {
+        background: var(--brand-soft);
+        border-color: rgba(22, 96, 110, 0.12);
+        color: var(--brand);
+      }
+
+      .pill-success {
+        background: var(--success-soft);
+        border-color: rgba(22, 122, 98, 0.14);
+        color: var(--success);
+      }
+
+      .pill-warning {
+        background: var(--warning-soft);
+        border-color: rgba(178, 104, 31, 0.18);
+        color: var(--warning);
+      }
+
+      .pill-danger {
+        background: var(--danger-soft);
+        border-color: rgba(178, 71, 63, 0.2);
+        color: var(--danger);
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.65rem;
+        border-radius: 999px;
+        border: 1px solid transparent;
+        padding: 0.9rem 1.25rem;
+        font-size: 0.95rem;
+        font-weight: 700;
+        transition:
+          transform 0.18s ease,
+          box-shadow 0.18s ease,
+          border-color 0.18s ease,
+          background-color 0.18s ease,
+          color 0.18s ease;
+      }
+
+      .btn:hover {
+        transform: translateY(-1px);
+      }
+
+      .btn:focus-visible,
+      .input-field:focus-visible,
+      .tab-button:focus-visible,
+      .segment-button:focus-visible,
+      .lang-toggle:focus-visible,
+      summary:focus-visible,
+      .switch-input:focus-visible + .switch-track {
+        outline: 3px solid rgba(22, 96, 110, 0.24);
+        outline-offset: 3px;
+      }
+
+      .btn-primary {
+        background: linear-gradient(135deg, var(--brand), var(--brand-strong));
+        color: #f7fbfc;
+        box-shadow: 0 12px 24px rgba(15, 75, 86, 0.18);
+      }
+
+      .btn-primary:hover {
+        box-shadow: 0 16px 28px rgba(15, 75, 86, 0.24);
+      }
+
+      .btn-secondary {
+        background: rgba(255, 255, 255, 0.7);
+        border-color: var(--line);
+        color: var(--text);
+      }
+
+      .btn-secondary:hover {
+        border-color: var(--line-strong);
+        background: rgba(255, 255, 255, 0.95);
+      }
+
+      .lang-toggle {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 84px;
+        padding: 0.78rem 1rem;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.72);
+        color: var(--text);
+        font-size: 0.88rem;
+        font-weight: 700;
+        transition: transform 0.18s ease, border-color 0.18s ease, background-color 0.18s ease;
+      }
+
+      .lang-toggle:hover {
+        transform: translateY(-1px);
+        border-color: var(--line-strong);
+      }
+
+      .input-field {
+        width: 100%;
+        border-radius: 18px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.78);
+        padding: 1rem 1.1rem;
+        font-size: 0.97rem;
+        color: var(--text);
+        transition: border-color 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
+      }
+
+      .input-field:hover {
+        border-color: var(--line-strong);
+      }
+
+      .input-field::placeholder {
+        color: rgba(94, 109, 114, 0.9);
+      }
+
+      .helper-text {
+        font-size: 0.82rem;
+        color: var(--muted);
+      }
+
+      .status-dot {
+        width: 0.7rem;
+        height: 0.7rem;
+        border-radius: 999px;
+        display: inline-block;
+      }
+
+      .status-loading {
+        background: var(--warning);
+        box-shadow: 0 0 0 8px rgba(178, 104, 31, 0.12);
+      }
+
+      .status-success {
+        background: var(--success);
+        box-shadow: 0 0 0 8px rgba(22, 122, 98, 0.12);
+      }
+
+      .status-error {
+        background: var(--danger);
+        box-shadow: 0 0 0 8px rgba(178, 71, 63, 0.12);
+      }
+
+      .status-idle {
+        background: rgba(94, 109, 114, 0.75);
+        box-shadow: 0 0 0 8px rgba(94, 109, 114, 0.1);
+      }
+
+      .progress-track {
+        width: 100%;
+        height: 0.72rem;
+        border-radius: 999px;
+        background: rgba(22, 37, 43, 0.08);
+        overflow: hidden;
+      }
+
+      .progress-fill {
+        height: 100%;
+        border-radius: inherit;
+        transition: width 0.35s ease;
+      }
+
+      .progress-fill-brand {
+        background: linear-gradient(90deg, #208193, #16606e);
+      }
+
+      .progress-fill-success {
+        background: linear-gradient(90deg, #2a9b78, #167a62);
+      }
+
+      .progress-fill-warning {
+        background: linear-gradient(90deg, #d58b3f, #b2681f);
+      }
+
+      .progress-fill-danger {
+        background: linear-gradient(90deg, #d76a63, #b2473f);
+      }
+
+      .mono {
+        font-family: "JetBrains Mono", monospace;
+      }
+
+      .banner {
+        border-radius: 20px;
+        border: 1px solid var(--line);
+        padding: 1rem 1.15rem;
+      }
+
+      .banner-info {
+        background: rgba(22, 96, 110, 0.08);
+        border-color: rgba(22, 96, 110, 0.16);
+      }
+
+      .banner-error {
+        background: rgba(178, 71, 63, 0.1);
+        border-color: rgba(178, 71, 63, 0.2);
+      }
+
+      .switch {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.85rem;
+      }
+
+      .switch-input {
+        position: absolute;
+        opacity: 0;
+        width: 1px;
+        height: 1px;
+        pointer-events: none;
+      }
+
+      .switch-track {
+        position: relative;
+        width: 3.2rem;
+        height: 1.8rem;
+        border-radius: 999px;
+        background: rgba(22, 37, 43, 0.14);
+        transition: background-color 0.18s ease;
+      }
+
+      .switch-track::after {
+        content: "";
+        position: absolute;
+        top: 0.2rem;
+        left: 0.22rem;
+        width: 1.4rem;
+        height: 1.4rem;
+        border-radius: 999px;
+        background: #ffffff;
+        box-shadow: 0 6px 14px rgba(15, 30, 35, 0.12);
+        transition: transform 0.2s ease;
+      }
+
+      .switch-input:checked + .switch-track {
+        background: linear-gradient(135deg, var(--brand), var(--brand-strong));
+      }
+
+      .switch-input:checked + .switch-track::after {
+        transform: translateX(1.38rem);
+      }
+
+      .auto-refresh-controls {
+        display: grid;
+        gap: 0.9rem;
+      }
+
+      .auto-refresh-header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+      }
+
+      .auto-refresh-summary {
+        min-height: 2.4rem;
+      }
+
+      .refresh-preset-group {
+        display: grid;
+        gap: 0.5rem;
+      }
+
+      .refresh-preset-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.65rem;
+      }
+
+      .segment-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        min-height: 3rem;
+        padding: 0.7rem 0.9rem;
+        border-radius: 18px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.72);
+        color: var(--muted);
+        font-size: 0.84rem;
+        font-weight: 700;
+        line-height: 1.2;
+        text-align: center;
+        transition:
+          transform 0.18s ease,
+          border-color 0.18s ease,
+          background-color 0.18s ease,
+          color 0.18s ease,
+          box-shadow 0.18s ease;
+      }
+
+      .segment-button:hover {
+        transform: translateY(-1px);
+        border-color: var(--line-strong);
+        background: rgba(255, 255, 255, 0.94);
+        color: var(--text);
+      }
+
+      .segment-button.is-active {
+        border-color: rgba(22, 96, 110, 0.3);
+        background: linear-gradient(135deg, rgba(22, 96, 110, 0.18), rgba(22, 96, 110, 0.06)), rgba(255, 255, 255, 0.98);
+        color: var(--brand-strong);
+        box-shadow: 0 12px 22px rgba(15, 30, 35, 0.08);
+      }
+
+      .refresh-custom-field {
+        display: grid;
+        gap: 0.55rem;
+        padding: 0.9rem 1rem;
+        border-radius: 18px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.52);
+      }
+
+      .refresh-custom-field .input-field {
+        max-width: none;
+        min-height: 3rem;
+        padding: 0.85rem 1rem;
+      }
+
+      .tab-button {
+        border-radius: 999px;
+        border: 1px solid transparent;
+        padding: 0.65rem 0.95rem;
+        font-size: 0.88rem;
+        font-weight: 700;
+        color: var(--muted);
+        transition: border-color 0.18s ease, background-color 0.18s ease, color 0.18s ease;
+      }
+
+      .tab-button.is-active {
+        background: rgba(255, 255, 255, 0.92);
+        border-color: var(--line);
+        color: var(--text);
+      }
+
+      .tab-panel {
+        display: none;
+      }
+
+      .tab-panel.is-active {
+        display: block;
+      }
+
+      .code-panel {
+        border-radius: 20px;
+        border: 1px solid var(--line);
+        background: #182428;
+        color: #eef4f5;
+        max-height: 24rem;
+        overflow: auto;
+      }
+
+      .code-panel pre {
+        margin: 0;
+        padding: 1.1rem 1.15rem;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-size: 0.82rem;
+        line-height: 1.65;
+      }
+
+      .details-panel[open] summary {
+        margin-bottom: 1rem;
+      }
+
+      summary {
+        list-style: none;
+        cursor: pointer;
+      }
+
+      summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .details-chevron {
+        transition: transform 0.18s ease;
+      }
+
+      .details-panel[open] .details-chevron {
+        transform: rotate(180deg);
+      }
+
+      .empty-illustration {
+        width: 4rem;
+        height: 4rem;
+        border-radius: 20px;
+        background: rgba(22, 96, 110, 0.08);
+        color: var(--brand);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .loading-bar {
+        position: relative;
+        overflow: hidden;
+      }
+
+      .loading-bar::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.68), transparent);
+        transform: translateX(-100%);
+        animation: shimmer 1.3s infinite;
+      }
+
+      @keyframes shimmer {
+        100% {
+          transform: translateX(100%);
+        }
+      }
+
+      @media (min-width: 640px) {
+        .refresh-preset-grid {
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 768px) {
+        .dashboard-card-strong,
+        .dashboard-card {
+          border-radius: 22px;
+        }
+      }
     </style>
   </head>
-  <body class="antialiased">
-    <div id="app" class="min-h-screen p-4 sm:p-6">
-      <div class="max-w-7xl mx-auto">
-        <!-- Header Section -->
-        <header class="mb-6 flex justify-between items-start">
-          <div>
-            <h1
-              class="text-2xl font-bold flex items-center gap-2"
-              style="color: var(--color-fg-lightest)"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                class="lucide lucide-gauge-circle h-7 w-7"
-                style="color: var(--color-aqua-accent)"
-              >
-                <path d="M15.6 3.3a10 10 0 1 0 5.1 5.1" />
-                <path
-                  d="M12 12a1 1 0 0 0-1-1v4a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1h-3z"
-                />
-                <path d="M12 6.8a10 10 0 0 0 -3.2 7.2" />
-              </svg>
-              <span id="header-title">API Usage Dashboard</span>
-            </h1>
-            <p id="header-subtitle" class="mt-1 text-sm" style="color: var(--color-gray)">
-              Supports Copilot, Antigravity, and Zen modes
-            </p>
+  <body>
+    <div class="page-shell px-4 py-5 sm:px-6 lg:px-8 lg:py-8">
+      <div class="mx-auto max-w-7xl space-y-5 sm:space-y-6">
+        <header class="dashboard-card-strong overflow-hidden px-5 py-5 sm:px-7 sm:py-7 lg:px-8 lg:py-8">
+          <div class="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+            <div class="max-w-3xl space-y-4">
+              <span class="eyebrow">
+                <span class="inline-icon h-4 w-4" aria-hidden="true" id="badge-icon"></span>
+                <span id="eyebrow-text"></span>
+              </span>
+              <div class="space-y-3">
+                <div class="flex flex-wrap items-center gap-3">
+                  <h1 class="text-3xl font-extrabold tracking-tight text-[var(--text)] sm:text-4xl lg:text-[2.9rem]" id="page-title"></h1>
+                  <span class="pill pill-brand" id="mode-chip"></span>
+                </div>
+                <p class="max-w-2xl text-sm leading-7 text-[var(--muted)] sm:text-base" id="page-subtitle"></p>
+              </div>
+              <div class="flex flex-wrap gap-2" id="hero-tags"></div>
+            </div>
+
+            <div class="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center lg:flex-col lg:items-end">
+              <button id="lang-toggle" type="button" class="lang-toggle">EN</button>
+              <div class="dashboard-card px-4 py-3 text-sm text-[var(--muted)]">
+                <div class="font-semibold text-[var(--text)]" id="quick-tip-title"></div>
+                <p class="mt-1 max-w-xs leading-6" id="quick-tip-body"></p>
+              </div>
+            </div>
           </div>
-          <button
-            id="lang-toggle"
-            type="button"
-            class="px-3 py-1 text-xs font-semibold border transition-colors"
-            style="
-              background-color: var(--color-bg-light-1);
-              border-color: var(--color-bg-light-3);
-              color: var(--color-fg-medium);
-            "
-            title="Switch language"
-          >
-            中文
-          </button>
         </header>
 
-        <!-- Form Section -->
-        <div
-          class="mb-6 p-4 border"
-          style="
-            background-color: var(--color-bg-soft);
-            border-color: var(--color-bg-light-2);
-          "
-        >
-          <form
-            id="endpoint-form"
-            class="flex flex-col sm:flex-row items-center gap-3"
-          >
-            <label
-              for="endpoint-url"
-              id="endpoint-label"
-              class="font-semibold whitespace-nowrap text-sm"
-              style="color: var(--color-fg-lightest)"
-              >API Endpoint URL</label
-            >
-            <input
-              type="text"
-              id="endpoint-url"
-              class="w-full px-3 py-1.5 border focus:ring-1 transition input-focus text-sm"
-              style="
-                background-color: var(--color-bg-darkest);
-                border-color: var(--color-bg-light-3);
-                color: var(--color-fg-medium);
-              "
-              placeholder="http://localhost:4141/usage"
-            />
-            <button
-              id="fetch-button"
-              type="submit"
-              class="w-full sm:w-auto shrink-0 whitespace-nowrap font-bold py-1.5 px-5 transition-colors flex items-center justify-center gap-2 text-sm"
-              style="
-                background-color: var(--color-blue);
-                color: var(--color-bg-darkest);
-              "
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                class="lucide lucide-refresh-cw h-4 w-4"
-              >
-                <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
-                <path d="M21 3v5h-5" />
-                <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
-                <path d="M3 21v-5h5" />
-              </svg>
-              <span id="fetch-text">Fetch</span>
-            </button>
-          </form>
-        </div>
+        <section class="dashboard-card px-5 py-5 sm:px-6 sm:py-6" aria-labelledby="connection-title">
+          <div class="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+            <div class="max-w-2xl space-y-2">
+              <div class="section-title text-xl text-[var(--text)]">
+                <span class="section-icon" aria-hidden="true" id="connection-icon"></span>
+                <span id="connection-title"></span>
+              </div>
+              <p class="text-sm leading-7 text-[var(--muted)]" id="connection-subtitle"></p>
+            </div>
+            <div class="flex flex-wrap gap-2" id="connection-chips"></div>
+          </div>
 
-        <!-- Content Area for dynamic data -->
-        <main id="content-area"></main>
+          <form id="endpoint-form" class="mt-5 space-y-4">
+            <div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto_auto_auto]">
+              <label for="endpoint-input" class="sr-only" id="endpoint-label"></label>
+              <input
+                id="endpoint-input"
+                class="input-field mono"
+                type="text"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="http://localhost:4141/usage"
+              />
+              <button id="fetch-button" type="submit" class="btn btn-primary">
+                <span class="inline-icon h-4 w-4" aria-hidden="true" id="refresh-icon"></span>
+                <span id="fetch-button-text"></span>
+              </button>
+              <button id="reset-button" type="button" class="btn btn-secondary">
+                <span class="inline-icon h-4 w-4" aria-hidden="true" id="reset-icon"></span>
+                <span id="reset-button-text"></span>
+              </button>
+              <button id="export-button" type="button" class="btn btn-secondary">
+                <span class="inline-icon h-4 w-4" aria-hidden="true" id="export-icon"></span>
+                <span id="export-button-text"></span>
+              </button>
+            </div>
+            <div class="flex flex-col gap-2 text-sm text-[var(--muted)] sm:flex-row sm:items-center sm:justify-between">
+              <p id="endpoint-hint"></p>
+              <p class="mono text-xs sm:text-sm" id="endpoint-current"></p>
+            </div>
+          </form>
+        </section>
+
+        <section aria-labelledby="overview-title" class="space-y-4">
+          <div class="flex items-center justify-between">
+            <h2 id="overview-title" class="text-xl font-bold tracking-tight text-[var(--text)]"></h2>
+            <p class="text-sm text-[var(--muted)]" id="overview-caption"></p>
+          </div>
+          <div id="overview-grid" class="grid gap-4 md:grid-cols-2 xl:grid-cols-4"></div>
+        </section>
+
+        <div id="status-banner" aria-live="polite"></div>
+
+        <main id="content-area" class="space-y-5" aria-live="polite"></main>
+
+        <footer class="pb-3 text-center text-xs leading-6 text-[var(--muted)] sm:text-sm" id="footer-note"></footer>
       </div>
     </div>
 
     <script>
       document.addEventListener("DOMContentLoaded", () => {
-        const endpointForm = document.getElementById("endpoint-form");
-        const endpointUrlInput = document.getElementById("endpoint-url");
-        const contentArea = document.getElementById("content-area");
-        const fetchButton = document.getElementById("fetch-button");
-        const langToggle = document.getElementById("lang-toggle");
-
-        // --- i18n ---
-        const i18n = {
-          en: {
-            title: "API Usage Dashboard",
-            subtitle: "Supports Copilot, Antigravity, and Zen modes",
-            langBtn: "中文",
-            endpointLabel: "API Endpoint URL",
-            fetch: "Fetch",
-            usageQuotas: "Usage Quotas",
-            antigravityQuotas: "Antigravity Model Quotas",
-            noQuotaInfo: "No quota information available. Models may be using fallback data.",
-            nextReset: "Next reset",
-            geminiModels: "Gemini Models",
-            claudeModels: "Claude Models",
-            otherModels: "Other Models",
-            used: "Used",
-            remaining: "remaining",
-            unlimited: "Unlimited",
-            detailedInfo: "Detailed Information",
-            welcome: "Welcome!",
-            welcomeMsg: 'Enter an API endpoint URL and click "Fetch" to see usage data.',
-            errorTitle: "An Error Occurred",
-            emptyUrl: "Endpoint URL cannot be empty.",
-            zenMode: "OpenCode Zen Mode",
-            zenFallback: "Usage statistics not available for Zen mode.",
-            zenDashboard: "View Usage Dashboard",
-            vibeCoded: "Vibe coded by",
-            basedOn: "Based on",
-            // Detail keys - no translation needed for English
-            detailKeys: {},
-          },
-          zh: {
-            title: "API 用量仪表盘",
-            subtitle: "支持 Copilot、Antigravity 和 Zen 模式",
-            langBtn: "EN",
-            endpointLabel: "API 端点 URL",
-            fetch: "获取",
-            usageQuotas: "用量配额",
-            antigravityQuotas: "Antigravity 模型配额",
-            noQuotaInfo: "暂无配额信息，模型可能使用了回退数据。",
-            nextReset: "下次重置",
-            geminiModels: "Gemini 模型",
-            claudeModels: "Claude 模型",
-            otherModels: "其他模型",
-            used: "已用",
-            remaining: "剩余",
-            unlimited: "无限制",
-            detailedInfo: "详细信息",
-            welcome: "欢迎！",
-            welcomeMsg: '输入 API 端点 URL 并点击"获取"查看用量数据。',
-            errorTitle: "发生错误",
-            emptyUrl: "端点 URL 不能为空。",
-            zenMode: "OpenCode Zen 模式",
-            zenFallback: "Zen 模式暂不支持用量统计。",
-            zenDashboard: "查看用量面板",
-            vibeCoded: "由以下工具辅助开发：",
-            basedOn: "基于",
-            detailKeys: {
-              login: "登录名",
-              access_type_sku: "访问类型",
-              analytics_tracking_id: "分析追踪 ID",
-              assigned_date: "分配日期",
-              can_signup_for_limited: "可注册受限版",
-              chat_enabled: "聊天已启用",
-              copilotignore_enabled: "Copilot 忽略已启用",
-              copilot_plan: "Copilot 计划",
-              is_mcp_enabled: "MCP 已启用",
-              organization_login_list: "组织登录列表",
-              organization_list: "组织列表",
-              restricted_telemetry: "受限遥测",
-              endpoints: "端点",
-              api: "API",
-              proxy: "代理",
-              telemetry: "遥测",
-              "origin-tracker": "来源追踪",
-              quota_reset_date: "配额重置日期",
-              quota_reset_date_utc: "配额重置日期 (UTC)",
-              quota_snapshots: "配额快照",
-              chat: "聊天",
-              completions: "代码补全",
-              premium_interactions: "高级交互",
-              entitlement: "配额上限",
-              overage_count: "超额次数",
-              overage_permitted: "允许超额",
-              percent_remaining: "剩余百分比",
-              quota_id: "配额 ID",
-              quota_remaining: "配额剩余",
-              remaining: "剩余",
-              unlimited: "无限制",
-              timestamp_utc: "时间戳 (UTC)",
-              models: "模型",
-              percent_used: "已用百分比",
-              remaining_fraction: "剩余比例",
-              reset_time: "重置时间",
-              quota_limit: "配额限制",
-            },
-          },
-        };
-
-        let currentLang = localStorage.getItem("lang") || "en";
-
-        function t(key) {
-          return i18n[currentLang][key] || i18n.en[key] || key;
-        }
-
-        function updateStaticTexts() {
-          document.getElementById("header-title").textContent = t("title");
-          document.getElementById("header-subtitle").textContent = t("subtitle");
-          langToggle.textContent = t("langBtn");
-          document.getElementById("endpoint-label").textContent = t("endpointLabel");
-          document.getElementById("fetch-text").textContent = t("fetch");
-          document.getElementById("footer-vibe").textContent = t("vibeCoded");
-          document.getElementById("footer-based").textContent = t("basedOn");
-          document.title = `${t("title")} - Copilot / Antigravity / Zen`;
-        }
-
-        langToggle.addEventListener("click", () => {
-          currentLang = currentLang === "en" ? "zh" : "en";
-          localStorage.setItem("lang", currentLang);
-          updateStaticTexts();
-          render();
-        });
-
-        // Apply hover effect for fetch button via JS
-        fetchButton.addEventListener("mouseenter", () => {
-          fetchButton.style.backgroundColor = "var(--color-blue-accent)";
-        });
-        fetchButton.addEventListener("mouseleave", () => {
-          fetchButton.style.backgroundColor = "var(--color-blue)";
-        });
-
         const DEFAULT_ENDPOINT = "http://localhost:4141/usage";
+        const DEFAULT_REFRESH_PRESET = "60";
+        const MIN_CUSTOM_REFRESH_SECONDS = 5;
 
-        // --- State Management ---
-        const state = {
-          isLoading: false,
-          error: null,
-          data: null,
+        const ICONS = {
+          dashboard:
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13.2a9 9 0 1 1 18 0"/><path d="M12 13l4.2-4.2"/><path d="M7.5 16.5h9"/></svg>',
+          link:
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 1 0-7l1.5-1.5a5 5 0 1 1 7 7L17 13"/><path d="M14 11a5 5 0 0 1 0 7L12.5 19.5a5 5 0 0 1-7-7L7 11"/></svg>',
+          refresh:
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-15.3 6.36"/><path d="M3 12A9 9 0 0 1 18.3 5.64"/><path d="M3 17v-4h4"/><path d="M17 3h4v4"/></svg>',
+          reset:
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 6h10"/><path d="M6 6h.01"/><path d="M6 12h.01"/><path d="M6 18h.01"/><path d="M10 12h10"/><path d="M10 18h10"/></svg>',
+          export:
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v10"/><path d="m8.5 10.5 3.5 3.5 3.5-3.5"/><path d="M5 16.5v1a2.5 2.5 0 0 0 2.5 2.5h9A2.5 2.5 0 0 0 19 17.5v-1"/></svg>',
+          status:
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h4l2.2-5 3.6 10L16 12h4"/></svg>',
+          mode:
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/></svg>',
+          clock:
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5v5l3 1.8"/></svg>',
+          auto:
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 0 1 13.7-5.66"/><path d="M20 4v5h-5"/><path d="M20 12a8 8 0 0 1-13.7 5.66"/><path d="M4 20v-5h5"/></svg>',
+          chart:
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19h16"/><path d="M7 16V8"/><path d="M12 16V5"/><path d="M17 16v-4"/></svg>',
+          spark:
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 4.9L19 9.7l-4.1 2.5 1.3 4.8L12 14.2 7.8 17l1.3-4.8L5 9.7l5.2-1.8L12 3Z"/></svg>',
+          claude:
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7.5h10"/><path d="M7 12h10"/><path d="M7 16.5h6"/><rect x="4" y="4" width="16" height="16" rx="3"/></svg>',
+          other:
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4.5 7.2v9.6L12 21l7.5-4.2V7.2L12 3Z"/><path d="M12 12 4.5 7.2"/><path d="M12 12l7.5-4.8"/><path d="M12 12v9"/></svg>',
+          info:
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 10v5"/><path d="M12 7.5h.01"/></svg>',
+          warning:
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4 3.5 19h17L12 4Z"/><path d="M12 9.5v4.5"/><path d="M12 17h.01"/></svg>',
+          data:
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v6c0 1.66 3.13 3 7 3s7-1.34 7-3V6"/><path d="M5 12v6c0 1.66 3.13 3 7 3s7-1.34 7-3v-6"/></svg>',
+          chevron:
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>',
+          external:
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 5h5v5"/><path d="M10 14 19 5"/><path d="M19 13v4a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h4"/></svg>',
+          terminal:
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m6 8 4 4-4 4"/><path d="M13 16h5"/><rect x="3" y="4" width="18" height="16" rx="2"/></svg>',
         };
 
-        // --- Rendering Logic ---
+        const I18N = {
+          zh: {
+            title: "Copilot API 用量仪表盘",
+            eyebrow: "实时状态面板",
+            subtitle:
+              "默认连接本地 /usage 接口，自动识别 Copilot、Antigravity、Zen 三种模式，把关键状态、配额和诊断信息放到同一页里。",
+            heroTags: ["中文优先", "自动刷新间隔可配置", "高级信息默认折叠"],
+            quickTipTitle: "怎么用更快",
+            quickTipBody: "直接启动服务后保持默认地址即可。若端口不同，改成完整的 /usage URL 再刷新。",
+            modeChipLabel: "等待连接",
+            connectionTitle: "当前连接目标",
+            connectionSubtitle:
+              "这里填写完整的 /usage 地址。页面加载时会优先使用 URL 里提供的端点，没有时再请求默认端点，后续也可手动切换到别的实例。",
+            endpointLabel: "用量接口地址",
+            endpointHint: "建议填写完整 URL，例如 http://localhost:4141/usage。服务端已开启 CORS，可直接从静态页请求。",
+            endpointCurrent: "当前目标",
+            fetch: "立即刷新",
+            reset: "恢复默认",
+            exportConfig: "复制环境配置",
+            exportCopied: "配置已复制",
+            exportPrompted: "手动复制配置",
+            exportManualCopy: "未能自动复制，请手动复制这段环境配置：",
+            overviewTitle: "顶部概览",
+            overviewCaption: "先看状态，再看配额细节",
+            footer: "此页面只读取你填写的接口响应，不会把原始响应上传到其他服务。",
+            statusCardTitle: "连接状态",
+            statusConnecting: "连接中",
+            statusConnected: "已连接",
+            statusFailed: "请求失败",
+            statusIdle: "待连接",
+            statusCardHelp: "用于快速判断本地服务是否可达。",
+            modeCardTitle: "当前模式",
+            modeCardHelp: "根据 /usage 返回结构自动识别。",
+            modeUnknown: "未识别",
+            lastUpdatedTitle: "上次更新时间",
+            lastUpdatedHelp: "只有成功返回后才会更新。",
+            neverUpdated: "尚未更新",
+            autoRefreshTitle: "自动刷新",
+            autoRefreshHelp: "默认关闭；只有 URL 参数显式提供 autoRefresh 时才会恢复。打开后会按当前所选间隔自动刷新。当前为 {interval}。",
+            autoRefreshOn: "已开启",
+            autoRefreshOff: "已关闭",
+            autoRefreshSelection: "当前间隔 {interval}",
+            autoRefreshPresetLabel: "刷新间隔",
+            autoRefreshPreset30: "30 秒",
+            autoRefreshPreset60: "60 秒",
+            autoRefreshPreset120: "120 秒",
+            autoRefreshPresetCustom: "自定义",
+            autoRefreshCustomLabel: "自定义秒数",
+            autoRefreshCustomPlaceholder: "至少 {min} 秒",
+            loadingBannerTitle: "正在刷新数据",
+            loadingBannerBody: "如果已有旧数据，会保留当前视图，刷新完成后再更新。",
+            errorBannerTitle: "连接失败",
+            errorBannerBody: "保留最近一次成功数据。你可以检查服务是否启动、端口是否正确，或稍后重试。",
+            retry: "重试",
+            emptyTitle: "正在连接本地服务",
+            emptyBody: "页面已自动请求默认端点。如果你看到这里停留很久，检查本地服务是否运行在 4141 端口。",
+            emptyAction: "再次尝试默认端点",
+            loadingTitle: "正在获取最新用量",
+            loadingBody: "请稍候，正在请求接口并解析当前模式。",
+            copilotSectionTitle: "Copilot 配额",
+            copilotSectionBody: "展示聊天、代码补全和高级交互三类额度，帮助你快速判断剩余可用量。",
+            quotaReset: "下次重置",
+            usageUsed: "已用",
+            usageRemaining: "剩余",
+            usageLimit: "总额度",
+            unlimited: "无限制",
+            overageAllowed: "允许超额",
+            overageCount: "超额次数",
+            quotaChat: "Chat",
+            quotaChatDesc: "对话与聊天调用额度。",
+            quotaCompletions: "Completions",
+            quotaCompletionsDesc: "代码补全相关额度。",
+            quotaPremium: "Premium Interactions",
+            quotaPremiumDesc: "高级模型或高级交互额度。",
+            copilotPlan: "计划类型",
+            accessType: "访问类型",
+            organizationCount: "组织数量",
+            chatEnabled: "聊天能力",
+            enabled: "已启用",
+            disabled: "未启用",
+            antigravitySectionTitle: "Antigravity 模型配额",
+            antigravitySectionBody: "按 Gemini、Claude、Other 三组查看模型剩余额度与重置时间。",
+            antigravityEmptyTitle: "暂未读取到模型配额",
+            antigravityEmptyBody: "当前接口没有返回模型额度，可能正在使用回退模型列表，或配额信息暂不可用。",
+            antigravityTotalModels: "含配额模型数",
+            antigravityGemini: "Gemini",
+            antigravityClaude: "Claude",
+            antigravityOther: "Other",
+            modelReset: "重置时间",
+            modelRemaining: "剩余",
+            modelHealthy: "充足",
+            modelWarning: "偏低",
+            modelCritical: "紧张",
+            zenSectionTitle: "Zen 模式说明",
+            zenSectionBody: "Zen 没有公开的 /usage 统计接口，因此这里展示说明卡，而不是把它当成报错。",
+            zenMessageFallback: "请到 OpenCode 控制台查看实际用量。",
+            zenConsole: "打开 OpenCode 控制台",
+            zenHint: "当前服务仍可正常提供 Zen 相关模型接口，这里只是没有公开配额统计。",
+            advancedTitle: "高级信息 / 原始响应",
+            advancedBody: "默认折叠，减少首屏噪音；需要排查时再展开。",
+            detailsSummary: "高级信息",
+            detailsRaw: "原始响应",
+            responseKeys: "返回字段",
+            endpointField: "接口地址",
+            modeField: "识别模式",
+            responseStatusField: "最近状态",
+            lastUpdatedField: "成功更新时间",
+            resetField: "配额重置",
+            totalModelsField: "模型总数",
+            jsonEmpty: "暂无可展示的响应内容。",
+            requestFailed: "请求失败",
+            requestSuccess: "请求成功",
+            copyForDebug: "适合排查问题时复制原始 JSON。",
+            languageToggle: "EN",
+            modeCopilot: "Copilot",
+            modeAntigravity: "Antigravity",
+            modeZen: "Zen",
+            currentTargetLabel: "当前目标：{endpoint}",
+            invalidEndpoint: "请输入有效的接口地址。",
+            networkErrorFallback: "无法请求接口，请检查本地服务与地址是否正确。",
+            noValue: "--",
+            viewMode: "查看模式",
+          },
+          en: {
+            title: "Copilot API Usage Dashboard",
+            eyebrow: "Live Status Panel",
+            subtitle:
+              "Connect to a local /usage endpoint, detect Copilot, Antigravity, or Zen automatically, and keep the key status, quotas, and diagnostics on one page.",
+            heroTags: ["Chinese-first copy", "Configurable auto refresh", "Advanced data stays collapsed"],
+            quickTipTitle: "Fastest setup",
+            quickTipBody: "If your server runs locally, keep the default address. Change it only when your port or host is different.",
+            modeChipLabel: "Waiting for data",
+            connectionTitle: "Current Target",
+            connectionSubtitle:
+              "Enter the full /usage URL here. On load, the page uses the endpoint from the URL first, otherwise it requests the default endpoint, and you can still switch to any other instance later.",
+            endpointLabel: "Usage endpoint URL",
+            endpointHint: "Use a full URL such as http://localhost:4141/usage. The server enables CORS, so a static page can query it directly.",
+            endpointCurrent: "Current target",
+            fetch: "Refresh now",
+            reset: "Use default",
+            exportConfig: "Copy env config",
+            exportCopied: "Config copied",
+            exportPrompted: "Copy config manually",
+            exportManualCopy: "Automatic copy is unavailable. Copy this env config:",
+            overviewTitle: "Top Overview",
+            overviewCaption: "Read the status first, then the quota details",
+            footer: "This page only reads the endpoint you provide. Raw responses are not uploaded anywhere else.",
+            statusCardTitle: "Connection",
+            statusConnecting: "Connecting",
+            statusConnected: "Connected",
+            statusFailed: "Failed",
+            statusIdle: "Idle",
+            statusCardHelp: "Quickly tells you whether the local service is reachable.",
+            modeCardTitle: "Current Mode",
+            modeCardHelp: "Detected from the /usage response shape.",
+            modeUnknown: "Unknown",
+            lastUpdatedTitle: "Last Updated",
+            lastUpdatedHelp: "Updated only after a successful response.",
+            neverUpdated: "Not updated yet",
+            autoRefreshTitle: "Auto Refresh",
+            autoRefreshHelp: "Off by default and only restored when the URL explicitly provides autoRefresh. When enabled, it refreshes on the selected interval. Current setting: {interval}.",
+            autoRefreshOn: "Enabled",
+            autoRefreshOff: "Disabled",
+            autoRefreshSelection: "Selected interval {interval}",
+            autoRefreshPresetLabel: "Refresh interval",
+            autoRefreshPreset30: "30s",
+            autoRefreshPreset60: "60s",
+            autoRefreshPreset120: "120s",
+            autoRefreshPresetCustom: "Custom",
+            autoRefreshCustomLabel: "Custom seconds",
+            autoRefreshCustomPlaceholder: "Min {min}s",
+            loadingBannerTitle: "Refreshing data",
+            loadingBannerBody: "If a previous snapshot exists, it stays visible until the new request finishes.",
+            errorBannerTitle: "Connection failed",
+            errorBannerBody: "Keeping the last successful snapshot. Check whether the server is running, the port is right, or retry in a moment.",
+            retry: "Retry",
+            emptyTitle: "Connecting to local service",
+            emptyBody: "The page already tried the default endpoint. If this stays visible, check whether the service is listening on port 4141.",
+            emptyAction: "Try default endpoint again",
+            loadingTitle: "Fetching latest usage",
+            loadingBody: "Please wait while the endpoint responds and the mode is identified.",
+            copilotSectionTitle: "Copilot Quotas",
+            copilotSectionBody: "Shows chat, completions, and premium interaction quotas so you can see what remains at a glance.",
+            quotaReset: "Next reset",
+            usageUsed: "Used",
+            usageRemaining: "Remaining",
+            usageLimit: "Limit",
+            unlimited: "Unlimited",
+            overageAllowed: "Overage allowed",
+            overageCount: "Overage count",
+            quotaChat: "Chat",
+            quotaChatDesc: "Quota for chat-style requests.",
+            quotaCompletions: "Completions",
+            quotaCompletionsDesc: "Quota for code completion traffic.",
+            quotaPremium: "Premium Interactions",
+            quotaPremiumDesc: "Quota for premium interactions or higher-tier models.",
+            copilotPlan: "Plan",
+            accessType: "Access type",
+            organizationCount: "Organizations",
+            chatEnabled: "Chat enabled",
+            enabled: "Enabled",
+            disabled: "Disabled",
+            antigravitySectionTitle: "Antigravity Model Quotas",
+            antigravitySectionBody: "Browse model quotas by Gemini, Claude, and Other groups, including remaining percentage and reset time.",
+            antigravityEmptyTitle: "No model quota data yet",
+            antigravityEmptyBody: "The endpoint did not return model quota information. It may be using fallback models or quota metadata may be unavailable.",
+            antigravityTotalModels: "Models with quota",
+            antigravityGemini: "Gemini",
+            antigravityClaude: "Claude",
+            antigravityOther: "Other",
+            modelReset: "Reset",
+            modelRemaining: "Remaining",
+            modelHealthy: "Healthy",
+            modelWarning: "Low",
+            modelCritical: "Critical",
+            zenSectionTitle: "Zen Mode Note",
+            zenSectionBody: "Zen does not expose a public /usage API, so this view shows an explanation card instead of treating it like an error.",
+            zenMessageFallback: "OpenCode console is the place to check actual usage.",
+            zenConsole: "Open OpenCode console",
+            zenHint: "The service can still expose Zen model APIs normally; only public usage metrics are unavailable here.",
+            advancedTitle: "Advanced Info / Raw Response",
+            advancedBody: "Collapsed by default to reduce noise. Expand it only when you need to inspect the payload.",
+            detailsSummary: "Advanced info",
+            detailsRaw: "Raw response",
+            responseKeys: "Response keys",
+            endpointField: "Endpoint",
+            modeField: "Detected mode",
+            responseStatusField: "Latest status",
+            lastUpdatedField: "Successful update",
+            resetField: "Quota reset",
+            totalModelsField: "Model count",
+            jsonEmpty: "No response payload to show yet.",
+            requestFailed: "Request failed",
+            requestSuccess: "Request succeeded",
+            copyForDebug: "Useful when you need the raw JSON for debugging.",
+            languageToggle: "中文",
+            modeCopilot: "Copilot",
+            modeAntigravity: "Antigravity",
+            modeZen: "Zen",
+            currentTargetLabel: "Current target: {endpoint}",
+            invalidEndpoint: "Please enter a valid endpoint URL.",
+            networkErrorFallback: "Unable to reach the endpoint. Check the local server and the URL.",
+            noValue: "--",
+            viewMode: "View mode",
+          },
+        };
 
-        /**
-         * Safely calls lucide.createIcons() if the library is available.
-         */
-        function createIcons() {
-          if (typeof lucide !== "undefined") {
-            lucide.createIcons();
+        const modeLabels = {
+          copilot: () => text("modeCopilot"),
+          antigravity: () => text("modeAntigravity"),
+          zen: () => text("modeZen"),
+          unknown: () => text("modeUnknown"),
+        };
+
+        const quotaMeta = {
+          chat: {
+            titleKey: "quotaChat",
+            descriptionKey: "quotaChatDesc",
+            tone: "brand",
+          },
+          completions: {
+            titleKey: "quotaCompletions",
+            descriptionKey: "quotaCompletionsDesc",
+            tone: "success",
+          },
+          premium_interactions: {
+            titleKey: "quotaPremium",
+            descriptionKey: "quotaPremiumDesc",
+            tone: "warning",
+          },
+        };
+
+        const STORAGE_KEYS = {
+          language: "dashboard-language",
+          autoRefresh: "dashboard-auto-refresh",
+          refreshPreset: "dashboard-refresh-preset",
+          customRefreshSeconds: "dashboard-refresh-custom-seconds",
+        };
+
+        const REFRESH_PRESETS = ["30", "60", "120", "custom"];
+
+        function readStoredValue(key, fallback = "") {
+          try {
+            const value = localStorage.getItem(key);
+            return value === null ? fallback : value;
+          } catch {
+            return fallback;
           }
         }
 
-        /**
-         * Detects the mode based on the API response data.
-         * @param {object} data - The API response data.
-         * @returns {string} 'copilot', 'antigravity', or 'zen'
-         */
-        function detectMode(data) {
-          if (data.mode === 'zen') return 'zen';
-          if (data.copilot_plan === 'antigravity') return 'antigravity';
-          return 'copilot';
+        function readStoredNumber(key, fallback) {
+          const value = Number(readStoredValue(key, String(fallback)));
+          return Number.isFinite(value) ? value : fallback;
         }
 
-        /**
-         * Renders the entire UI based on the current state.
-         */
-        function render() {
-          if (state.isLoading) {
-            contentArea.innerHTML = renderSpinner();
-            return;
-          }
-          if (state.error) {
-            contentArea.innerHTML = renderError(state.error);
-          } else if (state.data) {
-            const mode = detectMode(state.data);
+        function getValidLanguage(value) {
+          return value === "en" ? "en" : "zh";
+        }
 
-            if (mode === 'zen') {
-              // Zen mode - show info message
-              contentArea.innerHTML = renderZenInfo(state.data);
-            } else if (mode === 'antigravity') {
-              // Antigravity mode - show model quotas
-              contentArea.innerHTML = `
-                        ${renderAntigravityQuotas(state.data)}
-                        ${renderDetailedData(state.data)}
-                    `;
-            } else {
-              // Copilot mode - original behavior
-              contentArea.innerHTML = `
-                        ${renderUsageQuotas(state.data.quota_snapshots)}
-                        ${renderDetailedData(state.data)}
-                    `;
+        function getValidRefreshPreset(value) {
+          return REFRESH_PRESETS.includes(value) ? value : DEFAULT_REFRESH_PRESET;
+        }
+
+        function readQueryParams() {
+          try {
+            return new URLSearchParams(window.location.search);
+          } catch {
+            return null;
+          }
+        }
+
+        function readQueryValue(params, key) {
+          if (!params) return null;
+          const value = params.get(key);
+          return value === null ? null : value.trim();
+        }
+
+        function readQueryBoolean(params, key) {
+          const value = readQueryValue(params, key);
+          if (value === null) return null;
+          const normalized = value.toLowerCase();
+          if (["1", "true", "yes", "on"].includes(normalized)) return true;
+          if (["0", "false", "no", "off"].includes(normalized)) return false;
+          return null;
+        }
+
+        const queryParams = readQueryParams();
+        const queryLanguage = (() => {
+          const value = readQueryValue(queryParams, "lang");
+          return value === "zh" || value === "en" ? value : null;
+        })();
+        const queryEndpoint = (() => {
+          const value = readQueryValue(queryParams, "endpoint");
+          return value ? getNormalizedEndpoint(value) : "";
+        })();
+        const queryRefreshPreset = (() => {
+          const value = readQueryValue(queryParams, "refreshPreset");
+          return value !== null && REFRESH_PRESETS.includes(value) ? value : null;
+        })();
+        const queryCustomRefreshSeconds = (() => {
+          const value = readQueryValue(queryParams, "customRefreshSeconds");
+          if (value === null || value === "") return null;
+          const parsed = Number(value);
+          return Number.isFinite(parsed) ? clampCustomRefreshSeconds(parsed) : null;
+        })();
+        const queryAutoRefresh = readQueryBoolean(queryParams, "autoRefresh");
+
+        const state = {
+          language: getValidLanguage(queryLanguage || readStoredValue(STORAGE_KEYS.language, "zh")),
+          endpoint: queryEndpoint || DEFAULT_ENDPOINT,
+          status: "idle",
+          data: null,
+          error: null,
+          lastUpdated: null,
+          autoRefresh: queryAutoRefresh === null ? false : queryAutoRefresh,
+          refreshIntervalPreset:
+            queryRefreshPreset ||
+            getValidRefreshPreset(readStoredValue(STORAGE_KEYS.refreshPreset, DEFAULT_REFRESH_PRESET)),
+          customRefreshSeconds:
+            queryCustomRefreshSeconds ??
+            clampCustomRefreshSeconds(readStoredNumber(STORAGE_KEYS.customRefreshSeconds, 60)),
+          activeDetailsTab: "summary",
+          detailsOpen: false,
+        };
+
+        let autoRefreshTimer = null;
+        let exportFeedbackTimer = null;
+        let activeRequestController = null;
+        let latestRequestId = 0;
+
+        const refs = {
+          pageTitle: document.getElementById("page-title"),
+          eyebrowText: document.getElementById("eyebrow-text"),
+          pageSubtitle: document.getElementById("page-subtitle"),
+          heroTags: document.getElementById("hero-tags"),
+          quickTipTitle: document.getElementById("quick-tip-title"),
+          quickTipBody: document.getElementById("quick-tip-body"),
+          modeChip: document.getElementById("mode-chip"),
+          langToggle: document.getElementById("lang-toggle"),
+          connectionTitle: document.getElementById("connection-title"),
+          connectionSubtitle: document.getElementById("connection-subtitle"),
+          connectionChips: document.getElementById("connection-chips"),
+          endpointForm: document.getElementById("endpoint-form"),
+          endpointInput: document.getElementById("endpoint-input"),
+          endpointLabel: document.getElementById("endpoint-label"),
+          endpointHint: document.getElementById("endpoint-hint"),
+          endpointCurrent: document.getElementById("endpoint-current"),
+          fetchButtonText: document.getElementById("fetch-button-text"),
+          resetButton: document.getElementById("reset-button"),
+          resetButtonText: document.getElementById("reset-button-text"),
+          overviewTitle: document.getElementById("overview-title"),
+          overviewCaption: document.getElementById("overview-caption"),
+          overviewGrid: document.getElementById("overview-grid"),
+          statusBanner: document.getElementById("status-banner"),
+          contentArea: document.getElementById("content-area"),
+          footerNote: document.getElementById("footer-note"),
+          badgeIcon: document.getElementById("badge-icon"),
+          connectionIcon: document.getElementById("connection-icon"),
+          refreshIcon: document.getElementById("refresh-icon"),
+          resetIcon: document.getElementById("reset-icon"),
+          exportIcon: document.getElementById("export-icon"),
+          exportButton: document.getElementById("export-button"),
+          exportButtonText: document.getElementById("export-button-text"),
+        };
+
+        function text(key, replacements = {}) {
+          const dictionary = I18N[state.language] || I18N.zh;
+          const template = dictionary[key] || I18N.en[key] || key;
+          return Object.entries(replacements).reduce(
+            (value, [token, replacement]) => value.replaceAll(`{${token}}`, replacement),
+            template,
+          );
+        }
+
+        function icon(name, className = "h-4 w-4") {
+          return `<span class="inline-icon ${className}" aria-hidden="true">${ICONS[name] || ""}</span>`;
+        }
+
+        function escapeHtml(value) {
+          return String(value)
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll('"', "&quot;")
+            .replaceAll("'", "&#39;");
+        }
+
+        function formatDateTime(value) {
+          if (!value) return text("neverUpdated");
+          const date = new Date(value);
+          if (Number.isNaN(date.getTime())) return String(value);
+          return new Intl.DateTimeFormat(state.language === "zh" ? "zh-CN" : "en-US", {
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+          }).format(date);
+        }
+
+        function formatNumber(value) {
+          if (value === null || value === undefined || Number.isNaN(Number(value))) {
+            return text("noValue");
+          }
+          return new Intl.NumberFormat(state.language === "zh" ? "zh-CN" : "en-US").format(
+            Number(value),
+          );
+        }
+
+        function formatPercent(value) {
+          if (value === null || value === undefined || Number.isNaN(Number(value))) {
+            return text("noValue");
+          }
+          return `${Math.round(Number(value))}%`;
+        }
+
+        function getMode(data) {
+          if (!data || typeof data !== "object") return "unknown";
+          if (data.mode === "zen") return "zen";
+          if (data.copilot_plan === "antigravity" || data.quota_snapshots?.models) {
+            return "antigravity";
+          }
+          if (data.quota_snapshots) return "copilot";
+          return "unknown";
+        }
+
+        function getModeLabel(mode) {
+          return (modeLabels[mode] || modeLabels.unknown)();
+        }
+
+        function getConnectionState() {
+          if (state.status === "loading") {
+            return {
+              label: text("statusConnecting"),
+              dotClass: "status-loading",
+              pillClass: "pill-warning",
+            };
+          }
+          if (state.status === "success") {
+            return {
+              label: text("statusConnected"),
+              dotClass: "status-success",
+              pillClass: "pill-success",
+            };
+          }
+          if (state.status === "error") {
+            return {
+              label: text("statusFailed"),
+              dotClass: "status-error",
+              pillClass: "pill-danger",
+            };
+          }
+          return {
+            label: text("statusIdle"),
+            dotClass: "status-idle",
+            pillClass: "pill-neutral",
+          };
+        }
+
+        function getProgressTone(percentUsed, unlimited = false) {
+          if (unlimited) return "progress-fill-brand";
+          if (percentUsed >= 90) return "progress-fill-danger";
+          if (percentUsed >= 75) return "progress-fill-warning";
+          if (percentUsed >= 45) return "progress-fill-brand";
+          return "progress-fill-success";
+        }
+
+        function getHealthLabel(percentRemaining) {
+          const number = Number(percentRemaining);
+          if (number <= 15) return { text: text("modelCritical"), className: "pill-danger" };
+          if (number <= 40) return { text: text("modelWarning"), className: "pill-warning" };
+          return { text: text("modelHealthy"), className: "pill-success" };
+        }
+
+        function getNormalizedEndpoint(value) {
+          const trimmed = value.trim();
+          if (!trimmed) return "";
+          try {
+            return new URL(trimmed).toString();
+          } catch {
+            return "";
+          }
+        }
+
+        function updateUrl(endpoint) {
+          try {
+            const url = new URL(window.location.href);
+            url.searchParams.set("endpoint", endpoint);
+            window.history.replaceState({}, "", url);
+          } catch (error) {
+            console.warn("Failed to update URL", error);
+          }
+        }
+
+        function getExportBaseUrl(endpoint) {
+          const normalized = getNormalizedEndpoint(endpoint);
+          if (!normalized) return "";
+
+          try {
+            const url = new URL(normalized);
+            const pathname = url.pathname.replace(/\/usage\/?$/, "");
+            return `${url.origin}${pathname === "/" ? "" : pathname}`;
+          } catch {
+            return normalized.replace(/[?#].*$/, "").replace(/\/usage\/?$/, "");
+          }
+        }
+
+        function buildExportConfigJson() {
+          const baseUrl = getExportBaseUrl(state.endpoint) || state.endpoint;
+          return JSON.stringify(
+            {
+              env: {
+                ANTHROPIC_BASE_URL: baseUrl,
+                ANTHROPIC_AUTH_TOKEN: "dummy",
+                ANTHROPIC_MODEL: "claude-sonnet-4",
+                ANTHROPIC_SMALL_FAST_MODEL: "gpt-4.1",
+                DISABLE_NON_ESSENTIAL_MODEL_CALLS: "1",
+              },
+            },
+            null,
+            2,
+          );
+        }
+
+        function copyTextWithExecCommand(value) {
+          const textArea = document.createElement("textarea");
+          textArea.value = value;
+          textArea.setAttribute("readonly", "readonly");
+          textArea.style.position = "fixed";
+          textArea.style.opacity = "0";
+          document.body.appendChild(textArea);
+          textArea.focus();
+          textArea.select();
+          textArea.setSelectionRange(0, textArea.value.length);
+
+          try {
+            return document.execCommand("copy");
+          } catch {
+            return false;
+          } finally {
+            textArea.remove();
+          }
+        }
+
+        async function copyTextToClipboard(value) {
+          if (navigator.clipboard?.writeText) {
+            try {
+              await navigator.clipboard.writeText(value);
+              return true;
+            } catch (error) {
+              console.warn("Failed to copy with navigator.clipboard", error);
             }
-          } else {
-            contentArea.innerHTML = renderWelcomeMessage();
           }
-          // Replace placeholder icons with actual Lucide icons
-          createIcons();
+          return copyTextWithExecCommand(value);
         }
 
-        /**
-         * Renders Zen mode info message.
-         * @param {object} data - The API response data.
-         * @returns {string} HTML string for the Zen info message.
-         */
-        function renderZenInfo(data) {
-          return `
-            <div class="text-center py-16 px-4 border" style="background-color: var(--color-bg-soft); border-color: var(--color-bg-light-2);">
-                <i data-lucide="info" class="mx-auto h-10 w-10" style="color: var(--color-purple-accent);"></i>
-                <h3 class="mt-2 text-lg font-semibold" style="color: var(--color-fg-lightest);">${t("zenMode")}</h3>
-                <p class="mt-1 text-sm" style="color: var(--color-gray);">${data.message || t("zenFallback")}</p>
-                <a href="https://console.opencode.ai" target="_blank" rel="noopener noreferrer"
-                   class="inline-block mt-4 px-4 py-2 font-semibold transition-colors"
-                   style="background-color: var(--color-purple); color: var(--color-bg-darkest);">
-                   ${t("zenDashboard")}
-                </a>
-            </div>
-          `;
+        function setExportFeedback(labelKey) {
+          refs.exportButtonText.textContent = text(labelKey);
+          if (exportFeedbackTimer) {
+            window.clearTimeout(exportFeedbackTimer);
+          }
+          exportFeedbackTimer = window.setTimeout(() => {
+            refs.exportButtonText.textContent = text("exportConfig");
+            exportFeedbackTimer = null;
+          }, 1800);
         }
 
-        /**
-         * Renders Antigravity model quotas.
-         * @param {object} data - The API response data.
-         * @returns {string} HTML string for Antigravity quotas.
-         */
-        function renderAntigravityQuotas(data) {
-          const models = data.quota_snapshots?.models || {};
-          const resetDate = data.quota_reset_date;
+        function clampCustomRefreshSeconds(value) {
+          const parsed = Number(value);
+          if (!Number.isFinite(parsed)) return 60;
+          return Math.max(MIN_CUSTOM_REFRESH_SECONDS, Math.round(parsed));
+        }
 
-          if (Object.keys(models).length === 0) {
-            return `
-              <section id="usage-quotas" class="mb-6">
-                <h2 class="text-xl font-bold mb-3 flex items-center gap-2" style="color: var(--color-fg-lightest);">
-                    <i data-lucide="bar-chart-big"></i> ${t("antigravityQuotas")}
-                </h2>
-                <div class="p-4 border text-center" style="background-color: var(--color-bg-soft); border-color: var(--color-bg-light-2);">
-                    <p style="color: var(--color-gray);">${t("noQuotaInfo")}</p>
+        function getRefreshIntervalSeconds() {
+          if (state.refreshIntervalPreset === "custom") {
+            return clampCustomRefreshSeconds(state.customRefreshSeconds);
+          }
+          const presetValue = Number(state.refreshIntervalPreset);
+          return Number.isFinite(presetValue) ? presetValue : Number(DEFAULT_REFRESH_PRESET);
+        }
+
+        function getRefreshIntervalLabel(seconds = getRefreshIntervalSeconds()) {
+          return state.language === "zh" ? `${seconds} 秒` : `${seconds}s`;
+        }
+
+        function persistPreferences() {
+          try {
+            localStorage.setItem(STORAGE_KEYS.language, state.language);
+            localStorage.setItem(STORAGE_KEYS.autoRefresh, String(Boolean(state.autoRefresh)));
+            localStorage.setItem(STORAGE_KEYS.refreshPreset, state.refreshIntervalPreset);
+            localStorage.setItem(
+              STORAGE_KEYS.customRefreshSeconds,
+              String(clampCustomRefreshSeconds(state.customRefreshSeconds)),
+            );
+          } catch (error) {
+            console.warn("Failed to persist dashboard preferences", error);
+          }
+        }
+
+        function syncAutoRefresh() {
+          if (autoRefreshTimer) {
+            window.clearInterval(autoRefreshTimer);
+            autoRefreshTimer = null;
+          }
+          if (!state.autoRefresh) return;
+          autoRefreshTimer = window.setInterval(() => {
+            fetchData({ preserveContent: true, endpointOverride: state.endpoint });
+          }, getRefreshIntervalSeconds() * 1000);
+        }
+
+        function setEndpoint(endpoint) {
+          state.endpoint = endpoint;
+          refs.endpointInput.value = endpoint;
+          refs.endpointCurrent.textContent = text("currentTargetLabel", { endpoint });
+        }
+
+        function cancelActiveRequest() {
+          latestRequestId += 1;
+          if (activeRequestController) {
+            activeRequestController.abort();
+            activeRequestController = null;
+          }
+        }
+
+        function renderStaticTexts() {
+          document.documentElement.lang = state.language === "zh" ? "zh-CN" : "en";
+          document.title = text("title");
+          refs.badgeIcon.innerHTML = ICONS.dashboard;
+          refs.connectionIcon.innerHTML = ICONS.link;
+          refs.refreshIcon.innerHTML = ICONS.refresh;
+          refs.resetIcon.innerHTML = ICONS.reset;
+          refs.exportIcon.innerHTML = ICONS.export;
+          refs.eyebrowText.textContent = text("eyebrow");
+          refs.pageTitle.textContent = text("title");
+          refs.pageSubtitle.textContent = text("subtitle");
+          refs.quickTipTitle.textContent = text("quickTipTitle");
+          refs.quickTipBody.textContent = text("quickTipBody");
+          refs.connectionTitle.textContent = text("connectionTitle");
+          refs.connectionSubtitle.textContent = text("connectionSubtitle");
+          refs.endpointLabel.textContent = text("endpointLabel");
+          refs.endpointHint.textContent = text("endpointHint");
+          refs.fetchButtonText.textContent = text("fetch");
+          refs.resetButtonText.textContent = text("reset");
+          refs.exportButtonText.textContent = text("exportConfig");
+          refs.overviewTitle.textContent = text("overviewTitle");
+          refs.overviewCaption.textContent = text("overviewCaption");
+          refs.footerNote.textContent = text("footer");
+          refs.langToggle.textContent = text("languageToggle");
+          refs.heroTags.innerHTML = (I18N[state.language].heroTags || []).map((item) => `<span class="pill pill-neutral">${escapeHtml(item)}</span>`).join("");
+          refs.modeChip.textContent = state.data ? getModeLabel(getMode(state.data)) : text("modeChipLabel");
+          refs.connectionChips.innerHTML = [
+            `<span class="pill pill-neutral">${icon("link")}${escapeHtml(text("endpointCurrent"))}</span>`,
+            `<span class="pill pill-brand">${icon("terminal")}${escapeHtml("/usage")}</span>`,
+          ].join("");
+          refs.endpointCurrent.textContent = text("currentTargetLabel", { endpoint: state.endpoint });
+        }
+
+        function renderOverview() {
+          const connectionState = getConnectionState();
+          const mode = getMode(state.data);
+          const cards = [
+            {
+              icon: "status",
+              title: text("statusCardTitle"),
+              value: `<span class="inline-flex items-center gap-3"><span class="status-dot ${connectionState.dotClass}"></span><span>${escapeHtml(connectionState.label)}</span></span>`,
+              helper: text("statusCardHelp"),
+              accent: connectionState.pillClass,
+              extra: `<span class="pill ${connectionState.pillClass}">${icon("link")}${escapeHtml(state.endpoint)}</span>`,
+            },
+            {
+              icon: "mode",
+              title: text("modeCardTitle"),
+              value: escapeHtml(getModeLabel(mode)),
+              helper: text("modeCardHelp"),
+              accent: "pill-brand",
+              extra: `<span class="pill pill-brand">${icon("chart")}${escapeHtml(text("viewMode"))}</span>`,
+            },
+            {
+              icon: "clock",
+              title: text("lastUpdatedTitle"),
+              value: escapeHtml(formatDateTime(state.lastUpdated)),
+              helper: text("lastUpdatedHelp"),
+              accent: "pill-neutral",
+              extra: `<span class="pill pill-neutral mono">${escapeHtml(state.lastUpdated ? formatDateTime(state.lastUpdated) : text("neverUpdated"))}</span>`,
+            },
+            {
+              icon: "auto",
+              title: text("autoRefreshTitle"),
+              value: `
+                <span class="inline-flex flex-wrap items-center gap-2">
+                  <span>${escapeHtml(state.autoRefresh ? text("autoRefreshOn") : text("autoRefreshOff"))}</span>
+                  <span class="pill pill-neutral">${escapeHtml(getRefreshIntervalLabel())}</span>
+                </span>
+              `,
+              helper: text("autoRefreshHelp", { interval: getRefreshIntervalLabel() }),
+              accent: state.autoRefresh ? "pill-success" : "pill-neutral",
+              extra: `
+                <div class="auto-refresh-controls">
+                  <div class="auto-refresh-header">
+                    <label class="switch" for="auto-refresh-toggle">
+                      <input id="auto-refresh-toggle" class="switch-input" type="checkbox" ${state.autoRefresh ? "checked" : ""} />
+                      <span class="switch-track"></span>
+                    </label>
+                    <span class="pill ${state.autoRefresh ? "pill-success" : "pill-neutral"} auto-refresh-summary">${escapeHtml(text("autoRefreshSelection", { interval: getRefreshIntervalLabel() }))}</span>
+                  </div>
+                  <div class="refresh-preset-group">
+                    <span class="helper-text">${escapeHtml(text("autoRefreshPresetLabel"))}</span>
+                    <div class="refresh-preset-grid" role="group" aria-label="${escapeHtml(text("autoRefreshPresetLabel"))}">
+                      ${REFRESH_PRESETS.map((preset) => {
+                        const labelKey = preset === "custom" ? "autoRefreshPresetCustom" : `autoRefreshPreset${preset}`;
+                        return `<button type="button" class="segment-button ${state.refreshIntervalPreset === preset ? "is-active" : ""}" data-refresh-preset="${preset}" aria-pressed="${String(state.refreshIntervalPreset === preset)}">${escapeHtml(text(labelKey))}</button>`;
+                      }).join("")}
+                    </div>
+                  </div>
+                  ${
+                    state.refreshIntervalPreset === "custom"
+                      ? `
+                        <label class="refresh-custom-field" for="custom-refresh-seconds">
+                          <span class="helper-text">${escapeHtml(text("autoRefreshCustomLabel"))}</span>
+                          <input
+                            id="custom-refresh-seconds"
+                            class="input-field mono"
+                            type="number"
+                            inputmode="numeric"
+                            min="${MIN_CUSTOM_REFRESH_SECONDS}"
+                            step="1"
+                            value="${escapeHtml(String(clampCustomRefreshSeconds(state.customRefreshSeconds)))}"
+                            placeholder="${escapeHtml(text("autoRefreshCustomPlaceholder", { min: String(MIN_CUSTOM_REFRESH_SECONDS) }))}"
+                          />
+                        </label>
+                      `
+                      : ""
+                  }
                 </div>
-              </section>
-            `;
+              `,
+            },
+          ];
+
+          refs.overviewGrid.innerHTML = cards
+            .map(
+              (card) => `
+                <article class="dashboard-card metric-card p-5 sm:p-6">
+                  <div class="flex items-start justify-between gap-4">
+                    <div class="section-title text-base text-[var(--text)]">
+                      <span class="section-icon">${ICONS[card.icon]}</span>
+                      <span>${card.title}</span>
+                    </div>
+                    <span class="pill ${card.accent}">${card.icon === "auto" ? icon("auto") : icon(card.icon)} </span>
+                  </div>
+                  <div class="mt-5 text-lg font-bold leading-8 text-[var(--text)] sm:text-xl">${card.value}</div>
+                  <p class="mt-2 text-sm leading-6 text-[var(--muted)]">${card.helper}</p>
+                  <div class="mt-4">${card.extra}</div>
+                </article>
+              `,
+            )
+            .join("");
+
+          const toggle = document.getElementById("auto-refresh-toggle");
+          if (toggle) {
+            toggle.addEventListener("change", (event) => {
+              state.autoRefresh = event.currentTarget.checked;
+              persistPreferences();
+              syncAutoRefresh();
+              renderAll();
+            });
           }
 
-          // Group models by provider
-          const geminiModels = {};
-          const claudeModels = {};
-          const otherModels = {};
-
-          Object.entries(models).forEach(([modelId, quota]) => {
-            if (modelId.startsWith('gemini') || modelId.startsWith('learnlm')) {
-              geminiModels[modelId] = quota;
-            } else if (modelId.startsWith('claude')) {
-              claudeModels[modelId] = quota;
-            } else {
-              otherModels[modelId] = quota;
-            }
+          refs.overviewGrid.querySelectorAll("[data-refresh-preset]").forEach((button) => {
+            button.addEventListener("click", () => {
+              state.refreshIntervalPreset = getValidRefreshPreset(
+                button.getAttribute("data-refresh-preset") || DEFAULT_REFRESH_PRESET,
+              );
+              persistPreferences();
+              syncAutoRefresh();
+              renderAll();
+            });
           });
 
-          const renderModelGroup = (title, icon, models, color) => {
-            if (Object.keys(models).length === 0) return '';
+          const customInput = document.getElementById("custom-refresh-seconds");
+          if (customInput) {
+            const commitCustomRefresh = () => {
+              state.customRefreshSeconds = clampCustomRefreshSeconds(customInput.value);
+              persistPreferences();
+              syncAutoRefresh();
+              renderAll();
+            };
+            customInput.addEventListener("change", commitCustomRefresh);
+            customInput.addEventListener("blur", commitCustomRefresh);
+          }
+        }
 
-            const cards = Object.entries(models)
-              .map(([modelId, quota]) => renderAntigravityCard(modelId, quota))
-              .join('');
-
-            return `
-              <div class="mb-4">
-                <h3 class="text-md font-semibold mb-2 flex items-center gap-2" style="color: ${color};">
-                  <i data-lucide="${icon}" class="h-4 w-4"></i> ${title}
-                </h3>
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                  ${cards}
+        function renderStatusBanner() {
+          if (state.status === "loading") {
+            refs.statusBanner.innerHTML = `
+              <div class="banner banner-info flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div class="flex items-start gap-3">
+                  <span class="section-icon h-10 w-10">${ICONS.refresh}</span>
+                  <div>
+                    <p class="font-bold text-[var(--text)]">${escapeHtml(text("loadingBannerTitle"))}</p>
+                    <p class="mt-1 text-sm leading-6 text-[var(--muted)]">${escapeHtml(text("loadingBannerBody"))}</p>
+                  </div>
                 </div>
+                <div class="loading-bar h-2 w-full rounded-full bg-white/70 sm:max-w-48"></div>
               </div>
             `;
-          };
+            return;
+          }
 
+          if (state.status === "error") {
+            refs.statusBanner.innerHTML = `
+              <div class="banner banner-error flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div class="flex items-start gap-3">
+                  <span class="section-icon h-10 w-10 bg-[var(--danger-soft)] text-[var(--danger)]">${ICONS.warning}</span>
+                  <div>
+                    <p class="font-bold text-[var(--text)]">${escapeHtml(text("errorBannerTitle"))}</p>
+                    <p class="mt-1 text-sm leading-6 text-[var(--muted)]">${escapeHtml(state.error || text("errorBannerBody"))}</p>
+                  </div>
+                </div>
+                <button type="button" data-action="retry" class="btn btn-secondary self-start sm:self-auto">${icon("refresh")}${escapeHtml(text("retry"))}</button>
+              </div>
+            `;
+            const retryButton = refs.statusBanner.querySelector('[data-action="retry"]');
+            if (retryButton) {
+              retryButton.addEventListener("click", () => fetchData({ preserveContent: true }));
+            }
+            return;
+          }
+
+          refs.statusBanner.innerHTML = "";
+        }
+
+        function renderContent() {
+          if (!state.data && state.status === "loading") {
+            refs.contentArea.innerHTML = renderLoadingState();
+            bindContentActions();
+            return;
+          }
+
+          if (!state.data && state.status === "error") {
+            refs.contentArea.innerHTML = renderEmptyState({
+              title: text("requestFailed"),
+              body: state.error || text("networkErrorFallback"),
+              actionLabel: text("retry"),
+              action: "retry",
+              tone: "error",
+            });
+            bindContentActions();
+            return;
+          }
+
+          if (!state.data) {
+            refs.contentArea.innerHTML = renderEmptyState({
+              title: text("emptyTitle"),
+              body: text("emptyBody"),
+              actionLabel: text("emptyAction"),
+              action: "default",
+              tone: "info",
+            });
+            bindContentActions();
+            return;
+          }
+
+          const mode = getMode(state.data);
+          const sections = [];
+          if (mode === "antigravity") {
+            sections.push(renderAntigravitySection(state.data));
+          } else if (mode === "zen") {
+            sections.push(renderZenSection(state.data));
+          } else {
+            sections.push(renderCopilotSection(state.data));
+          }
+          sections.push(renderAdvancedPanel(state.data, mode));
+          refs.contentArea.innerHTML = sections.join("");
+          bindContentActions();
+        }
+
+        function renderLoadingState() {
           return `
-            <section id="usage-quotas" class="mb-6">
-                <h2 class="text-xl font-bold mb-3 flex items-center gap-2" style="color: var(--color-fg-lightest);">
-                    <i data-lucide="bar-chart-big"></i> ${t("antigravityQuotas")}
-                </h2>
-                ${resetDate ? `<p class="text-sm mb-4" style="color: var(--color-gray);">${t("nextReset")}: ${new Date(resetDate).toLocaleString()}</p>` : ''}
-                ${renderModelGroup(t("geminiModels"), 'sparkles', geminiModels, 'var(--color-blue-accent)')}
-                ${renderModelGroup(t("claudeModels"), 'message-square', claudeModels, 'var(--color-orange-accent)')}
-                ${renderModelGroup(t("otherModels"), 'box', otherModels, 'var(--color-gray-accent)')}
+            <section class="dashboard-card-strong p-8 sm:p-10">
+              <div class="max-w-xl space-y-4">
+                <div class="empty-illustration">${ICONS.refresh}</div>
+                <div>
+                  <h3 class="text-2xl font-bold tracking-tight text-[var(--text)]">${escapeHtml(text("loadingTitle"))}</h3>
+                  <p class="mt-2 text-sm leading-7 text-[var(--muted)] sm:text-base">${escapeHtml(text("loadingBody"))}</p>
+                </div>
+                <div class="space-y-3">
+                  <div class="loading-bar h-4 rounded-full bg-white/75"></div>
+                  <div class="loading-bar h-4 w-4/5 rounded-full bg-white/75"></div>
+                  <div class="loading-bar h-24 rounded-[20px] bg-white/75"></div>
+                </div>
+              </div>
             </section>
           `;
         }
 
-        /**
-         * Renders a single Antigravity model quota card.
-         * @param {string} modelId - The model ID.
-         * @param {object} quota - The quota details.
-         * @returns {string} HTML string for the card.
-         */
-        function renderAntigravityCard(modelId, quota) {
-          const percentRemaining = quota.percent_remaining || 0;
-          const percentUsed = 100 - percentRemaining;
-          const remainingFraction = quota.remaining_fraction || 0;
-          const resetTime = quota.reset_time;
-
-          let progressBarColor = "var(--color-green)";
-          if (percentUsed > 75) progressBarColor = "var(--color-yellow)";
-          if (percentUsed > 90) progressBarColor = "var(--color-red)";
-
+        function renderEmptyState({ title, body, actionLabel, action, tone }) {
+          const illustration = tone === "error" ? ICONS.warning : ICONS.dashboard;
+          const toneClass = tone === "error" ? "pill-danger" : "pill-brand";
           return `
-            <div class="p-3 border" style="background-color: var(--color-bg); border-color: var(--color-bg-light-2);">
-                <div class="flex justify-between items-center mb-2">
-                    <h4 class="text-sm font-medium truncate" style="color: var(--color-fg-lightest);" title="${modelId}">${modelId}</h4>
-                    <span class="text-xs font-mono ml-2 whitespace-nowrap" style="color: var(--color-fg-medium);">${percentUsed.toFixed(0)}% ${t("used")}</span>
+            <section class="dashboard-card-strong p-8 sm:p-10">
+              <div class="max-w-2xl space-y-4">
+                <div class="empty-illustration ${tone === "error" ? "text-[var(--danger)] bg-[var(--danger-soft)]" : ""}">${illustration}</div>
+                <div>
+                  <span class="pill ${toneClass}">${tone === "error" ? icon("warning") : icon("info")}${escapeHtml(tone === "error" ? text("requestFailed") : text("statusConnecting"))}</span>
+                  <h3 class="mt-4 text-2xl font-bold tracking-tight text-[var(--text)]">${escapeHtml(title)}</h3>
+                  <p class="mt-2 text-sm leading-7 text-[var(--muted)] sm:text-base">${escapeHtml(body)}</p>
                 </div>
-                <div class="mb-2">
-                     <div class="w-full progress-bar-bg h-1.5">
-                         <div class="progress-bar-fg h-1.5" style="width: ${percentUsed}%; background-color: ${progressBarColor};"></div>
-                     </div>
-                </div>
-                <div class="flex justify-between items-center text-xs" style="color: var(--color-fg-dark);">
-                    <span>${percentRemaining}% ${t("remaining")}</span>
-                    ${resetTime ? `<span class="flex items-center gap-1" style="color: var(--color-gray-accent);">⏱️ ${new Date(resetTime).toLocaleString()}</span>` : ''}
-                </div>
-            </div>
+                <button type="button" data-action="${action}" class="btn btn-primary">${icon(action === "retry" ? "refresh" : "link")}${escapeHtml(actionLabel)}</button>
+              </div>
+            </section>
           `;
         }
 
-        /**
-         * Renders the "Usage Quotas" section with progress bars (Copilot mode).
-         * @param {object} snapshots - The quota_snapshots object from the API response.
-         * @returns {string} HTML string for the usage quotas section.
-         */
-        function renderUsageQuotas(snapshots) {
-          if (!snapshots) return "";
+        function renderCopilotSection(data) {
+          const quotas = data.quota_snapshots || {};
+          const keys = ["chat", "completions", "premium_interactions"];
+          const resetAt = data.quota_reset_date;
+          const metaPills = [
+            `<span class="pill pill-brand">${icon("mode")}${escapeHtml(text("copilotPlan"))}: ${escapeHtml(data.copilot_plan || text("noValue"))}</span>`,
+            `<span class="pill pill-neutral">${icon("link")}${escapeHtml(text("accessType"))}: ${escapeHtml(data.access_type_sku || text("noValue"))}</span>`,
+            `<span class="pill pill-neutral">${icon("chart")}${escapeHtml(text("organizationCount"))}: ${escapeHtml(formatNumber((data.organization_login_list || []).length))}</span>`,
+          ].join("");
 
-          const quotaCards = Object.entries(snapshots)
-            .map(([key, value]) => {
-              return renderQuotaCard(key, value);
+          const cards = keys
+            .map((key) => {
+              const detail = quotas[key];
+              const meta = quotaMeta[key];
+              if (!detail) return "";
+              const unlimited = Boolean(detail.unlimited);
+              const total = unlimited ? text("unlimited") : formatNumber(detail.entitlement);
+              const remaining = unlimited ? text("unlimited") : formatNumber(detail.remaining ?? detail.quota_remaining);
+              const used = unlimited
+                ? text("noValue")
+                : formatNumber((detail.entitlement || 0) - (detail.remaining ?? detail.quota_remaining ?? 0));
+              const percentRemaining = unlimited ? 100 : Number(detail.percent_remaining || 0);
+              const percentUsed = unlimited ? 0 : Math.max(0, 100 - percentRemaining);
+              const tone = getProgressTone(percentUsed, unlimited);
+              const iconName = key === "chat" ? "mode" : key === "completions" ? "chart" : "spark";
+              return `
+                <article class="dashboard-card p-5 sm:p-6">
+                  <div class="flex flex-wrap items-start justify-between gap-3">
+                    <div class="space-y-2">
+                      <span class="pill ${meta.tone === "warning" ? "pill-warning" : meta.tone === "success" ? "pill-success" : "pill-brand"}">${icon(iconName)}${escapeHtml(text(meta.titleKey))}</span>
+                      <h3 class="text-xl font-bold tracking-tight text-[var(--text)]">${escapeHtml(text(meta.titleKey))}</h3>
+                      <p class="text-sm leading-6 text-[var(--muted)]">${escapeHtml(text(meta.descriptionKey))}</p>
+                    </div>
+                    <span class="pill ${unlimited ? "pill-brand" : percentUsed >= 90 ? "pill-danger" : percentUsed >= 75 ? "pill-warning" : "pill-success"}">${unlimited ? escapeHtml(text("unlimited")) : escapeHtml(formatPercent(percentUsed))}</span>
+                  </div>
+
+                  <div class="mt-5 space-y-3">
+                    <div class="progress-track">
+                      <div class="progress-fill ${tone}" style="width: ${unlimited ? 100 : percentUsed}%"></div>
+                    </div>
+                    <div class="grid grid-cols-3 gap-3 text-sm">
+                      <div class="rounded-2xl bg-[var(--panel)] p-3">
+                        <p class="text-[var(--muted)]">${escapeHtml(text("usageUsed"))}</p>
+                        <p class="mt-1 font-bold text-[var(--text)] mono">${escapeHtml(used)}</p>
+                      </div>
+                      <div class="rounded-2xl bg-[var(--panel)] p-3">
+                        <p class="text-[var(--muted)]">${escapeHtml(text("usageRemaining"))}</p>
+                        <p class="mt-1 font-bold text-[var(--text)] mono">${escapeHtml(remaining)}</p>
+                      </div>
+                      <div class="rounded-2xl bg-[var(--panel)] p-3">
+                        <p class="text-[var(--muted)]">${escapeHtml(text("usageLimit"))}</p>
+                        <p class="mt-1 font-bold text-[var(--text)] mono">${escapeHtml(total)}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="mt-5 flex flex-wrap gap-2 text-sm">
+                    <span class="pill pill-neutral">${escapeHtml(text("overageAllowed"))}: ${escapeHtml(detail.overage_permitted ? text("enabled") : text("disabled"))}</span>
+                    <span class="pill pill-neutral">${escapeHtml(text("overageCount"))}: ${escapeHtml(formatNumber(detail.overage_count))}</span>
+                  </div>
+                </article>
+              `;
             })
             .join("");
 
           return `
-                    <section id="usage-quotas" class="mb-6">
-                        <h2 class="text-xl font-bold mb-3 flex items-center gap-2" style="color: var(--color-fg-lightest);">
-                            <i data-lucide="bar-chart-big"></i> ${t("usageQuotas")}
-                        </h2>
-                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                            ${quotaCards}
-                        </div>
-                    </section>
-                `;
-        }
-
-        /**
-         * Renders a single quota card.
-         * @param {string} title - The name of the quota (e.g., 'chat').
-         * @param {object} details - The details object for the quota.
-         * @returns {string} HTML string for a single card.
-         */
-        function renderQuotaCard(title, details) {
-          const { entitlement, remaining, percent_remaining, unlimited } =
-            details;
-
-          const percentUsed = unlimited ? 0 : 100 - percent_remaining;
-          const used = unlimited
-            ? "N/A"
-            : (entitlement - remaining).toLocaleString();
-
-          let progressBarColor = "var(--color-green)";
-          if (percentUsed > 75) progressBarColor = "var(--color-yellow)";
-          if (percentUsed > 90) progressBarColor = "var(--color-red)";
-          if (unlimited) progressBarColor = "var(--color-blue)";
-
-          return `
-                    <div class="p-4 border" style="background-color: var(--color-bg); border-color: var(--color-bg-light-2);">
-                        <div class="flex justify-between items-center mb-2">
-                            <h3 class="text-md font-semibold capitalize" style="color: var(--color-fg-lightest);">${title.replace(/_/g, " ")}</h3>
-                            ${
-                              unlimited
-                                ? `<span class="px-2 py-0.5 text-xs font-medium" style="color: var(--color-blue-accent); background-color: var(--color-bg-light-1);">${t("unlimited")}</span>`
-                                : `<span class="text-sm font-mono" style="color: var(--color-fg-medium);">${percentUsed.toFixed(1)}% ${t("used")}</span>`
-                            }
-                        </div>
-                        <div class="mb-3">
-                             <div class="w-full progress-bar-bg h-2">
-                                 <div class="progress-bar-fg h-2" style="width: ${unlimited ? 100 : percentUsed}%; background-color: ${progressBarColor};"></div>
-                             </div>
-                        </div>
-                        <div class="flex justify-between text-xs font-mono" style="color: var(--color-fg-dark);">
-                            <span>${used} / ${unlimited ? "∞" : entitlement.toLocaleString()}</span>
-                            <span>${unlimited ? "∞" : remaining.toLocaleString()} ${t("remaining")}</span>
-                        </div>
+            <section class="space-y-5">
+              <div class="dashboard-card-strong p-6 sm:p-7">
+                <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                  <div class="max-w-2xl space-y-3">
+                    <div class="section-title text-2xl text-[var(--text)]">
+                      <span class="section-icon">${ICONS.chart}</span>
+                      <span>${escapeHtml(text("copilotSectionTitle"))}</span>
                     </div>
-                `;
-        }
-
-        /**
-         * Recursively builds a formatted HTML list from a JSON object.
-         * @param {object} obj - The object to format.
-         * @returns {string} HTML string for the formatted list.
-         */
-        function formatObject(obj) {
-          if (obj === null || typeof obj !== "object") {
-            return `<span style="color: var(--color-green-accent);">${JSON.stringify(obj)}</span>`;
-          }
-
-          const keyMap = i18n[currentLang].detailKeys || {};
-
-          return (
-            '<div class="pl-4">' +
-            Object.entries(obj)
-              .map(([key, value]) => {
-                const formattedKey = keyMap[key] || key.replace(/_/g, " ");
-                let displayValue;
-
-                if (Array.isArray(value)) {
-                  displayValue =
-                    value.length > 0
-                      ? `<span style='color: var(--color-gray-accent)'>[...${value.length} items]</span>`
-                      : `<span style='color: var(--color-gray-accent)'>[]</span>`;
-                } else if (typeof value === "object" && value !== null) {
-                  displayValue = formatObject(value);
-                } else if (typeof value === "boolean") {
-                  displayValue = `<span class="font-semibold" style="color: ${value ? "var(--color-green-accent)" : "var(--color-red-accent)"}">${value}</span>`;
-                } else {
-                  displayValue = `<span style="color: var(--color-blue-accent);">${JSON.stringify(value)}</span>`;
-                }
-
-                return `<div class="mt-1">
-                                <span class="capitalize font-semibold" style="color: var(--color-fg-medium);">${formattedKey}:</span>
-                                ${typeof value === "object" && value !== null && !Array.isArray(value) ? displayValue : ` ${displayValue}`}
-                           </div>`;
-              })
-              .join("") +
-            "</div>"
-          );
-        }
-
-        /**
-         * Renders the section with the full, formatted API response.
-         * @param {object} data - The full API response data.
-         * @returns {string} HTML string for the full data section.
-         */
-        function renderDetailedData(data) {
-          const formattedDetails = formatObject(data);
-          return `
-                    <section id="detailed-data">
-                        <h2 class="text-xl font-bold mb-3 flex items-center gap-2" style="color: var(--color-fg-lightest);">
-                           <i data-lucide="file-text"></i> ${t("detailedInfo")}
-                        </h2>
-                        <div class="border p-4 relative font-mono text-xs" style="background-color: var(--color-bg-darkest); border-color: var(--color-bg-light-2);">
-                            ${formattedDetails}
-                        </div>
-                    </section>
-                `;
-        }
-
-        /**
-         * Renders a loading spinner.
-         * @returns {string} HTML string for the spinner.
-         */
-        function renderSpinner() {
-          return `
-            <div class="flex justify-center items-center py-20">
-                <div class="animate-spin h-12 w-12 rounded-full border-4 border-transparent border-t-4" style="border-top-color: var(--color-blue);"></div>
-            </div>`;
-        }
-
-        /**
-         * Renders an error message box.
-         * @param {string} message - The error message to display.
-         * @returns {string} HTML string for the error message.
-         */
-        function renderError(message) {
-          const container = document.createElement("div");
-          container.className = "p-3 border";
-          container.style.backgroundColor = "rgba(204, 36, 29, 0.2)";
-          container.style.borderColor = "var(--color-red)";
-          container.style.color = "var(--color-red-accent)";
-          container.setAttribute("role", "alert");
-
-          container.innerHTML = `
-                <div class="flex items-center">
-                    <i data-lucide="alert-triangle" class="h-5 w-5 mr-3"></i>
-                    <div>
-                        <p class="font-bold text-sm">${t("errorTitle")}</p>
-                        <p class="text-xs">${message}</p>
-                    </div>
+                    <p class="text-sm leading-7 text-[var(--muted)] sm:text-base">${escapeHtml(text("copilotSectionBody"))}</p>
+                  </div>
+                  <div class="rounded-[22px] border border-[var(--line)] bg-white/70 px-4 py-3 text-sm text-[var(--muted)]">
+                    <div class="font-semibold text-[var(--text)]">${escapeHtml(text("quotaReset"))}</div>
+                    <div class="mt-1 mono">${escapeHtml(resetAt ? formatDateTime(resetAt) : text("noValue"))}</div>
+                  </div>
                 </div>
-            `;
-          // Must create icons *after* innerHTML is set
-          setTimeout(
-            () =>
-              lucide.createIcons({
-                nodes: [container.querySelector("[data-lucide]")],
-              }),
-            0
-          );
-          return container.outerHTML;
-        }
+                <div class="mt-5 flex flex-wrap gap-2">${metaPills}</div>
+              </div>
 
-        /**
-         * Renders a welcome message when the page first loads.
-         * @returns {string} HTML string for the welcome message.
-         */
-        function renderWelcomeMessage() {
-          return `
-            <div class="text-center py-16 px-4 border" style="background-color: var(--color-bg-soft); border-color: var(--color-bg-light-2);">
-                <i data-lucide="info" class="mx-auto h-10 w-10" style="color: var(--color-gray-accent);"></i>
-                <h3 class="mt-2 text-lg font-semibold" style="color: var(--color-fg-lightest);">${t("welcome")}</h3>
-                <p class="mt-1 text-sm" style="color: var(--color-gray);">${t("welcomeMsg")}</p>
-            </div>
+              <div class="grid gap-4 lg:grid-cols-3">${cards}</div>
+            </section>
           `;
         }
 
-        // --- Data Fetching ---
+        function renderAntigravitySection(data) {
+          const models = data.quota_snapshots?.models || {};
+          const entries = Object.entries(models);
+          const grouped = {
+            gemini: [],
+            claude: [],
+            other: [],
+          };
 
-        /**
-         * Fetches data from the specified API endpoint.
-         */
-        async function fetchData() {
-          const url = endpointUrlInput.value.trim();
-          if (!url) {
-            state.error = t("emptyUrl");
-            state.isLoading = false;
-            render();
+          for (const [modelId, quota] of entries) {
+            if (modelId.startsWith("gemini") || modelId.startsWith("learnlm")) {
+              grouped.gemini.push([modelId, quota]);
+            } else if (modelId.startsWith("claude")) {
+              grouped.claude.push([modelId, quota]);
+            } else {
+              grouped.other.push([modelId, quota]);
+            }
+          }
+
+          const counts = [
+            `<span class="pill pill-brand">${icon("spark")}${escapeHtml(text("antigravityGemini"))}: ${escapeHtml(formatNumber(grouped.gemini.length))}</span>`,
+            `<span class="pill pill-warning">${icon("claude")}${escapeHtml(text("antigravityClaude"))}: ${escapeHtml(formatNumber(grouped.claude.length))}</span>`,
+            `<span class="pill pill-neutral">${icon("other")}${escapeHtml(text("antigravityOther"))}: ${escapeHtml(formatNumber(grouped.other.length))}</span>`,
+          ].join("");
+
+          const renderGroup = (titleKey, iconName, items, pillClass) => {
+            if (!items.length) return "";
+            const cards = items
+              .map(([modelId, quota]) => {
+                const percentRemaining = Number(quota.percent_remaining || 0);
+                const health = getHealthLabel(percentRemaining);
+                return `
+                  <article class="dashboard-card p-4 sm:p-5">
+                    <div class="flex items-start justify-between gap-3">
+                      <div>
+                        <p class="font-bold leading-7 text-[var(--text)]">${escapeHtml(modelId)}</p>
+                        <p class="mt-1 text-sm text-[var(--muted)]">${escapeHtml(text("modelReset"))}: ${escapeHtml(quota.reset_time ? formatDateTime(quota.reset_time) : text("noValue"))}</p>
+                      </div>
+                      <span class="pill ${health.className}">${escapeHtml(health.text)}</span>
+                    </div>
+                    <div class="mt-4 space-y-2">
+                      <div class="flex items-center justify-between text-sm text-[var(--muted)]">
+                        <span>${escapeHtml(text("modelRemaining"))}</span>
+                        <span class="mono font-semibold text-[var(--text)]">${escapeHtml(formatPercent(percentRemaining))}</span>
+                      </div>
+                      <div class="progress-track">
+                        <div class="progress-fill ${getProgressTone(100 - percentRemaining)}" style="width: ${percentRemaining}%"></div>
+                      </div>
+                    </div>
+                  </article>
+                `;
+              })
+              .join("");
+
+            return `
+              <section class="space-y-3">
+                <div class="flex items-center justify-between gap-3">
+                  <h3 class="section-title text-lg text-[var(--text)]">
+                    <span class="section-icon h-10 w-10">${ICONS[iconName]}</span>
+                    <span>${escapeHtml(text(titleKey))}</span>
+                  </h3>
+                  <span class="pill ${pillClass}">${escapeHtml(formatNumber(items.length))}</span>
+                </div>
+                <div class="grid gap-4 xl:grid-cols-2">${cards}</div>
+              </section>
+            `;
+          };
+
+          const mainPanel = entries.length
+            ? [
+                renderGroup("antigravityGemini", "spark", grouped.gemini, "pill-brand"),
+                renderGroup("antigravityClaude", "claude", grouped.claude, "pill-warning"),
+                renderGroup("antigravityOther", "other", grouped.other, "pill-neutral"),
+              ]
+                .filter(Boolean)
+                .join("")
+            : `
+                <div class="dashboard-card p-7 text-center">
+                  <div class="mx-auto empty-illustration">${ICONS.info}</div>
+                  <h3 class="mt-4 text-xl font-bold text-[var(--text)]">${escapeHtml(text("antigravityEmptyTitle"))}</h3>
+                  <p class="mx-auto mt-2 max-w-2xl text-sm leading-7 text-[var(--muted)] sm:text-base">${escapeHtml(text("antigravityEmptyBody"))}</p>
+                </div>
+              `;
+
+          return `
+            <section class="space-y-5">
+              <div class="dashboard-card-strong p-6 sm:p-7">
+                <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                  <div class="max-w-2xl space-y-3">
+                    <div class="section-title text-2xl text-[var(--text)]">
+                      <span class="section-icon">${ICONS.spark}</span>
+                      <span>${escapeHtml(text("antigravitySectionTitle"))}</span>
+                    </div>
+                    <p class="text-sm leading-7 text-[var(--muted)] sm:text-base">${escapeHtml(text("antigravitySectionBody"))}</p>
+                  </div>
+                  <div class="rounded-[22px] border border-[var(--line)] bg-white/70 px-4 py-3 text-sm text-[var(--muted)]">
+                    <div class="font-semibold text-[var(--text)]">${escapeHtml(text("quotaReset"))}</div>
+                    <div class="mt-1 mono">${escapeHtml(data.quota_reset_date ? formatDateTime(data.quota_reset_date) : text("noValue"))}</div>
+                  </div>
+                </div>
+                <div class="mt-5 flex flex-wrap gap-2">
+                  <span class="pill pill-brand">${icon("chart")}${escapeHtml(text("antigravityTotalModels"))}: ${escapeHtml(formatNumber(entries.length))}</span>
+                  ${counts}
+                </div>
+              </div>
+
+              <div class="space-y-5">${mainPanel}</div>
+            </section>
+          `;
+        }
+
+        function renderZenSection(data) {
+          return `
+            <section class="dashboard-card-strong p-6 sm:p-7 lg:p-8">
+              <div class="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] lg:items-start">
+                <div class="space-y-4">
+                  <span class="pill pill-brand">${icon("mode")}${escapeHtml(getModeLabel("zen"))}</span>
+                  <div>
+                    <h2 class="text-3xl font-bold tracking-tight text-[var(--text)]">${escapeHtml(text("zenSectionTitle"))}</h2>
+                    <p class="mt-3 text-sm leading-7 text-[var(--muted)] sm:text-base">${escapeHtml(text("zenSectionBody"))}</p>
+                  </div>
+                  <div class="rounded-[22px] border border-[var(--line)] bg-white/75 p-4">
+                    <p class="font-semibold text-[var(--text)]">${escapeHtml(data.message || text("zenMessageFallback"))}</p>
+                    <p class="mt-2 text-sm leading-6 text-[var(--muted)]">${escapeHtml(text("zenHint"))}</p>
+                  </div>
+                </div>
+
+                <div class="dashboard-card p-5 sm:p-6">
+                  <div class="flex items-center gap-3">
+                    <span class="section-icon">${ICONS.external}</span>
+                    <div>
+                      <p class="font-bold text-[var(--text)]">OpenCode</p>
+                      <p class="text-sm text-[var(--muted)]">${escapeHtml(text("zenMessageFallback"))}</p>
+                    </div>
+                  </div>
+                  <a
+                    href="https://console.opencode.ai"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="btn btn-primary mt-5 w-full"
+                  >
+                    ${icon("external")}${escapeHtml(text("zenConsole"))}
+                  </a>
+                </div>
+              </div>
+            </section>
+          `;
+        }
+
+        function getAdvancedFacts(data, mode) {
+          const facts = [
+            [text("endpointField"), state.endpoint],
+            [text("modeField"), getModeLabel(mode)],
+            [text("responseStatusField"), state.status === "error" ? text("requestFailed") : text("requestSuccess")],
+            [text("lastUpdatedField"), state.lastUpdated ? formatDateTime(state.lastUpdated) : text("neverUpdated")],
+            [text("responseKeys"), Object.keys(data || {}).join(", ") || text("noValue")],
+          ];
+
+          if (mode === "copilot") {
+            facts.push([text("copilotPlan"), data.copilot_plan || text("noValue")]);
+            facts.push([text("accessType"), data.access_type_sku || text("noValue")]);
+            facts.push([text("resetField"), data.quota_reset_date ? formatDateTime(data.quota_reset_date) : text("noValue")]);
+            facts.push([text("chatEnabled"), data.chat_enabled ? text("enabled") : text("disabled")]);
+          } else if (mode === "antigravity") {
+            facts.push([text("resetField"), data.quota_reset_date ? formatDateTime(data.quota_reset_date) : text("noValue")]);
+            facts.push([text("totalModelsField"), formatNumber(Object.keys(data.quota_snapshots?.models || {}).length)]);
+          } else if (mode === "zen") {
+            facts.push([text("resetField"), text("noValue")]);
+            facts.push(["message", data.message || text("zenMessageFallback")]);
+          }
+
+          return facts;
+        }
+
+        function renderAdvancedPanel(data, mode) {
+          const facts = getAdvancedFacts(data, mode)
+            .map(
+              ([label, value]) => `
+                <div class="rounded-2xl bg-[var(--panel)] p-4">
+                  <p class="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--muted)]">${escapeHtml(label)}</p>
+                  <p class="mt-2 break-all text-sm leading-6 text-[var(--text)] mono">${escapeHtml(value || text("noValue"))}</p>
+                </div>
+              `,
+            )
+            .join("");
+          const rawJson = data ? JSON.stringify(data, null, 2) : text("jsonEmpty");
+
+          return `
+            <section class="dashboard-card p-5 sm:p-6">
+              <details class="details-panel" id="advanced-details" ${state.detailsOpen ? "open" : ""}>
+                <summary class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <div class="section-title text-xl text-[var(--text)]">
+                      <span class="section-icon">${ICONS.data}</span>
+                      <span>${escapeHtml(text("advancedTitle"))}</span>
+                    </div>
+                    <p class="mt-2 text-sm leading-6 text-[var(--muted)]">${escapeHtml(text("advancedBody"))}</p>
+                  </div>
+                  <span class="pill pill-neutral">${icon("chevron", "details-chevron h-4 w-4")}${escapeHtml(text("detailsSummary"))}</span>
+                </summary>
+
+                <div class="space-y-4">
+                  <div class="flex flex-wrap gap-2 rounded-full bg-[var(--panel)] p-1">
+                    <button type="button" class="tab-button ${state.activeDetailsTab === "summary" ? "is-active" : ""}" data-tab="summary">${escapeHtml(text("detailsSummary"))}</button>
+                    <button type="button" class="tab-button ${state.activeDetailsTab === "raw" ? "is-active" : ""}" data-tab="raw">${escapeHtml(text("detailsRaw"))}</button>
+                  </div>
+
+                  <div class="tab-panel ${state.activeDetailsTab === "summary" ? "is-active" : ""}" data-panel="summary">
+                    <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">${facts}</div>
+                  </div>
+
+                  <div class="tab-panel ${state.activeDetailsTab === "raw" ? "is-active" : ""}" data-panel="raw">
+                    <div class="mb-3 flex items-center justify-between gap-3">
+                      <span class="pill pill-neutral">${icon("terminal")}${escapeHtml(text("copyForDebug"))}</span>
+                    </div>
+                    <div class="code-panel"><pre>${escapeHtml(rawJson)}</pre></div>
+                  </div>
+                </div>
+              </details>
+            </section>
+          `;
+        }
+
+        function bindContentActions() {
+          refs.contentArea.querySelectorAll("[data-action='retry']").forEach((button) => {
+            button.addEventListener("click", () => fetchData({ preserveContent: true }));
+          });
+          refs.contentArea.querySelectorAll("[data-action='default']").forEach((button) => {
+            button.addEventListener("click", () => {
+              setEndpoint(DEFAULT_ENDPOINT);
+              updateUrl(DEFAULT_ENDPOINT);
+              fetchData({ preserveContent: false });
+            });
+          });
+          const advancedDetails = refs.contentArea.querySelector("#advanced-details");
+          if (advancedDetails) {
+            advancedDetails.addEventListener("toggle", () => {
+              state.detailsOpen = advancedDetails.open;
+            });
+          }
+          refs.contentArea.querySelectorAll("[data-tab]").forEach((button) => {
+            button.addEventListener("click", () => {
+              state.activeDetailsTab = button.getAttribute("data-tab") || "summary";
+              state.detailsOpen = true;
+              renderContent();
+            });
+          });
+        }
+
+        function renderAll() {
+          renderStaticTexts();
+          renderOverview();
+          renderStatusBanner();
+          renderContent();
+          refs.modeChip.textContent = state.data ? getModeLabel(getMode(state.data)) : text("modeChipLabel");
+        }
+
+        async function fetchData({ preserveContent = true, endpointOverride } = {}) {
+          const endpointSource =
+            typeof endpointOverride === "string" ? endpointOverride : refs.endpointInput.value;
+          const endpoint = getNormalizedEndpoint(endpointSource);
+          if (!endpoint) {
+            cancelActiveRequest();
+            state.status = "error";
+            state.error = text("invalidEndpoint");
+            if (!preserveContent) {
+              state.data = null;
+              state.lastUpdated = null;
+            }
+            renderAll();
             return;
           }
 
-          state.isLoading = true;
+          const requestId = latestRequestId + 1;
+          if (activeRequestController) {
+            activeRequestController.abort();
+          }
+          latestRequestId = requestId;
+          const controller = new AbortController();
+          activeRequestController = controller;
+
+          setEndpoint(endpoint);
+          updateUrl(endpoint);
+          state.status = "loading";
           state.error = null;
-          render();
+          renderAll();
 
           try {
-            const response = await fetch(url);
+            const response = await fetch(endpoint, { signal: controller.signal });
             if (!response.ok) {
-              throw new Error(
-                `Request failed with status ${response.status}: ${response.statusText}`
-              );
+              throw new Error(`HTTP ${response.status} ${response.statusText}`);
             }
-            const jsonData = await response.json();
-            state.data = jsonData;
+            const data = await response.json();
+            if (requestId !== latestRequestId) {
+              return;
+            }
+            state.data = data;
+            state.status = "success";
+            state.error = null;
+            state.lastUpdated = new Date().toISOString();
           } catch (error) {
-            console.error("Fetch error:", error);
-            state.data = null;
-            state.error = error.message;
+            if (controller.signal.aborted || requestId !== latestRequestId) {
+              return;
+            }
+            console.error("Failed to fetch usage data", error);
+            state.status = "error";
+            state.error = error instanceof Error && error.message ? error.message : text("networkErrorFallback");
+            if (!preserveContent) {
+              state.data = null;
+            }
           } finally {
-            state.isLoading = false;
-            render();
+            if (requestId === latestRequestId && activeRequestController === controller) {
+              activeRequestController = null;
+            }
+          }
+
+          if (requestId === latestRequestId) {
+            renderAll();
           }
         }
 
-        // --- Event Handlers & Initialization ---
-
-        /**
-         * Handles the form submission to trigger a data fetch.
-         * @param {Event} event - The form submission event.
-         */
-        function handleFormSubmit(event) {
+        function handleSubmit(event) {
           event.preventDefault();
-          const url = endpointUrlInput.value.trim();
-
-          // Update URL query parameter, catching potential security errors in sandboxed environments
-          try {
-            const currentUrl = new URL(window.location);
-            currentUrl.searchParams.set("endpoint", url);
-            window.history.pushState({}, "", currentUrl);
-          } catch (e) {
-            console.warn("Could not update URL: ", e.message);
-          }
-
-          fetchData();
+          fetchData({ preserveContent: Boolean(state.data) });
         }
 
-        /**
-         * Initializes the application.
-         */
-        function init() {
-          endpointForm.addEventListener("submit", handleFormSubmit);
-          updateStaticTexts();
-
-          // Get endpoint from URL param on load
-          const urlParams = new URLSearchParams(window.location.search);
-          const endpointFromUrl = urlParams.get("endpoint");
-
-          if (endpointFromUrl) {
-            endpointUrlInput.value = endpointFromUrl;
-            fetchData();
-          } else {
-            endpointUrlInput.value = DEFAULT_ENDPOINT;
-            render(); // Render initial welcome message
-          }
+        function handleReset() {
+          state.activeDetailsTab = "summary";
+          setEndpoint(DEFAULT_ENDPOINT);
+          updateUrl(DEFAULT_ENDPOINT);
+          fetchData({ preserveContent: Boolean(state.data) });
         }
 
-        // Start the app
-        init();
+        async function handleExportConfig() {
+          const configJson = buildExportConfigJson();
+          const copied = await copyTextToClipboard(configJson);
+
+          if (copied) {
+            setExportFeedback("exportCopied");
+            return;
+          }
+
+          setExportFeedback("exportPrompted");
+          window.prompt(text("exportManualCopy"), configJson);
+        }
+
+        function initialize() {
+          refs.endpointForm.addEventListener("submit", handleSubmit);
+          refs.resetButton.addEventListener("click", handleReset);
+          refs.exportButton.addEventListener("click", handleExportConfig);
+          refs.langToggle.addEventListener("click", () => {
+            state.language = state.language === "zh" ? "en" : "zh";
+            persistPreferences();
+            renderAll();
+          });
+
+          setEndpoint(state.endpoint);
+          renderAll();
+          syncAutoRefresh();
+          fetchData({ preserveContent: false });
+        }
+
+        initialize();
       });
     </script>
-
-    <footer
-      id="footer"
-      class="text-center py-4 text-xs"
-      style="color: var(--color-gray-accent)"
-    >
-      <p>
-        <span id="footer-vibe">Vibe coded by</span>
-        <a
-          href="https://gemini.google.com"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="underline transition-colors"
-          style="color: var(--color-fg-dark)"
-          onmouseover="this.style.color='var(--color-fg-light)'"
-          onmouseout="this.style.color='var(--color-fg-dark)'"
-        >
-          Gemini
-        </a>
-        - <span id="footer-based">Based on</span>
-        <a
-          href="https://github.com/uheej0625/copilot-usage-viewer"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="underline transition-colors"
-          style="color: var(--color-fg-dark)"
-          onmouseover="this.style.color='var(--color-fg-light)'"
-          onmouseout="this.style.color='var(--color-fg-dark)'"
-        >
-          copilot-usage-viewer</a
-        >
-      </p>
-    </footer>
   </body>
 </html>

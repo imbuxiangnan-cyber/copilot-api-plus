@@ -16,7 +16,10 @@ const app = new Hono()
 app.post("/", async (c) => {
   const body = await c.req.json<ChatCompletionRequest>()
 
-  const response = await createAntigravityChatCompletion(body)
+  const response = await createAntigravityChatCompletion(
+    body,
+    c.req.raw.headers,
+  )
 
   // Copy response headers
   const headers = new Headers(response.headers)

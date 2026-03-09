@@ -46,7 +46,7 @@
 | 🔑 **API Key 认证** | 可选的 API Key 鉴权，保护公开部署的服务 |
 | ✂️ **上下文透传** | 全量透传上下文至上游 API，由客户端（如 Claude Code）自行管理压缩 |
 | 🔍 **智能模型匹配** | 自动处理模型名格式差异（日期后缀、dash/dot 版本号等） |
-| 🔁 **Antigravity 端点容错** | 双端点自动切换，按模型族追踪速率限制，指数退避重试 |
+| 🔁 **Antigravity 端点容错** | 熔断器状态机、加权账号调度、后台任务自动降级、双端点自动切换 |
 
 ---
 
@@ -264,8 +264,10 @@ npx copilot-api-plus@latest start --antigravity \
 
 #### 特性
 - ✅ 自动 Token 刷新
-- ✅ 多账户支持，自动轮换
+- ✅ 多账户支持，加权智能调度（配额健康度 60% + Token 新鲜度 20% + 可靠性 20%）
 - ✅ 配额用尽自动切换账户
+- ✅ 熔断器状态机（CLOSED → OPEN → HALF_OPEN → CLOSED）
+- ✅ 后台/Agent 请求多信号检测，可选模型降级节省配额
 - ✅ 支持 Thinking 模型（思考链输出）
 
 #### 多账户管理
@@ -672,11 +674,32 @@ Anthropic 格式的模型名（如 `claude-opus-4-6`）和 Copilot 的模型列�
 
 ### Antigravity 端点容错
 
-Google Antigravity 模式内置了可靠性保障：
+Google Antigravity 模式内置了多层可靠性保障：
 
+- **熔断器状态机**：按模型族（claude/gemini/other）独立管理，3 次失败后熔断（OPEN），30 秒后半开（HALF_OPEN）试探，连续 2 次成功则恢复（CLOSED）
+- **加权账号调度**：替代简单轮换，综合评分 `score = 配额健康度×0.6 + Token新鲜度×0.2 + 可靠性×0.2`，优先选用最健康的账号
+- **后台任务检测与降级**：多信号加权检测（tool_calls +0.5、tool 角色 +0.4、助手密度 +0.2、长对话 +0.1），得分 ≥ 0.6 判定为 Agent 请求，可自动降级高价模型（如 claude-sonnet-4-5 → gemini-2.5-flash）。通过 `ANTIGRAVITY_BACKGROUND_DOWNGRADE=1` 环境变量启用，默认关闭
 - **双端点自动切换**：daily sandbox 和 production 两个端点，一个失败自动切换到另一个
-- **按模型族速率追踪**：分别追踪 Gemini 和 Claude 模型族的速率限制状态
 - **指数退避重试**：429/503 等限流错误自动退避重试，短间隔走同端点，长间隔切换端点
+
+#### 后台降级环境变量
+
+| 变量 | 默认 | 说明 |
+|------|------|------|
+| `ANTIGRAVITY_BACKGROUND_DOWNGRADE` | `0` (关闭) | 设为 `1` 启用 Agent/后台请求自动模型降级 |
+
+降级映射：
+
+| 原始模型 | 降级后 |
+|----------|--------|
+| `claude-sonnet-4-5` | `gemini-2.5-flash` |
+| `claude-sonnet-4-5-thinking` | `gemini-2.5-flash-thinking` |
+| `claude-opus-4-5-thinking` | `claude-sonnet-4-5-thinking` |
+| `gemini-2.5-pro` | `gemini-2.5-flash` |
+| `gemini-3-pro-high` | `gemini-3-flash` |
+| `gemini-3-pro-low` | `gemini-3-flash` |
+
+客户端也可通过请求头 `X-Request-Type: background` 显式标记后台请求，无需检测直接生效。
 
 ### 请求日志
 

@@ -15,6 +15,7 @@ import consola from "consola"
 
 import { antigravityQueue } from "../../lib/request-queue"
 import { sleep } from "../../lib/utils"
+import { recordAccountFailure, recordAccountSuccess } from "./account-scorer"
 import {
   createBlockStop,
   createMessageDelta,
@@ -31,10 +32,20 @@ import {
 } from "./anthropic-events"
 import {
   disableCurrentAccount,
+  getCurrentAccountIndex,
   getCurrentProjectId,
   getValidAccessToken,
   rotateAccount,
 } from "./auth"
+import { maybeDowngradeModel } from "./background-detection"
+import {
+  canExecute,
+  getBackoffDelay,
+  getModelFamily,
+  parseRetryDelay,
+  recordFailure,
+  recordSuccess,
+} from "./circuit-breaker"
 import { isThinkingModel } from "./get-models"
 import {
   createStreamState,
@@ -80,46 +91,6 @@ function rotateEndpoint(): void {
 }
 
 const ANTIGRAVITY_USER_AGENT = "antigravity/1.11.3 windows/amd64"
-
-// Rate limit tracking per model family
-interface RateLimitInfo {
-  lastLimitTime: number
-  consecutiveErrors: number
-}
-
-const rateLimitTracker: Record<string, RateLimitInfo> = {}
-
-function getModelFamily(model: string): string {
-  if (model.includes("claude")) return "claude"
-  if (model.includes("gemini")) return "gemini"
-  return "other"
-}
-
-function trackRateLimit(model: string): void {
-  const family = getModelFamily(model)
-  if (!rateLimitTracker[family]) {
-    rateLimitTracker[family] = { lastLimitTime: 0, consecutiveErrors: 0 }
-  }
-  rateLimitTracker[family].lastLimitTime = Date.now()
-  rateLimitTracker[family].consecutiveErrors++
-}
-
-function clearRateLimitTracker(model: string): void {
-  const family = getModelFamily(model)
-  if (rateLimitTracker[family]) {
-    rateLimitTracker[family].consecutiveErrors = 0
-  }
-}
-
-function getBackoffDelay(model: string, baseDelay: number): number {
-  const family = getModelFamily(model)
-  const info = rateLimitTracker[family]
-  if (!info) return baseDelay
-
-  // Exponential backoff: base * 2^(consecutive-1), max 30s
-  const multiplier = Math.min(Math.pow(2, info.consecutiveErrors - 1), 60)
-  return Math.min(baseDelay * multiplier, 30000)
-}
 
 export interface AnthropicMessage {
   role: "user" | "assistant"
@@ -407,7 +378,7 @@ function createErrorResponse(
  *
  * Features:
  * - Endpoint fallback (daily → prod)
- * - Per-model-family rate limit tracking
+ * - Circuit breaker per model family (CLOSED/OPEN/HALF_OPEN)
  * - Exponential backoff for consecutive errors
  * - Smart retry for short delays (≤5s on same endpoint)
  */
@@ -416,15 +387,38 @@ const MAX_ENDPOINT_RETRIES = 2 // Try each endpoint up to 2 times before switchi
 
 async function executeAntigravityRequest(
   request: AnthropicMessageRequest,
+  requestHeaders?: Headers,
 ): Promise<Response> {
+  // Background detection: optionally downgrade model for agent requests
+  const effectiveModel = maybeDowngradeModel(
+    request.model,
+    request.messages,
+    requestHeaders,
+  )
+  const effectiveRequest =
+    effectiveModel !== request.model ?
+      { ...request, model: effectiveModel }
+    : request
+
   // Get project ID for the request
   const projectId = await getCurrentProjectId()
-  const body = buildGeminiRequest(request, projectId)
+  const body = buildGeminiRequest(effectiveRequest, projectId)
   let endpointRetries = 0
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    // Circuit breaker check — skip if model family is in OPEN state
+    const family = getModelFamily(effectiveRequest.model)
+    if (!canExecute(family)) {
+      consola.warn(
+        `[circuit-breaker] ${family} circuit OPEN, waiting for reset...`,
+      )
+      await sleep(1000)
+      continue
+    }
+
     const host = getCurrentHost()
-    const endpoint = request.stream ? getStreamUrl(host) : getNoStreamUrl(host)
+    const endpoint =
+      effectiveRequest.stream ? getStreamUrl(host) : getNoStreamUrl(host)
 
     const accessToken = await getValidAccessToken()
 
@@ -450,24 +444,24 @@ async function executeAntigravityRequest(
       })
 
       if (response.ok) {
-        // Success - clear rate limit tracker for this model family
-        clearRateLimitTracker(request.model)
-        return request.stream ?
-            transformStreamResponse(response, request.model)
-          : await transformNonStreamResponse(response, request.model)
+        recordSuccess(getModelFamily(effectiveRequest.model))
+        const acctIdx = await getCurrentAccountIndex()
+        recordAccountSuccess(acctIdx)
+        return effectiveRequest.stream ?
+            transformStreamResponse(response, effectiveRequest.model)
+          : await transformNonStreamResponse(response, effectiveRequest.model)
       }
 
-      const errorResult = await handleApiError(response, request.model)
+      const errorResult = await handleApiError(response, effectiveRequest.model)
 
       if (errorResult.shouldRetry && attempt < MAX_RETRIES) {
-        // Track rate limit for exponential backoff
-        trackRateLimit(request.model)
+        const family = getModelFamily(effectiveRequest.model)
+        recordFailure(family)
+        const acctIdx = await getCurrentAccountIndex()
+        recordAccountFailure(acctIdx)
 
         // Calculate delay with backoff
-        const backoffDelay = getBackoffDelay(
-          request.model,
-          errorResult.retryDelayMs,
-        )
+        const backoffDelay = getBackoffDelay(family, errorResult.retryDelayMs)
 
         // If delay is short (≤5s), retry on same endpoint
         // Otherwise, try switching endpoint
@@ -513,66 +507,17 @@ async function executeAntigravityRequest(
 
 export async function createAntigravityMessages(
   request: AnthropicMessageRequest,
+  requestHeaders?: Headers,
 ): Promise<Response> {
-  return antigravityQueue.enqueue(() => executeAntigravityRequest(request))
+  return antigravityQueue.enqueue(() =>
+    executeAntigravityRequest(request, requestHeaders),
+  )
 }
 
 interface ApiErrorResult {
   shouldRetry: boolean
   retryDelayMs: number
   response: Response
-}
-
-/**
- * Parse retry delay from error response
- * Supports multiple formats:
- * - RetryInfo.retryDelay: "3.5s"
- * - quotaResetDelay: "3000ms" or "3s"
- * - message: "Your quota will reset after 3s"
- */
-function parseRetryDelay(errorText: string): number {
-  try {
-    const errorData = JSON.parse(errorText) as {
-      error?: {
-        message?: string
-        details?: Array<{
-          "@type"?: string
-          retryDelay?: string
-          quotaResetDelay?: string
-        }>
-      }
-    }
-
-    // Check details array first
-    const details = errorData.error?.details ?? []
-    for (const detail of details) {
-      // Check RetryInfo first
-      if (detail["@type"]?.includes("RetryInfo") && detail.retryDelay) {
-        const match = /(\d+(?:\.\d+)?)s/.exec(detail.retryDelay)
-        if (match) return Math.ceil(Number.parseFloat(match[1]) * 1000)
-      }
-      // Check quotaResetDelay
-      if (detail.quotaResetDelay) {
-        const match = /(\d+(?:\.\d+)?)(?:ms|s)/.exec(detail.quotaResetDelay)
-        if (match) {
-          const value = Number.parseFloat(match[1])
-          return detail.quotaResetDelay.includes("ms") ?
-              Math.ceil(value)
-            : Math.ceil(value * 1000)
-        }
-      }
-    }
-
-    // Check message for "Your quota will reset after Xs" pattern
-    const message = errorData.error?.message ?? ""
-    const resetMatch = /quota will reset after (\d+(?:\.\d+)?)s/i.exec(message)
-    if (resetMatch) {
-      return Math.ceil(Number.parseFloat(resetMatch[1]) * 1000)
-    }
-  } catch {
-    // Ignore parse errors
-  }
-  return 500 // Default 500ms retry delay
 }
 
 /**

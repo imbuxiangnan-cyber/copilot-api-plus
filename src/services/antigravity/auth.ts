@@ -12,6 +12,8 @@ import consola from "consola"
 
 import { PATHS, ensurePaths } from "~/lib/paths"
 
+import { selectBestAccount } from "./account-scorer"
+
 export interface AntigravityAccount {
   access_token: string
   refresh_token: string
@@ -191,6 +193,14 @@ export async function addAntigravityAccount(
 }
 
 /**
+ * Get the current account index
+ */
+export async function getCurrentAccountIndex(): Promise<number> {
+  const auth = await loadAntigravityAuth()
+  return auth?.currentIndex ?? 0
+}
+
+/**
  * Get the current active account
  */
 export async function getCurrentAccount(): Promise<AntigravityAccount | null> {
@@ -217,7 +227,7 @@ export async function getCurrentAccount(): Promise<AntigravityAccount | null> {
 }
 
 /**
- * Rotate to the next account
+ * Rotate to the best available account using weighted scoring
  */
 export async function rotateAccount(): Promise<void> {
   const auth = await loadAntigravityAuth()
@@ -226,18 +236,13 @@ export async function rotateAccount(): Promise<void> {
     return
   }
 
-  // Find next enabled account
-  let nextIndex = (auth.currentIndex + 1) % auth.accounts.length
-  let attempts = 0
+  const bestIndex = selectBestAccount(auth.accounts)
 
-  while (!auth.accounts[nextIndex].enable && attempts < auth.accounts.length) {
-    nextIndex = (nextIndex + 1) % auth.accounts.length
-    attempts++
+  if (bestIndex !== auth.currentIndex) {
+    auth.currentIndex = bestIndex
+    await saveAntigravityAuth(auth)
+    consola.info(`Rotated to account ${bestIndex} (weighted)`)
   }
-
-  auth.currentIndex = nextIndex
-  await saveAntigravityAuth(auth)
-  consola.info(`Rotated to account ${nextIndex}`)
 }
 
 /**

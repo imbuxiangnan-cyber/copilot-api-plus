@@ -44,7 +44,7 @@ English | [简体中文](README.md)
 | 🔑 **API Key Auth** | Optional API key authentication for public deployments |
 | ✂️ **Context Passthrough** | Full context passthrough to upstream API; clients (e.g. Claude Code) manage compression |
 | 🔍 **Smart Model Matching** | Handles model name format differences (date suffixes, dash/dot versions, etc.) |
-| 🔁 **Antigravity Failover** | Dual-endpoint auto-switching with per-model-family rate tracking and exponential backoff |
+| 🔁 **Antigravity Failover** | Circuit breaker state machine, weighted account dispatch, background task auto-downgrade, dual-endpoint auto-switching |
 
 ---
 
@@ -262,8 +262,10 @@ npx copilot-api-plus@latest start --antigravity \
 
 #### Features
 - ✅ Automatic token refresh
-- ✅ Multi-account support with auto-rotation
+- ✅ Multi-account support with weighted smart dispatch (quota health 60% + token freshness 20% + reliability 20%)
 - ✅ Auto-switch on quota exhaustion
+- ✅ Circuit breaker state machine (CLOSED → OPEN → HALF_OPEN → CLOSED)
+- ✅ Multi-signal agent/background request detection with optional model downgrade to save quota
 - ✅ Thinking model support (chain-of-thought output)
 
 #### Multi-Account Management
@@ -590,11 +592,32 @@ For Anthropic endpoints (`/v1/messages`), `translateModelName` also handles lega
 
 ### Antigravity Endpoint Failover
 
-Google Antigravity mode has built-in reliability features:
+Google Antigravity mode has multi-layered reliability features:
 
+- **Circuit breaker state machine**: Independent per model family (claude/gemini/other). Opens after 3 failures, half-opens after 30s for probing, closes after 2 consecutive successes
+- **Weighted account dispatch**: Replaces simple round-robin. Scoring formula: `score = quotaHealth×0.6 + tokenFreshness×0.2 + reliability×0.2`, always selects the healthiest account
+- **Background task detection & downgrade**: Multi-signal weighted detection (tool_calls +0.5, tool role +0.4, assistant density +0.2, long conversation +0.1). Score ≥ 0.6 identifies agent requests, which can be auto-downgraded to cheaper models (e.g. claude-sonnet-4-5 → gemini-2.5-flash). Enable via `ANTIGRAVITY_BACKGROUND_DOWNGRADE=1` env var (off by default)
 - **Dual-endpoint auto-switching**: Daily sandbox and production endpoints; automatically switches on failure
-- **Per-model-family rate tracking**: Separate rate limit tracking for Gemini and Claude model families
 - **Exponential backoff retry**: Auto-retry on 429/503 errors; short intervals stay on the same endpoint, longer intervals switch endpoints
+
+#### Background Downgrade Environment Variable
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ANTIGRAVITY_BACKGROUND_DOWNGRADE` | `0` (off) | Set to `1` to enable automatic model downgrade for agent/background requests |
+
+Downgrade mapping:
+
+| Original Model | Downgraded To |
+|----------------|---------------|
+| `claude-sonnet-4-5` | `gemini-2.5-flash` |
+| `claude-sonnet-4-5-thinking` | `gemini-2.5-flash-thinking` |
+| `claude-opus-4-5-thinking` | `claude-sonnet-4-5-thinking` |
+| `gemini-2.5-pro` | `gemini-2.5-flash` |
+| `gemini-3-pro-high` | `gemini-3-flash` |
+| `gemini-3-pro-low` | `gemini-3-flash` |
+
+Clients can also explicitly mark background requests via the `X-Request-Type: background` header, bypassing detection entirely.
 
 ### Request Logging
 
