@@ -5,9 +5,9 @@
 
 [English](README.en.md) | 简体中文
 
-> A proxy that converts GitHub Copilot, OpenCode Zen, and Google Antigravity into OpenAI & Anthropic compatible APIs. Works with Claude Code, opencode, and more.
+> A proxy that converts GitHub Copilot into OpenAI & Anthropic compatible APIs. Works with Claude Code, opencode, and more.
 
-将 GitHub Copilot、OpenCode Zen、Google Antigravity 等 AI 服务转换为 **OpenAI** 和 **Anthropic** 兼容 API，支持与 [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview)、[opencode](https://github.com/sst/opencode) 等工具无缝集成。
+将 GitHub Copilot 转换为 **OpenAI** 和 **Anthropic** 兼容 API，支持与 [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview)、[opencode](https://github.com/sst/opencode) 等工具无缝集成。
 
 ---
 
@@ -17,8 +17,6 @@
 - [快速开始](#-快速开始)
 - [详细使用指南](#-详细使用指南)
   - [GitHub Copilot 模式](#1-github-copilot-模式默认)
-  - [OpenCode Zen 模式](#2-opencode-zen-模式)
-  - [Google Antigravity 模式](#3-google-antigravity-模式)
 - [代理配置](#-代理配置)
 - [Claude Code 集成](#-claude-code-集成)
 - [opencode 集成](#-opencode-集成)
@@ -35,7 +33,6 @@
 
 | 功能 | 说明 |
 |------|------|
-| 🔌 **多后端支持** | GitHub Copilot、OpenCode Zen、Google Antigravity 三种后端可选 |
 | 🤖 **双协议兼容** | 同时支持 OpenAI Chat Completions API 和 Anthropic Messages API |
 | 💻 **Claude Code 集成** | 一键生成 Claude Code 启动命令 (`--claude-code`) |
 | 📊 **使用量监控** | Web 仪表盘实时查看 API 使用情况 |
@@ -46,7 +43,6 @@
 | 🔑 **API Key 认证** | 可选的 API Key 鉴权，保护公开部署的服务 |
 | ✂️ **上下文透传** | 全量透传上下文至上游 API，由客户端（如 Claude Code）自行管理压缩 |
 | 🔍 **智能模型匹配** | 自动处理模型名格式差异（日期后缀、dash/dot 版本号等） |
-| 🔁 **Antigravity 端点容错** | 熔断器状态机、加权账号调度、后台任务自动降级、双端点自动切换 |
 
 ---
 
@@ -67,12 +63,6 @@ npx copilot-api-plus@latest start
 ```bash
 # 启动服务器（默认使用 GitHub Copilot）
 npx copilot-api-plus@latest start
-
-# 使用 OpenCode Zen
-npx copilot-api-plus@latest start --zen
-
-# 使用 Google Antigravity
-npx copilot-api-plus@latest start --antigravity
 
 # 与 Claude Code 配合
 npx copilot-api-plus@latest start --claude-code
@@ -126,169 +116,6 @@ npx copilot-api-plus@latest start --account-type enterprise
 | GPT-4.1 | `gpt-4.1` | 1M |
 | o4-mini | `o4-mini` | 200K |
 | Gemini 2.5 Pro | `gemini-2.5-pro` | 1M |
-
----
-
-### 2. OpenCode Zen 模式
-
-使用 [OpenCode Zen](https://opencode.ai/zen) 的多模型 API 服务，支持 GPT-5、Claude、Gemini 等顶级编程模型。
-
-#### 前置要求
-1. 访问 https://opencode.ai/zen
-2. 注册账号并创建 API Key
-
-#### 启动步骤
-
-**方式一：交互式设置**
-```bash
-npx copilot-api-plus@latest start --zen
-```
-首次运行会提示输入 API Key，保存后下次自动使用。
-
-**方式二：直接指定 API Key**
-```bash
-npx copilot-api-plus@latest start --zen --zen-api-key YOUR_API_KEY
-```
-
-#### 可用模型
-
-| 模型 | ID | 说明 |
-|------|-----|------|
-| GPT-5.2 | `gpt-5.2` | OpenAI 最新模型 |
-| GPT-5.1 Codex Max | `gpt-5.1-codex-max` | 代码优化版 |
-| GPT-5.1 Codex | `gpt-5.1-codex` | 代码专用 |
-| GPT-5 Codex | `gpt-5-codex` | OpenAI Responses API |
-| Claude Opus 4.5 | `claude-opus-4-5` | Anthropic Claude (200K) |
-| Claude Sonnet 4.5 | `claude-sonnet-4-5` | Anthropic Claude (200K) |
-| Claude Sonnet 4 | `claude-sonnet-4` | Anthropic Claude |
-| Gemini 3 Pro | `gemini-3-pro` | Google Gemini |
-| Qwen3 Coder | `qwen3-coder` | Alibaba Qwen |
-| Kimi K2 | `kimi-k2` | Moonshot |
-| Grok Code Fast 1 | `grok-code-fast-1` | xAI |
-
-更多模型请访问 [opencode.ai/zen](https://opencode.ai/zen)
-
-#### API 端点
-
-Zen 模式支持以下 API 端点：
-
-| 端点 | 说明 |
-|------|------|
-| `/v1/chat/completions` | OpenAI 兼容 Chat API |
-| `/v1/messages` | Anthropic 兼容 Messages API |
-| `/v1/responses` | OpenAI Responses API (GPT-5 系列) |
-| `/v1/models` | 获取可用模型列表 |
-
-专用端点（无需 `--zen` 标志也可访问）：
-- `/zen/v1/chat/completions`
-- `/zen/v1/messages`
-- `/zen/v1/responses`
-- `/zen/v1/models`
-
-#### 管理 API Key
-
-```bash
-# 查看/更换 API Key（清除后重新启动会提示输入）
-npx copilot-api-plus@latest logout --zen
-```
-
----
-
-### 3. Google Antigravity 模式
-
-使用 Google Antigravity API 服务，支持 Gemini 和 Claude 模型。
-
-#### 前置要求
-- Google 账户
-
-#### 认证方式
-
-**方式一：API Key（推荐 - 最简单）**
-
-1. 访问 https://aistudio.google.com/apikey 获取 API Key
-2. 使用环境变量启动：
-
-```bash
-# Linux/macOS
-GEMINI_API_KEY=your_api_key npx copilot-api-plus@latest start --antigravity
-
-# Windows PowerShell
-$env:GEMINI_API_KEY = "your_api_key"
-npx copilot-api-plus@latest start --antigravity
-
-# Windows CMD
-set GEMINI_API_KEY=your_api_key
-npx copilot-api-plus@latest start --antigravity
-```
-
-**方式二：OAuth 网页登录（推荐）**
-
-```bash
-npx copilot-api-plus@latest start --antigravity
-```
-
-首次运行会提示选择登录方式：
-- **Web（推荐）**：自动打开浏览器完成 Google 登录，授权后自动捕获回调
-- **Manual**：手动复制回调 URL 到终端
-
-**方式三：自定义 OAuth 凭证**
-
-如果遇到 `invalid_client` 错误，可以创建自己的 OAuth 应用：
-
-1. 访问 https://console.cloud.google.com/apis/credentials
-2. 创建 OAuth 2.0 客户端 ID（选择"桌面应用"类型）
-3. 添加重定向 URI：`http://localhost:8046/callback`
-4. 使用环境变量或命令行参数：
-
-```bash
-# 环境变量方式
-ANTIGRAVITY_CLIENT_ID=your_client_id ANTIGRAVITY_CLIENT_SECRET=your_secret \
-  npx copilot-api-plus@latest start --antigravity
-
-# 命令行参数方式
-npx copilot-api-plus@latest start --antigravity \
-  --antigravity-client-id your_client_id \
-  --antigravity-client-secret your_secret
-```
-
-#### 可用模型
-
-| 模型 | ID | 说明 |
-|------|-----|------|
-| Gemini 2.5 Pro | `gemini-2.5-pro-exp-03-25` | Google Gemini |
-| Gemini 2.5 Pro Preview | `gemini-2.5-pro-preview-05-06` | Google Gemini |
-| Gemini 2.0 Flash | `gemini-2.0-flash-exp` | 快速响应 |
-| Gemini 2.0 Flash Thinking | `gemini-2.0-flash-thinking-exp` | 支持思考链 |
-| Claude Opus 4.5 | `claude-opus-4-5` | Anthropic Claude |
-| Claude Sonnet 4.5 | `claude-sonnet-4-5` | Anthropic Claude |
-
-#### 特性
-- ✅ 自动 Token 刷新
-- ✅ 多账户支持，加权智能调度（配额健康度 60% + Token 新鲜度 20% + 可靠性 20%）
-- ✅ 配额用尽自动切换账户
-- ✅ 熔断器状态机（CLOSED → OPEN → HALF_OPEN → CLOSED）
-- ✅ 后台/Agent 请求多信号检测，可选模型降级节省配额
-- ✅ 支持 Thinking 模型（思考链输出）
-
-#### 多账户管理
-
-可以添加多个 Google 账户，系统会在配额用尽时自动切换：
-
-```bash
-# 添加新账户
-npx copilot-api-plus@latest antigravity add
-
-# 列出所有账户
-npx copilot-api-plus@latest antigravity list
-
-# 按索引删除账户
-npx copilot-api-plus@latest antigravity remove 0
-
-# 清除所有账户
-npx copilot-api-plus@latest antigravity clear
-# 或使用 logout 命令
-npx copilot-api-plus@latest logout --antigravity
-```
 
 ---
 
@@ -378,14 +205,7 @@ npx copilot-api-plus@latest start --proxy-env
 ### 自动配置（推荐）
 
 ```bash
-# 使用 GitHub Copilot 作为后端
 npx copilot-api-plus@latest start --claude-code
-
-# 使用 OpenCode Zen 作为后端
-npx copilot-api-plus@latest start --zen --claude-code
-
-# 使用 Google Antigravity 作为后端
-npx copilot-api-plus@latest start --antigravity --claude-code
 ```
 
 运行后：
@@ -499,13 +319,11 @@ npx opencode@latest
 
 ### 专用端点
 
-各后端都有独立的专用路由，即使切换默认后端也能访问：
+GitHub Copilot 有独立的专用路由：
 
 | 路由前缀 | 说明 |
 |----------|------|
 | `/copilot/v1/*` | GitHub Copilot 专用 |
-| `/zen/v1/*` | OpenCode Zen 专用 |
-| `/antigravity/v1/*` | Google Antigravity 专用 |
 
 ### 监控端点
 
@@ -548,7 +366,6 @@ curl http://localhost:4141/v1/messages \
 | `auth` | 仅执行 GitHub 认证流程 |
 | `logout` | 清除已保存的凭证 |
 | `proxy` | 配置代理设置 |
-| `antigravity` | 管理 Google Antigravity 账户 |
 | `check-usage` | 查看 Copilot 使用量 |
 | `debug` | 显示调试信息 |
 
@@ -560,11 +377,6 @@ curl http://localhost:4141/v1/messages \
 | `--verbose` | `-v` | false | 详细日志 |
 | `--account-type` | `-a` | individual | 账户类型 (individual/business/enterprise) |
 | `--claude-code` | `-c` | false | 生成 Claude Code 启动命令 |
-| `--zen` | `-z` | false | 启用 OpenCode Zen 模式 |
-| `--zen-api-key` | - | - | Zen API Key |
-| `--antigravity` | - | false | 启用 Google Antigravity 模式 |
-| `--antigravity-client-id` | - | - | Antigravity OAuth Client ID |
-| `--antigravity-client-secret` | - | - | Antigravity OAuth Client Secret |
 | `--rate-limit` | `-r` | - | 请求间隔（秒） |
 | `--wait` | `-w` | false | 达到限制时等待而非报错 |
 | `--manual` | - | false | 手动审批每个请求 |
@@ -591,30 +403,9 @@ curl http://localhost:4141/v1/messages \
 | 参数 | 别名 | 说明 |
 |------|------|------|
 | `--github` | `-g` | 仅清除 GitHub Copilot 凭证 |
-| `--zen` | `-z` | 仅清除 Zen 凭证 |
-| `--antigravity` | - | 仅清除 Antigravity 凭证 |
 | `--all` | `-a` | 清除所有凭证 |
 
 > **提示**：不带参数运行 `logout` 会显示交互式菜单供选择。
-
-### antigravity 命令
-
-管理 Google Antigravity 账户的子命令：
-
-| 子命令 | 说明 |
-|--------|------|
-| `add` | 添加新的 Antigravity 账户（OAuth 登录） |
-| `list` | 列出所有已配置的账户及其状态 |
-| `remove <index>` | 按索引删除指定账户 |
-| `clear` | 清除所有 Antigravity 账户（需确认） |
-
-```bash
-# 示例
-npx copilot-api-plus@latest antigravity add      # 添加账户
-npx copilot-api-plus@latest antigravity list     # 列出账户
-npx copilot-api-plus@latest antigravity remove 0 # 删除索引为 0 的账户
-npx copilot-api-plus@latest antigravity clear    # 清除所有账户
-```
 
 ---
 
@@ -671,35 +462,6 @@ Anthropic 格式的模型名（如 `claude-opus-4-6`）和 Copilot 的模型列�
 | Dot → Dash | `claude-opus-4.5` → `claude-opus-4-5` |
 
 对于 Anthropic 端点（`/v1/messages`），还会先通过 `translateModelName` 做格式转换（包括旧格式 `claude-3-5-sonnet` → `claude-sonnet-4.5` 的映射），再通过上述策略匹配。
-
-### Antigravity 端点容错
-
-Google Antigravity 模式内置了多层可靠性保障：
-
-- **熔断器状态机**：按模型族（claude/gemini/other）独立管理，3 次失败后熔断（OPEN），30 秒后半开（HALF_OPEN）试探，连续 2 次成功则恢复（CLOSED）
-- **加权账号调度**：替代简单轮换，综合评分 `score = 配额健康度×0.6 + Token新鲜度×0.2 + 可靠性×0.2`，优先选用最健康的账号
-- **后台任务检测与降级**：多信号加权检测（tool_calls +0.5、tool 角色 +0.4、助手密度 +0.2、长对话 +0.1），得分 ≥ 0.6 判定为 Agent 请求，可自动降级高价模型（如 claude-sonnet-4-5 → gemini-2.5-flash）。通过 `ANTIGRAVITY_BACKGROUND_DOWNGRADE=1` 环境变量启用，默认关闭
-- **双端点自动切换**：daily sandbox 和 production 两个端点，一个失败自动切换到另一个
-- **指数退避重试**：429/503 等限流错误自动退避重试，短间隔走同端点，长间隔切换端点
-
-#### 后台降级环境变量
-
-| 变量 | 默认 | 说明 |
-|------|------|------|
-| `ANTIGRAVITY_BACKGROUND_DOWNGRADE` | `0` (关闭) | 设为 `1` 启用 Agent/后台请求自动模型降级 |
-
-降级映射：
-
-| 原始模型 | 降级后 |
-|----------|--------|
-| `claude-sonnet-4-5` | `gemini-2.5-flash` |
-| `claude-sonnet-4-5-thinking` | `gemini-2.5-flash-thinking` |
-| `claude-opus-4-5-thinking` | `claude-sonnet-4-5-thinking` |
-| `gemini-2.5-pro` | `gemini-2.5-flash` |
-| `gemini-3-pro-high` | `gemini-3-flash` |
-| `gemini-3-pro-low` | `gemini-3-flash` |
-
-客户端也可通过请求头 `X-Request-Type: background` 显式标记后台请求，无需检测直接生效。
 
 ### 请求日志
 
@@ -780,8 +542,6 @@ docker run -p 4141:4141 \
 | 文件 | 说明 |
 |------|------|
 | `github_token` | GitHub Token |
-| `zen-auth.json` | Zen API Key |
-| `antigravity-accounts.json` | Antigravity 账户 |
 | `config.json` | 代理等配置 |
 
 ### 切换账户
@@ -794,12 +554,6 @@ npx copilot-api-plus@latest logout
 npx copilot-api-plus@latest logout --github
 # 或简写
 npx copilot-api-plus@latest logout -g
-
-# 清除 Zen 凭证
-npx copilot-api-plus@latest logout --zen
-
-# 清除 Antigravity 凭证
-npx copilot-api-plus@latest logout --antigravity
 
 # 清除所有凭证
 npx copilot-api-plus@latest logout --all
