@@ -63,6 +63,3 @@ export class RequestQueue {
     }
   }
 }
-
-// Allow 2 concurrent requests with 500ms minimum gap
-export const antigravityQueue = new RequestQueue(2, 500)

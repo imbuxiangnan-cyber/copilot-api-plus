@@ -6,7 +6,18 @@ export function initProxyFromEnv(): void {
   if (typeof Bun !== "undefined") return
 
   try {
-    const direct = new Agent()
+    // Connection management: prevent stale sockets from causing
+    // "TypeError: terminated" / "other side closed" errors.
+    // - keepAliveTimeout: close idle sockets before the proxy server does
+    // - keepAliveMaxTimeout: hard cap on connection reuse lifetime
+    // - connect.timeout: fail fast on stuck TLS handshakes
+    const agentOptions = {
+      keepAliveTimeout: 30_000,
+      keepAliveMaxTimeout: 60_000,
+      connect: { timeout: 15_000 },
+    }
+
+    const direct = new Agent(agentOptions)
     const proxies = new Map<string, ProxyAgent>()
 
     // We only need a minimal dispatcher that implements `dispatch` at runtime.
@@ -34,7 +45,7 @@ export function initProxyFromEnv(): void {
           }
           let agent = proxies.get(proxyUrl)
           if (!agent) {
-            agent = new ProxyAgent(proxyUrl)
+            agent = new ProxyAgent({ uri: proxyUrl, ...agentOptions })
             proxies.set(proxyUrl, agent)
           }
           let label = proxyUrl

@@ -4,7 +4,6 @@
 import "dotenv/config"
 /* eslint-disable require-atomic-updates */
 /* eslint-disable max-lines-per-function */
-/* eslint-disable complexity */
 import { defineCommand } from "citty"
 import clipboard from "clipboardy"
 import consola from "consola"
@@ -32,20 +31,10 @@ interface RunServerOptions {
   showToken: boolean
   proxyEnv: boolean
   apiKeys?: Array<string>
-  zen: boolean
-  zenApiKey?: string
-  antigravity: boolean
-  antigravityClientId?: string
-  antigravityClientSecret?: string
 }
 
 /**
  * Start and configure the Copilot API server according to the provided options.
- *
- * Configures proxy and logging, initializes global state and credentials, ensures
- * required paths and model data are cached, optionally generates a Claude Code
- * launch command (and attempts to copy it to the clipboard), prints a usage
- * viewer URL, and begins serving HTTP requests on the specified port.
  *
  * @param options - Server startup options:
  *   - port: Port number to listen on
@@ -59,11 +48,6 @@ interface RunServerOptions {
  *   - showToken: Expose GitHub/Copilot tokens in responses for debugging
  *   - proxyEnv: Initialize proxy settings from environment variables
  *   - apiKeys: Optional list of API keys to enable API key authentication
- *   - zen: Enable OpenCode Zen mode (proxy to Zen instead of GitHub Copilot)
- *   - zenApiKey: OpenCode Zen API key (optional; if omitted will prompt for setup)
- *   - antigravity: Enable Google Antigravity mode
- *   - antigravityClientId: Google OAuth Client ID (optional; overrides env/default)
- *   - antigravityClientSecret: Google OAuth Client Secret (optional; overrides env/default)
  */
 export async function runServer(options: RunServerOptions): Promise<void> {
   // Apply saved proxy configuration first (if any)
@@ -101,167 +85,51 @@ export async function runServer(options: RunServerOptions): Promise<void> {
 
   await ensurePaths()
 
-  // Handle Zen mode
-  if (options.zen) {
-    consola.info("OpenCode Zen mode enabled")
-    state.zenMode = true
+  // Standard Copilot mode
+  await cacheVSCodeVersion()
 
-    // Setup Zen API key
-    if (options.zenApiKey) {
-      state.zenApiKey = options.zenApiKey
-      consola.info("Using provided Zen API key")
-    } else {
-      const { setupZenApiKey, loadZenAuth } = await import(
-        "~/services/zen/auth"
-      )
-      const existingAuth = await loadZenAuth()
-
-      if (existingAuth) {
-        state.zenApiKey = existingAuth.apiKey
-        consola.info("Using existing Zen API key")
-      } else {
-        const apiKey = await setupZenApiKey()
-        state.zenApiKey = apiKey
-      }
-    }
-
-    // Cache Zen models
-    const { cacheZenModels } = await import("~/services/zen/get-models")
-    await cacheZenModels()
-
-    consola.info(
-      `Available Zen models: \n${state.zenModels?.data.map((model) => `- ${model.id}`).join("\n")}`,
-    )
-  } else if (options.antigravity) {
-    // Handle Antigravity mode
-    consola.info("Google Antigravity mode enabled")
-    state.antigravityMode = true
-
-    // Import auth module
-    const {
-      loadAntigravityAuth,
-      setupAntigravity,
-      getCurrentAccount,
-      hasApiKey,
-      getApiKey,
-      setOAuthCredentials,
-    } = await import("~/services/antigravity/auth")
-
-    // Set CLI-provided OAuth credentials if available
-    if (options.antigravityClientId && options.antigravityClientSecret) {
-      setOAuthCredentials(
-        options.antigravityClientId,
-        options.antigravityClientSecret,
-      )
-      consola.info("Using provided OAuth credentials from CLI")
-    }
-
-    // Check for API Key first (simplest authentication)
-    if (hasApiKey()) {
-      consola.info(
-        "Using Gemini API Key for authentication (from GEMINI_API_KEY)",
-      )
-      consola.info(`API Key: ${getApiKey()?.slice(0, 10) ?? ""}...`)
-    } else {
-      // Fall back to OAuth authentication
-      const existingAuth = await loadAntigravityAuth()
-
-      if (!existingAuth || existingAuth.accounts.length === 0) {
-        consola.warn("No Antigravity accounts found and no GEMINI_API_KEY set")
-        consola.info("")
-        consola.info("You can authenticate using one of these methods:")
-        consola.info("")
-        consola.info("Method 1: API Key (Recommended - Simplest)")
-        consola.info("  Set environment variable: GEMINI_API_KEY=your_api_key")
-        consola.info(
-          "  Get your API key from: https://aistudio.google.com/apikey",
-        )
-        consola.info("")
-        consola.info("Method 2: OAuth (Current setup)")
-        consola.info("  Will proceed with OAuth login flow...")
-        consola.info("")
-        await setupAntigravity()
-      } else {
-        const enabledCount = existingAuth.accounts.filter(
-          (a) => a.enable,
-        ).length
-        consola.info(
-          `Found ${existingAuth.accounts.length} Antigravity accounts (${enabledCount} enabled)`,
-        )
-      }
-
-      const currentAccount = await getCurrentAccount()
-      if (!currentAccount && !hasApiKey()) {
-        throw new Error("No enabled Antigravity accounts available")
-      }
-    }
-
-    // Get Antigravity models
-    const { getAntigravityModels } = await import(
-      "~/services/antigravity/get-models"
-    )
-    const models = await getAntigravityModels()
-    state.antigravityModels = models
-
-    consola.info(
-      `Available Antigravity models: \n${models.data.map((model) => `- ${model.id}`).join("\n")}`,
-    )
-  } else {
-    // Standard Copilot mode
-    await cacheVSCodeVersion()
-
-    if (options.githubToken) {
-      state.githubToken = options.githubToken
-      consola.info("Using provided GitHub token")
-      // Validate the provided token
-      try {
-        const { getGitHubUser } = await import("~/services/github/get-user")
-        const user = await getGitHubUser()
-        consola.info(`Logged in as ${user.login}`)
-      } catch (error) {
-        consola.error("Provided GitHub token is invalid")
-        throw error
-      }
-    } else {
-      await setupGitHubToken()
-    }
-
+  if (options.githubToken) {
+    state.githubToken = options.githubToken
+    consola.info("Using provided GitHub token")
+    // Validate the provided token
     try {
-      await setupCopilotToken()
+      const { getGitHubUser } = await import("~/services/github/get-user")
+      const user = await getGitHubUser()
+      consola.info(`Logged in as ${user.login}`)
     } catch (error) {
-      // If getting Copilot token fails with 401, the GitHub token might be invalid
-      const { HTTPError } = await import("~/lib/error")
-      if (error instanceof HTTPError && error.response.status === 401) {
-        consola.error(
-          "Failed to get Copilot token - GitHub token may be invalid or Copilot access revoked",
-        )
-        const { clearGithubToken } = await import("~/lib/token")
-        await clearGithubToken()
-        consola.info("Please restart to re-authenticate")
-      }
+      consola.error("Provided GitHub token is invalid")
       throw error
     }
-
-    await cacheModels()
-
-    consola.info(
-      `Available models: \n${state.models?.data.map((model) => `- ${model.id}`).join("\n")}`,
-    )
+  } else {
+    await setupGitHubToken()
   }
+
+  try {
+    await setupCopilotToken()
+  } catch (error) {
+    // If getting Copilot token fails with 401, the GitHub token might be invalid
+    const { HTTPError } = await import("~/lib/error")
+    if (error instanceof HTTPError && error.response.status === 401) {
+      consola.error(
+        "Failed to get Copilot token - GitHub token may be invalid or Copilot access revoked",
+      )
+      const { clearGithubToken } = await import("~/lib/token")
+      await clearGithubToken()
+      consola.info("Please restart to re-authenticate")
+    }
+    throw error
+  }
+
+  await cacheModels()
+
+  consola.info(
+    `Available models: \n${state.models?.data.map((model) => `- ${model.id}`).join("\n")}`,
+  )
 
   const serverUrl = `http://localhost:${options.port}`
 
   if (options.claudeCode) {
-    // Get model list based on current mode
-    // All model responses share the same { data: Array<{ id: string }> } structure
-    let modelList: Array<{ id: string }> | undefined
-    if (state.zenMode) {
-      modelList = state.zenModels?.data
-    } else if (state.antigravityMode) {
-      modelList = state.antigravityModels?.data
-    } else {
-      modelList = state.models?.data
-    }
+    const modelList = state.models?.data
     invariant(modelList, "Models should be loaded by now")
 
     const selectedModel = await consola.prompt(
@@ -383,32 +251,6 @@ export const start = defineCommand({
       type: "string",
       description: "API keys for authentication",
     },
-    zen: {
-      alias: "z",
-      type: "boolean",
-      default: false,
-      description:
-        "Enable OpenCode Zen mode (proxy to Zen instead of GitHub Copilot)",
-    },
-    "zen-api-key": {
-      type: "string",
-      description: "OpenCode Zen API key (get from https://opencode.ai/zen)",
-    },
-    antigravity: {
-      type: "boolean",
-      default: false,
-      description:
-        "Enable Google Antigravity mode (proxy to Antigravity instead of GitHub Copilot)",
-    },
-    "antigravity-client-id": {
-      type: "string",
-      description:
-        "Google OAuth Client ID for Antigravity (create at https://console.cloud.google.com/apis/credentials)",
-    },
-    "antigravity-client-secret": {
-      type: "string",
-      description: "Google OAuth Client Secret for Antigravity",
-    },
   },
   run({ args }) {
     const rateLimitRaw = args["rate-limit"]
@@ -435,11 +277,6 @@ export const start = defineCommand({
       showToken: args["show-token"],
       proxyEnv: args["proxy-env"],
       apiKeys,
-      zen: args.zen,
-      zenApiKey: args["zen-api-key"],
-      antigravity: args.antigravity,
-      antigravityClientId: args["antigravity-client-id"],
-      antigravityClientSecret: args["antigravity-client-secret"],
     })
   },
 })

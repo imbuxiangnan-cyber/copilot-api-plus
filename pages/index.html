@@ -747,7 +747,7 @@
             title: "Copilot API 用量仪表盘",
             eyebrow: "实时状态面板",
             subtitle:
-              "默认连接本地 /usage 接口，自动识别 Copilot、Antigravity、Zen 三种模式，把关键状态、配额和诊断信息放到同一页里。",
+              "默认连接本地 /usage 接口，获取 Copilot 配额状态，把关键状态、配额和诊断信息放到同一页里。",
             heroTags: ["中文优先", "自动刷新间隔可配置", "高级信息默认折叠"],
             quickTipTitle: "怎么用更快",
             quickTipBody: "直接启动服务后保持默认地址即可。若端口不同，改成完整的 /usage URL 再刷新。",
@@ -822,24 +822,11 @@
             chatEnabled: "聊天能力",
             enabled: "已启用",
             disabled: "未启用",
-            antigravitySectionTitle: "Antigravity 模型配额",
-            antigravitySectionBody: "按 Gemini、Claude、Other 三组查看模型剩余额度与重置时间。",
-            antigravityEmptyTitle: "暂未读取到模型配额",
-            antigravityEmptyBody: "当前接口没有返回模型额度，可能正在使用回退模型列表，或配额信息暂不可用。",
-            antigravityTotalModels: "含配额模型数",
-            antigravityGemini: "Gemini",
-            antigravityClaude: "Claude",
-            antigravityOther: "Other",
             modelReset: "重置时间",
             modelRemaining: "剩余",
             modelHealthy: "充足",
             modelWarning: "偏低",
             modelCritical: "紧张",
-            zenSectionTitle: "Zen 模式说明",
-            zenSectionBody: "Zen 没有公开的 /usage 统计接口，因此这里展示说明卡，而不是把它当成报错。",
-            zenMessageFallback: "请到 OpenCode 控制台查看实际用量。",
-            zenConsole: "打开 OpenCode 控制台",
-            zenHint: "当前服务仍可正常提供 Zen 相关模型接口，这里只是没有公开配额统计。",
             advancedTitle: "高级信息 / 原始响应",
             advancedBody: "默认折叠，减少首屏噪音；需要排查时再展开。",
             detailsSummary: "高级信息",
@@ -857,8 +844,6 @@
             copyForDebug: "适合排查问题时复制原始 JSON。",
             languageToggle: "EN",
             modeCopilot: "Copilot",
-            modeAntigravity: "Antigravity",
-            modeZen: "Zen",
             currentTargetLabel: "当前目标：{endpoint}",
             invalidEndpoint: "请输入有效的接口地址。",
             networkErrorFallback: "无法请求接口，请检查本地服务与地址是否正确。",
@@ -869,7 +854,7 @@
             title: "Copilot API Usage Dashboard",
             eyebrow: "Live Status Panel",
             subtitle:
-              "Connect to a local /usage endpoint, detect Copilot, Antigravity, or Zen automatically, and keep the key status, quotas, and diagnostics on one page.",
+              "Connect to a local /usage endpoint for Copilot quota status, and keep the key status, quotas, and diagnostics on one page.",
             heroTags: ["Chinese-first copy", "Configurable auto refresh", "Advanced data stays collapsed"],
             quickTipTitle: "Fastest setup",
             quickTipBody: "If your server runs locally, keep the default address. Change it only when your port or host is different.",
@@ -944,24 +929,11 @@
             chatEnabled: "Chat enabled",
             enabled: "Enabled",
             disabled: "Disabled",
-            antigravitySectionTitle: "Antigravity Model Quotas",
-            antigravitySectionBody: "Browse model quotas by Gemini, Claude, and Other groups, including remaining percentage and reset time.",
-            antigravityEmptyTitle: "No model quota data yet",
-            antigravityEmptyBody: "The endpoint did not return model quota information. It may be using fallback models or quota metadata may be unavailable.",
-            antigravityTotalModels: "Models with quota",
-            antigravityGemini: "Gemini",
-            antigravityClaude: "Claude",
-            antigravityOther: "Other",
             modelReset: "Reset",
             modelRemaining: "Remaining",
             modelHealthy: "Healthy",
             modelWarning: "Low",
             modelCritical: "Critical",
-            zenSectionTitle: "Zen Mode Note",
-            zenSectionBody: "Zen does not expose a public /usage API, so this view shows an explanation card instead of treating it like an error.",
-            zenMessageFallback: "OpenCode console is the place to check actual usage.",
-            zenConsole: "Open OpenCode console",
-            zenHint: "The service can still expose Zen model APIs normally; only public usage metrics are unavailable here.",
             advancedTitle: "Advanced Info / Raw Response",
             advancedBody: "Collapsed by default to reduce noise. Expand it only when you need to inspect the payload.",
             detailsSummary: "Advanced info",
@@ -979,8 +951,6 @@
             copyForDebug: "Useful when you need the raw JSON for debugging.",
             languageToggle: "中文",
             modeCopilot: "Copilot",
-            modeAntigravity: "Antigravity",
-            modeZen: "Zen",
             currentTargetLabel: "Current target: {endpoint}",
             invalidEndpoint: "Please enter a valid endpoint URL.",
             networkErrorFallback: "Unable to reach the endpoint. Check the local server and the URL.",
@@ -991,8 +961,6 @@
 
         const modeLabels = {
           copilot: () => text("modeCopilot"),
-          antigravity: () => text("modeAntigravity"),
-          zen: () => text("modeZen"),
           unknown: () => text("modeUnknown"),
         };
 
@@ -1201,12 +1169,8 @@
 
         function getMode(data) {
           if (!data || typeof data !== "object") return "unknown";
-          if (data.mode === "zen") return "zen";
-          if (data.copilot_plan === "antigravity" || data.quota_snapshots?.models) {
-            return "antigravity";
-          }
           if (data.quota_snapshots) return "copilot";
-          return "unknown";
+          return "copilot";
         }
 
         function getModeLabel(mode) {
@@ -1647,13 +1611,7 @@
 
           const mode = getMode(state.data);
           const sections = [];
-          if (mode === "antigravity") {
-            sections.push(renderAntigravitySection(state.data));
-          } else if (mode === "zen") {
-            sections.push(renderZenSection(state.data));
-          } else {
-            sections.push(renderCopilotSection(state.data));
-          }
+          sections.push(renderCopilotSection(state.data));
           sections.push(renderAdvancedPanel(state.data, mode));
           refs.contentArea.innerHTML = sections.join("");
           bindContentActions();
@@ -1785,155 +1743,6 @@
           `;
         }
 
-        function renderAntigravitySection(data) {
-          const models = data.quota_snapshots?.models || {};
-          const entries = Object.entries(models);
-          const grouped = {
-            gemini: [],
-            claude: [],
-            other: [],
-          };
-
-          for (const [modelId, quota] of entries) {
-            if (modelId.startsWith("gemini") || modelId.startsWith("learnlm")) {
-              grouped.gemini.push([modelId, quota]);
-            } else if (modelId.startsWith("claude")) {
-              grouped.claude.push([modelId, quota]);
-            } else {
-              grouped.other.push([modelId, quota]);
-            }
-          }
-
-          const counts = [
-            `<span class="pill pill-brand">${icon("spark")}${escapeHtml(text("antigravityGemini"))}: ${escapeHtml(formatNumber(grouped.gemini.length))}</span>`,
-            `<span class="pill pill-warning">${icon("claude")}${escapeHtml(text("antigravityClaude"))}: ${escapeHtml(formatNumber(grouped.claude.length))}</span>`,
-            `<span class="pill pill-neutral">${icon("other")}${escapeHtml(text("antigravityOther"))}: ${escapeHtml(formatNumber(grouped.other.length))}</span>`,
-          ].join("");
-
-          const renderGroup = (titleKey, iconName, items, pillClass) => {
-            if (!items.length) return "";
-            const cards = items
-              .map(([modelId, quota]) => {
-                const percentRemaining = Number(quota.percent_remaining || 0);
-                const health = getHealthLabel(percentRemaining);
-                return `
-                  <article class="dashboard-card p-4 sm:p-5">
-                    <div class="flex items-start justify-between gap-3">
-                      <div>
-                        <p class="font-bold leading-7 text-[var(--text)]">${escapeHtml(modelId)}</p>
-                        <p class="mt-1 text-sm text-[var(--muted)]">${escapeHtml(text("modelReset"))}: ${escapeHtml(quota.reset_time ? formatDateTime(quota.reset_time) : text("noValue"))}</p>
-                      </div>
-                      <span class="pill ${health.className}">${escapeHtml(health.text)}</span>
-                    </div>
-                    <div class="mt-4 space-y-2">
-                      <div class="flex items-center justify-between text-sm text-[var(--muted)]">
-                        <span>${escapeHtml(text("modelRemaining"))}</span>
-                        <span class="mono font-semibold text-[var(--text)]">${escapeHtml(formatPercent(percentRemaining))}</span>
-                      </div>
-                      <div class="progress-track">
-                        <div class="progress-fill ${getProgressTone(100 - percentRemaining)}" style="width: ${percentRemaining}%"></div>
-                      </div>
-                    </div>
-                  </article>
-                `;
-              })
-              .join("");
-
-            return `
-              <section class="space-y-3">
-                <div class="flex items-center justify-between gap-3">
-                  <h3 class="section-title text-lg text-[var(--text)]">
-                    <span class="section-icon h-10 w-10">${ICONS[iconName]}</span>
-                    <span>${escapeHtml(text(titleKey))}</span>
-                  </h3>
-                  <span class="pill ${pillClass}">${escapeHtml(formatNumber(items.length))}</span>
-                </div>
-                <div class="grid gap-4 xl:grid-cols-2">${cards}</div>
-              </section>
-            `;
-          };
-
-          const mainPanel = entries.length
-            ? [
-                renderGroup("antigravityGemini", "spark", grouped.gemini, "pill-brand"),
-                renderGroup("antigravityClaude", "claude", grouped.claude, "pill-warning"),
-                renderGroup("antigravityOther", "other", grouped.other, "pill-neutral"),
-              ]
-                .filter(Boolean)
-                .join("")
-            : `
-                <div class="dashboard-card p-7 text-center">
-                  <div class="mx-auto empty-illustration">${ICONS.info}</div>
-                  <h3 class="mt-4 text-xl font-bold text-[var(--text)]">${escapeHtml(text("antigravityEmptyTitle"))}</h3>
-                  <p class="mx-auto mt-2 max-w-2xl text-sm leading-7 text-[var(--muted)] sm:text-base">${escapeHtml(text("antigravityEmptyBody"))}</p>
-                </div>
-              `;
-
-          return `
-            <section class="space-y-5">
-              <div class="dashboard-card-strong p-6 sm:p-7">
-                <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                  <div class="max-w-2xl space-y-3">
-                    <div class="section-title text-2xl text-[var(--text)]">
-                      <span class="section-icon">${ICONS.spark}</span>
-                      <span>${escapeHtml(text("antigravitySectionTitle"))}</span>
-                    </div>
-                    <p class="text-sm leading-7 text-[var(--muted)] sm:text-base">${escapeHtml(text("antigravitySectionBody"))}</p>
-                  </div>
-                  <div class="rounded-[22px] border border-[var(--line)] bg-white/70 px-4 py-3 text-sm text-[var(--muted)]">
-                    <div class="font-semibold text-[var(--text)]">${escapeHtml(text("quotaReset"))}</div>
-                    <div class="mt-1 mono">${escapeHtml(data.quota_reset_date ? formatDateTime(data.quota_reset_date) : text("noValue"))}</div>
-                  </div>
-                </div>
-                <div class="mt-5 flex flex-wrap gap-2">
-                  <span class="pill pill-brand">${icon("chart")}${escapeHtml(text("antigravityTotalModels"))}: ${escapeHtml(formatNumber(entries.length))}</span>
-                  ${counts}
-                </div>
-              </div>
-
-              <div class="space-y-5">${mainPanel}</div>
-            </section>
-          `;
-        }
-
-        function renderZenSection(data) {
-          return `
-            <section class="dashboard-card-strong p-6 sm:p-7 lg:p-8">
-              <div class="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] lg:items-start">
-                <div class="space-y-4">
-                  <span class="pill pill-brand">${icon("mode")}${escapeHtml(getModeLabel("zen"))}</span>
-                  <div>
-                    <h2 class="text-3xl font-bold tracking-tight text-[var(--text)]">${escapeHtml(text("zenSectionTitle"))}</h2>
-                    <p class="mt-3 text-sm leading-7 text-[var(--muted)] sm:text-base">${escapeHtml(text("zenSectionBody"))}</p>
-                  </div>
-                  <div class="rounded-[22px] border border-[var(--line)] bg-white/75 p-4">
-                    <p class="font-semibold text-[var(--text)]">${escapeHtml(data.message || text("zenMessageFallback"))}</p>
-                    <p class="mt-2 text-sm leading-6 text-[var(--muted)]">${escapeHtml(text("zenHint"))}</p>
-                  </div>
-                </div>
-
-                <div class="dashboard-card p-5 sm:p-6">
-                  <div class="flex items-center gap-3">
-                    <span class="section-icon">${ICONS.external}</span>
-                    <div>
-                      <p class="font-bold text-[var(--text)]">OpenCode</p>
-                      <p class="text-sm text-[var(--muted)]">${escapeHtml(text("zenMessageFallback"))}</p>
-                    </div>
-                  </div>
-                  <a
-                    href="https://console.opencode.ai"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="btn btn-primary mt-5 w-full"
-                  >
-                    ${icon("external")}${escapeHtml(text("zenConsole"))}
-                  </a>
-                </div>
-              </div>
-            </section>
-          `;
-        }
-
         function getAdvancedFacts(data, mode) {
           const facts = [
             [text("endpointField"), state.endpoint],
@@ -1948,12 +1757,6 @@
             facts.push([text("accessType"), data.access_type_sku || text("noValue")]);
             facts.push([text("resetField"), data.quota_reset_date ? formatDateTime(data.quota_reset_date) : text("noValue")]);
             facts.push([text("chatEnabled"), data.chat_enabled ? text("enabled") : text("disabled")]);
-          } else if (mode === "antigravity") {
-            facts.push([text("resetField"), data.quota_reset_date ? formatDateTime(data.quota_reset_date) : text("noValue")]);
-            facts.push([text("totalModelsField"), formatNumber(Object.keys(data.quota_snapshots?.models || {}).length)]);
-          } else if (mode === "zen") {
-            facts.push([text("resetField"), text("noValue")]);
-            facts.push(["message", data.message || text("zenMessageFallback")]);
           }
 
           return facts;

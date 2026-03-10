@@ -1,14 +1,12 @@
 {
   "name": "copilot-api-plus",
   "version": "1.0.57",
-  "description": "Turn GitHub Copilot, OpenCode Zen, or Google Antigravity into OpenAI/Anthropic API compatible server. Features: circuit breaker, weighted account dispatch, background task downgrade, smart model matching, dual-endpoint failover, API key auth, and more.",
+  "description": "Turn GitHub Copilot into OpenAI/Anthropic API compatible server. Features: smart model matching, API key auth, and more.",
   "keywords": [
     "proxy",
     "github-copilot",
     "openai-compatible",
     "anthropic-compatible",
-    "opencode-zen",
-    "google-antigravity",
     "claude-code"
   ],
   "homepage": "https://github.com/imbuxiangnan-cyber/copilot-api-plus",
