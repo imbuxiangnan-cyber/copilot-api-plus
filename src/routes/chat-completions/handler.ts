@@ -56,9 +56,14 @@ export async function handleCompletion(c: Context) {
 
   consola.debug("Streaming response")
   return streamSSE(c, async (stream) => {
-    for await (const chunk of response) {
-      consola.debug("Streaming chunk:", JSON.stringify(chunk))
-      await stream.writeSSE(chunk as SSEMessage)
+    try {
+      for await (const chunk of response) {
+        consola.debug("Streaming chunk:", JSON.stringify(chunk))
+        await stream.writeSSE(chunk as SSEMessage)
+      }
+    } catch (error) {
+      const message = (error as Error).message || String(error)
+      consola.warn(`SSE stream interrupted: ${message}`)
     }
   })
 }
