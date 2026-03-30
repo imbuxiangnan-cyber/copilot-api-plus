@@ -3,6 +3,7 @@ import { cors } from "hono/cors"
 
 import { apiKeyAuthMiddleware } from "./lib/api-key-auth"
 import { modelLogger } from "./lib/model-logger"
+import { adminRoutes } from "./routes/admin/route"
 import { completionRoutes } from "./routes/chat-completions/route"
 import { embeddingRoutes } from "./routes/embeddings/route"
 import { messageRoutes } from "./routes/messages/route"
@@ -35,3 +36,6 @@ server.route("/v1/embeddings", embeddingRoutes)
 
 // Anthropic compatible endpoints
 server.route("/v1/messages", messageRoutes)
+
+// Admin API (Usage Viewer UI)
+server.route("/api", adminRoutes)

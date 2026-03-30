@@ -19,6 +19,9 @@ export interface State {
 
   // API key authentication
   apiKeys?: Array<string>
+
+  // Multi-account mode
+  multiAccountEnabled: boolean
 }
 
 export const state: State = {
@@ -26,4 +29,5 @@ export const state: State = {
   manualApprove: false,
   rateLimitWait: false,
   showToken: false,
+  multiAccountEnabled: false,
 }

@@ -1,7 +1,5 @@
 import { randomUUID } from "node:crypto"
 
-import type { State } from "./state"
-
 export const standardHeaders = () => ({
   "content-type": "application/json",
   accept: "application/json",
@@ -14,21 +12,41 @@ const USER_AGENT = `GitHubCopilotChat/${COPILOT_VERSION}`
 // Updated to match latest Zed implementation - 2025-05-01 returns Claude models
 const API_VERSION = "2025-05-01"
 
-// Use the API endpoint from token response if available, otherwise fall back to default
-export const copilotBaseUrl = (state: State) => {
-  if (state.copilotApiEndpoint) {
-    return state.copilotApiEndpoint
-  }
-  return state.accountType === "individual" ?
-      "https://api.githubcopilot.com"
-    : `https://api.${state.accountType}.githubcopilot.com`
+/**
+ * Common interface for anything that can supply Copilot/GitHub credentials.
+ *
+ * Both `State` and `Account` satisfy this interface, so all header/URL
+ * helpers can accept either without an explicit overload.
+ */
+export interface TokenSource {
+  copilotToken?: string
+  copilotApiEndpoint?: string
+  accountType: string
+  githubToken?: string
+  vsCodeVersion?: string
 }
-export const copilotHeaders = (state: State, vision: boolean = false) => {
+
+// Re-export constants used by other modules for building headers manually
+export { API_VERSION, EDITOR_PLUGIN_VERSION, USER_AGENT }
+
+// Use the API endpoint from token response if available, otherwise fall back to default
+export const copilotBaseUrl = (source: TokenSource) => {
+  if (source.copilotApiEndpoint) {
+    return source.copilotApiEndpoint
+  }
+  return source.accountType === "individual" ?
+      "https://api.githubcopilot.com"
+    : `https://api.${source.accountType}.githubcopilot.com`
+}
+export const copilotHeaders = (
+  source: TokenSource,
+  vision: boolean = false,
+) => {
   const headers: Record<string, string> = {
-    Authorization: `Bearer ${state.copilotToken}`,
+    Authorization: `Bearer ${source.copilotToken}`,
     "content-type": standardHeaders()["content-type"],
     "copilot-integration-id": "vscode-chat",
-    "editor-version": `vscode/${state.vsCodeVersion}`,
+    "editor-version": `vscode/${source.vsCodeVersion}`,
     "editor-plugin-version": EDITOR_PLUGIN_VERSION,
     "user-agent": USER_AGENT,
     "openai-intent": "conversation-panel",
@@ -43,10 +61,10 @@ export const copilotHeaders = (state: State, vision: boolean = false) => {
 }
 
 export const GITHUB_API_BASE_URL = "https://api.github.com"
-export const githubHeaders = (state: State) => ({
+export const githubHeaders = (source: TokenSource) => ({
   ...standardHeaders(),
-  authorization: `token ${state.githubToken}`,
-  "editor-version": `vscode/${state.vsCodeVersion}`,
+  authorization: `token ${source.githubToken}`,
+  "editor-version": `vscode/${source.vsCodeVersion}`,
   "editor-plugin-version": EDITOR_PLUGIN_VERSION,
   "user-agent": USER_AGENT,
   "x-github-api-version": API_VERSION,

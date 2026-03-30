@@ -4,10 +4,24 @@ import { GITHUB_API_BASE_URL, githubHeaders } from "~/lib/api-config"
 import { HTTPError } from "~/lib/error"
 import { state } from "~/lib/state"
 
-export const getCopilotToken = async () => {
+/**
+ * Fetch a short-lived Copilot JWT from the GitHub API.
+ *
+ * @param githubToken  Optional explicit GitHub PAT.  When provided the request
+ *                     uses this token instead of `state.githubToken` and does
+ *                     **not** mutate global state (so multi-account callers
+ *                     stay side-effect-free).
+ */
+export const getCopilotToken = async (githubToken?: string) => {
+  const tokenToUse = githubToken ?? state.githubToken
+  const isExplicitToken = githubToken !== undefined
+
   const url = `${GITHUB_API_BASE_URL}/copilot_internal/v2/token`
   const fetchOptions: RequestInit = {
-    headers: githubHeaders(state),
+    headers: githubHeaders({
+      ...state,
+      githubToken: tokenToUse,
+    }),
   }
 
   // Retry on transient network errors (TLS disconnect, connection timeout, etc.)
@@ -40,8 +54,10 @@ export const getCopilotToken = async () => {
 
   const data = (await response.json()) as GetCopilotTokenResponse
 
-  // Store the API endpoint if available
-  if (data.endpoints?.api) {
+  // Only write to global state when using the default token (single-account mode).
+  // When an explicit githubToken is provided (multi-account), the caller is
+  // responsible for storing the endpoint on its own Account object.
+  if (!isExplicitToken && data.endpoints?.api) {
     // eslint-disable-next-line require-atomic-updates
     state.copilotApiEndpoint = data.endpoints.api
   }

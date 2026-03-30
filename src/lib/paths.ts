@@ -6,10 +6,13 @@ const APP_DIR = path.join(os.homedir(), ".local", "share", "copilot-api-plus")
 
 const GITHUB_TOKEN_PATH = path.join(APP_DIR, "github_token")
 
+const ACCOUNTS_PATH = path.join(APP_DIR, "accounts.json")
+
 export const PATHS = {
   APP_DIR,
   DATA_DIR: APP_DIR,
   GITHUB_TOKEN_PATH,
+  ACCOUNTS_PATH,
 }
 
 export async function ensurePaths(): Promise<void> {

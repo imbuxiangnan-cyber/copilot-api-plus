@@ -10,7 +10,9 @@ import consola from "consola"
 import { serve, type ServerHandler } from "srvx"
 import invariant from "tiny-invariant"
 
-import { applyProxyConfig } from "./lib/config"
+import { accountManager } from "./lib/account-manager"
+import { applyProxyConfig, getModelMappingConfig } from "./lib/config"
+import { modelRouter } from "./lib/model-router"
 import { ensurePaths } from "./lib/paths"
 import { initProxyFromEnv } from "./lib/proxy"
 import { generateEnvScript } from "./lib/shell"
@@ -31,6 +33,90 @@ interface RunServerOptions {
   showToken: boolean
   proxyEnv: boolean
   apiKeys?: Array<string>
+}
+
+/**
+ * Initialize multi-account mode: load accounts from disk, optionally migrate
+ * the legacy single-account, and start background token/usage refresh.
+ */
+async function initMultiAccount(): Promise<void> {
+  try {
+    await accountManager.loadAccounts()
+
+    if (accountManager.hasAccounts()) {
+      // Multi-account mode: accounts.json exists with accounts
+      state.multiAccountEnabled = true
+      consola.info(
+        `Multi-account mode enabled with ${accountManager.accountCount} account(s)`,
+      )
+
+      // Start background token/usage refresh
+      accountManager.startBackgroundRefresh()
+    } else if (state.githubToken) {
+      // No accounts in file — migrate current single account if we have a token
+      try {
+        const account = await accountManager.migrateFromLegacy(
+          state.githubToken,
+          state.accountType,
+        )
+        state.multiAccountEnabled = true
+        consola.info(
+          `Migrated current account (${account.githubLogin ?? account.label}) to multi-account mode`,
+        )
+        accountManager.startBackgroundRefresh()
+      } catch (migrationError) {
+        consola.debug(
+          "Could not migrate to multi-account, staying in single-account mode:",
+          migrationError,
+        )
+      }
+    }
+  } catch (error) {
+    consola.debug("Multi-account init skipped:", error)
+    // Non-fatal — single account mode continues to work
+  }
+}
+
+/**
+ * Load model mapping and concurrency configuration from the config file and
+ * apply it to the model router.
+ */
+async function initModelRouting(): Promise<void> {
+  try {
+    const modelMappingConfig = await getModelMappingConfig()
+    if (modelMappingConfig) {
+      if (modelMappingConfig.mapping) {
+        modelRouter.updateMapping(modelMappingConfig.mapping)
+        consola.info(
+          `Model mapping loaded: ${Object.keys(modelMappingConfig.mapping).length} rule(s)`,
+        )
+      }
+      if (modelMappingConfig.concurrency) {
+        modelRouter.updateConcurrency(modelMappingConfig.concurrency)
+        consola.info(
+          `Model concurrency loaded: ${Object.keys(modelMappingConfig.concurrency).length} rule(s)`,
+        )
+      }
+    }
+  } catch (error) {
+    consola.debug("Model routing config not loaded:", error)
+  }
+}
+
+/**
+ * Validate a provided GitHub token by fetching the user profile.
+ */
+async function validateGitHubToken(token: string): Promise<void> {
+  state.githubToken = token
+  consola.info("Using provided GitHub token")
+  try {
+    const { getGitHubUser } = await import("~/services/github/get-user")
+    const user = await getGitHubUser()
+    consola.info(`Logged in as ${user.login}`)
+  } catch (error) {
+    consola.error("Provided GitHub token is invalid")
+    throw error
+  }
 }
 
 /**
@@ -88,21 +174,9 @@ export async function runServer(options: RunServerOptions): Promise<void> {
   // Standard Copilot mode
   await cacheVSCodeVersion()
 
-  if (options.githubToken) {
-    state.githubToken = options.githubToken
-    consola.info("Using provided GitHub token")
-    // Validate the provided token
-    try {
-      const { getGitHubUser } = await import("~/services/github/get-user")
-      const user = await getGitHubUser()
-      consola.info(`Logged in as ${user.login}`)
-    } catch (error) {
-      consola.error("Provided GitHub token is invalid")
-      throw error
-    }
-  } else {
-    await setupGitHubToken()
-  }
+  await (options.githubToken ?
+    validateGitHubToken(options.githubToken)
+  : setupGitHubToken())
 
   try {
     await setupCopilotToken()
@@ -121,6 +195,12 @@ export async function runServer(options: RunServerOptions): Promise<void> {
   }
 
   await cacheModels()
+
+  // Initialize multi-account mode
+  await initMultiAccount()
+
+  // Initialize model routing from config
+  await initModelRouting()
 
   consola.info(
     `Available models: \n${state.models?.data.map((model) => `- ${model.id}`).join("\n")}`,
@@ -173,8 +253,13 @@ export async function runServer(options: RunServerOptions): Promise<void> {
     }
   }
 
+  const multiAccountInfo =
+    state.multiAccountEnabled ?
+      `\n👥 Multi-account: ${accountManager.activeAccountCount}/${accountManager.accountCount} active`
+    : ""
+
   consola.box(
-    `🌐 Usage Viewer: https://imbuxiangnan-cyber.github.io/copilot-api-plus?endpoint=${serverUrl}/usage`,
+    `🌐 Usage Viewer: https://imbuxiangnan-cyber.github.io/copilot-api-plus?endpoint=${serverUrl}/usage${multiAccountInfo}`,
   )
 
   serve({

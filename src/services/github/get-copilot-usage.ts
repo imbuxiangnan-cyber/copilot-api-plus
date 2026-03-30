@@ -2,9 +2,22 @@ import { GITHUB_API_BASE_URL, githubHeaders } from "~/lib/api-config"
 import { HTTPError } from "~/lib/error"
 import { state } from "~/lib/state"
 
-export const getCopilotUsage = async (): Promise<CopilotUsageResponse> => {
+/**
+ * Fetch the authenticated user's Copilot usage / quota snapshot.
+ *
+ * @param githubToken  Optional explicit GitHub PAT.  When provided the request
+ *                     uses this token instead of `state.githubToken`, allowing
+ *                     multi-account callers to query any account without
+ *                     touching global state.
+ */
+export const getCopilotUsage = async (
+  githubToken?: string,
+): Promise<CopilotUsageResponse> => {
   const response = await fetch(`${GITHUB_API_BASE_URL}/copilot_internal/user`, {
-    headers: githubHeaders(state),
+    headers: githubHeaders({
+      ...state,
+      githubToken: githubToken ?? state.githubToken,
+    }),
   })
 
   if (!response.ok) {

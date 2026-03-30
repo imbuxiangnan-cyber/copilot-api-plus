@@ -18,8 +18,14 @@ export interface ProxyConfig {
   noProxy?: string
 }
 
+export interface ModelMappingConfig {
+  mapping?: Record<string, string>
+  concurrency?: Record<string, number>
+}
+
 export interface AppConfig {
   proxy?: ProxyConfig
+  modelMapping?: ModelMappingConfig
 }
 
 /**
@@ -75,6 +81,27 @@ export async function saveProxyConfig(proxyConfig: ProxyConfig): Promise<void> {
 export async function clearProxyConfig(): Promise<void> {
   const config = await loadConfig()
   delete config.proxy
+  await saveConfig(config)
+}
+
+/**
+ * Get model mapping configuration
+ */
+export async function getModelMappingConfig(): Promise<
+  ModelMappingConfig | undefined
+> {
+  const config = await loadConfig()
+  return config.modelMapping
+}
+
+/**
+ * Save model mapping configuration
+ */
+export async function saveModelMappingConfig(
+  modelMapping: ModelMappingConfig,
+): Promise<void> {
+  const config = await loadConfig()
+  config.modelMapping = modelMapping
   await saveConfig(config)
 }
 

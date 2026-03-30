@@ -2,6 +2,7 @@
 
 import { defineCommand, runMain } from "citty"
 
+import { addAccount, listAccounts, removeAccount } from "./account"
 import { auth } from "./auth"
 import { checkUsage } from "./check-usage"
 import { debug } from "./debug"
@@ -19,6 +20,9 @@ const main = defineCommand({
     auth,
     start,
     "check-usage": checkUsage,
+    "add-account": addAccount,
+    "list-accounts": listAccounts,
+    "remove-account": removeAccount,
     debug,
     logout,
     proxy,

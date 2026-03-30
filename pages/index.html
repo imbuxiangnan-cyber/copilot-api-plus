@@ -604,6 +604,351 @@
           border-radius: 22px;
         }
       }
+
+      /* ── Main Tab Navigation ── */
+      .main-tab-bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        padding: 0.35rem;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.6);
+        border: 1px solid var(--line);
+        backdrop-filter: blur(10px);
+      }
+
+      .main-tab-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.7rem 1.2rem;
+        border-radius: 999px;
+        border: 1px solid transparent;
+        background: transparent;
+        color: var(--muted);
+        font-size: 0.9rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: background-color 0.18s ease, color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+        white-space: nowrap;
+      }
+
+      .main-tab-btn:hover {
+        color: var(--text);
+        background: rgba(255, 255, 255, 0.7);
+      }
+
+      .main-tab-btn.is-active {
+        background: rgba(255, 255, 255, 0.95);
+        border-color: var(--line);
+        color: var(--brand);
+        box-shadow: 0 4px 12px rgba(15, 30, 35, 0.06);
+      }
+
+      .main-tab-section {
+        display: none;
+      }
+
+      .main-tab-section.is-active {
+        display: block;
+      }
+
+      /* ── Modal / Dialog ── */
+      .modal-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(22, 37, 43, 0.45);
+        backdrop-filter: blur(6px);
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity 0.2s ease, visibility 0.2s ease;
+      }
+
+      .modal-overlay.is-open {
+        opacity: 1;
+        visibility: visible;
+      }
+
+      .modal-dialog {
+        width: 92%;
+        max-width: 480px;
+        border-radius: var(--radius-xl);
+        background: var(--surface-strong);
+        border: 1px solid var(--line);
+        box-shadow: 0 32px 80px rgba(16, 39, 45, 0.18);
+        padding: 2rem;
+        transform: translateY(12px) scale(0.97);
+        transition: transform 0.2s ease;
+      }
+
+      .modal-overlay.is-open .modal-dialog {
+        transform: translateY(0) scale(1);
+      }
+
+      .modal-title {
+        font-size: 1.25rem;
+        font-weight: 800;
+        color: var(--text);
+        letter-spacing: -0.02em;
+      }
+
+      .modal-close {
+        position: absolute;
+        top: 1.2rem;
+        right: 1.2rem;
+        width: 2rem;
+        height: 2rem;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.7);
+        color: var(--muted);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: border-color 0.18s ease, background-color 0.18s ease;
+      }
+
+      .modal-close:hover {
+        border-color: var(--line-strong);
+        background: rgba(255, 255, 255, 0.95);
+        color: var(--text);
+      }
+
+      /* ── Toast ── */
+      .toast-container {
+        position: fixed;
+        top: 1.2rem;
+        right: 1.2rem;
+        z-index: 1100;
+        display: flex;
+        flex-direction: column;
+        gap: 0.6rem;
+        pointer-events: none;
+      }
+
+      .toast {
+        pointer-events: auto;
+        display: flex;
+        align-items: center;
+        gap: 0.65rem;
+        padding: 0.85rem 1.1rem;
+        border-radius: 16px;
+        border: 1px solid var(--line);
+        background: var(--surface-strong);
+        box-shadow: 0 12px 32px rgba(16, 39, 45, 0.14);
+        font-size: 0.88rem;
+        font-weight: 600;
+        color: var(--text);
+        animation: toast-in 0.25s ease;
+        max-width: 360px;
+      }
+
+      .toast-success { border-color: rgba(22, 122, 98, 0.25); }
+      .toast-error { border-color: rgba(178, 71, 63, 0.25); }
+
+      @keyframes toast-in {
+        from { opacity: 0; transform: translateX(20px); }
+        to { opacity: 1; transform: translateX(0); }
+      }
+
+      /* ── Account Card ── */
+      .account-card {
+        display: grid;
+        gap: 1rem;
+        padding: 1.2rem;
+        border-radius: var(--radius-lg);
+        border: 1px solid var(--line);
+        background: var(--surface);
+        backdrop-filter: blur(14px);
+        transition: border-color 0.18s ease, box-shadow 0.18s ease;
+      }
+
+      .account-card:hover {
+        border-color: var(--line-strong);
+        box-shadow: 0 8px 24px rgba(16, 39, 45, 0.06);
+      }
+
+      .account-avatar {
+        width: 2.8rem;
+        height: 2.8rem;
+        border-radius: 999px;
+        border: 2px solid var(--line);
+        object-fit: cover;
+        background: var(--panel);
+      }
+
+      .account-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+      }
+
+      .btn-sm {
+        padding: 0.45rem 0.85rem;
+        font-size: 0.82rem;
+        border-radius: 999px;
+        font-weight: 600;
+      }
+
+      .btn-danger {
+        background: var(--danger-soft);
+        border-color: rgba(178, 71, 63, 0.2);
+        color: var(--danger);
+      }
+
+      .btn-danger:hover {
+        background: rgba(178, 71, 63, 0.2);
+      }
+
+      .btn-ghost {
+        background: transparent;
+        border-color: var(--line);
+        color: var(--muted);
+      }
+
+      .btn-ghost:hover {
+        background: rgba(255, 255, 255, 0.7);
+        border-color: var(--line-strong);
+        color: var(--text);
+      }
+
+      /* ── Admin Table ── */
+      .admin-table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        font-size: 0.88rem;
+      }
+
+      .admin-table th {
+        text-align: left;
+        padding: 0.75rem 1rem;
+        font-size: 0.78rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--muted);
+        background: var(--panel);
+        border-bottom: 1px solid var(--line);
+      }
+
+      .admin-table th:first-child { border-radius: 14px 0 0 0; }
+      .admin-table th:last-child { border-radius: 0 14px 0 0; }
+
+      .admin-table td {
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid var(--line);
+        color: var(--text);
+        vertical-align: middle;
+      }
+
+      .admin-table tr:last-child td {
+        border-bottom: none;
+      }
+
+      .admin-table tbody tr:hover td {
+        background: rgba(22, 96, 110, 0.03);
+      }
+
+      .admin-table .input-field {
+        padding: 0.55rem 0.8rem;
+        border-radius: 12px;
+        font-size: 0.85rem;
+        min-width: 120px;
+      }
+
+      /* ── Stats Chart (pure CSS) ── */
+      .stat-bar-group {
+        display: flex;
+        flex-direction: column;
+        gap: 0.55rem;
+      }
+
+      .stat-bar-row {
+        display: grid;
+        grid-template-columns: 100px 1fr auto;
+        gap: 0.75rem;
+        align-items: center;
+      }
+
+      .stat-bar-label {
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: var(--text);
+        text-align: right;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .stat-bar-track {
+        height: 1.5rem;
+        border-radius: 999px;
+        background: var(--panel);
+        overflow: hidden;
+        position: relative;
+      }
+
+      .stat-bar-fill {
+        height: 100%;
+        border-radius: inherit;
+        transition: width 0.4s ease;
+        min-width: 2px;
+      }
+
+      .stat-bar-value {
+        font-size: 0.82rem;
+        font-weight: 700;
+        color: var(--muted);
+        min-width: 36px;
+        text-align: right;
+        font-family: "JetBrains Mono", monospace;
+      }
+
+      /* ── Form Select ── */
+      .input-select {
+        width: 100%;
+        border-radius: 18px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.78);
+        padding: 1rem 1.1rem;
+        font-size: 0.97rem;
+        color: var(--text);
+        transition: border-color 0.18s ease;
+        appearance: auto;
+      }
+
+      .input-select:hover {
+        border-color: var(--line-strong);
+      }
+
+      /* ── Loading Spinner ── */
+      .loading-spinner {
+        display: inline-block;
+        width: 1.2rem;
+        height: 1.2rem;
+        border: 2px solid var(--line);
+        border-top-color: var(--brand);
+        border-radius: 999px;
+        animation: spin 0.6s linear infinite;
+      }
+
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+
+      /* ── Confirm Dialog ── */
+      .confirm-actions {
+        display: flex;
+        gap: 0.65rem;
+        justify-content: flex-end;
+        margin-top: 1.5rem;
+      }
     </style>
   </head>
   <body>
@@ -636,60 +981,261 @@
           </div>
         </header>
 
-        <section class="dashboard-card px-5 py-5 sm:px-6 sm:py-6" aria-labelledby="connection-title">
-          <div class="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-            <div class="max-w-2xl space-y-2">
-              <div class="section-title text-xl text-[var(--text)]">
-                <span class="section-icon" aria-hidden="true" id="connection-icon"></span>
-                <span id="connection-title"></span>
+        <!-- ── Main Tab Navigation ── -->
+        <nav class="main-tab-bar" id="main-tab-bar">
+          <button type="button" class="main-tab-btn is-active" data-main-tab="overview">
+            <span class="inline-icon h-4 w-4" aria-hidden="true" id="tab-icon-overview"></span>
+            <span id="tab-label-overview"></span>
+          </button>
+          <button type="button" class="main-tab-btn" data-main-tab="accounts">
+            <span class="inline-icon h-4 w-4" aria-hidden="true" id="tab-icon-accounts"></span>
+            <span id="tab-label-accounts"></span>
+          </button>
+          <button type="button" class="main-tab-btn" data-main-tab="models">
+            <span class="inline-icon h-4 w-4" aria-hidden="true" id="tab-icon-models"></span>
+            <span id="tab-label-models"></span>
+          </button>
+          <button type="button" class="main-tab-btn" data-main-tab="statistics">
+            <span class="inline-icon h-4 w-4" aria-hidden="true" id="tab-icon-statistics"></span>
+            <span id="tab-label-statistics"></span>
+          </button>
+        </nav>
+
+        <!-- ══════ Tab 1: Overview (existing content) ══════ -->
+        <section id="tab-overview" class="main-tab-section is-active space-y-5 sm:space-y-6">
+          <section class="dashboard-card px-5 py-5 sm:px-6 sm:py-6" aria-labelledby="connection-title">
+            <div class="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+              <div class="max-w-2xl space-y-2">
+                <div class="section-title text-xl text-[var(--text)]">
+                  <span class="section-icon" aria-hidden="true" id="connection-icon"></span>
+                  <span id="connection-title"></span>
+                </div>
+                <p class="text-sm leading-7 text-[var(--muted)]" id="connection-subtitle"></p>
               </div>
-              <p class="text-sm leading-7 text-[var(--muted)]" id="connection-subtitle"></p>
+              <div class="flex flex-wrap gap-2" id="connection-chips"></div>
             </div>
-            <div class="flex flex-wrap gap-2" id="connection-chips"></div>
-          </div>
 
-          <form id="endpoint-form" class="mt-5 space-y-4">
-            <div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto_auto_auto]">
-              <label for="endpoint-input" class="sr-only" id="endpoint-label"></label>
-              <input
-                id="endpoint-input"
-                class="input-field mono"
-                type="text"
-                autocomplete="off"
-                spellcheck="false"
-                placeholder="http://localhost:4141/usage"
-              />
-              <button id="fetch-button" type="submit" class="btn btn-primary">
-                <span class="inline-icon h-4 w-4" aria-hidden="true" id="refresh-icon"></span>
-                <span id="fetch-button-text"></span>
-              </button>
-              <button id="reset-button" type="button" class="btn btn-secondary">
-                <span class="inline-icon h-4 w-4" aria-hidden="true" id="reset-icon"></span>
-                <span id="reset-button-text"></span>
-              </button>
-              <button id="export-button" type="button" class="btn btn-secondary">
-                <span class="inline-icon h-4 w-4" aria-hidden="true" id="export-icon"></span>
-                <span id="export-button-text"></span>
-              </button>
+            <form id="endpoint-form" class="mt-5 space-y-4">
+              <div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto_auto_auto]">
+                <label for="endpoint-input" class="sr-only" id="endpoint-label"></label>
+                <input
+                  id="endpoint-input"
+                  class="input-field mono"
+                  type="text"
+                  autocomplete="off"
+                  spellcheck="false"
+                  placeholder="http://localhost:4141/usage"
+                />
+                <button id="fetch-button" type="submit" class="btn btn-primary">
+                  <span class="inline-icon h-4 w-4" aria-hidden="true" id="refresh-icon"></span>
+                  <span id="fetch-button-text"></span>
+                </button>
+                <button id="reset-button" type="button" class="btn btn-secondary">
+                  <span class="inline-icon h-4 w-4" aria-hidden="true" id="reset-icon"></span>
+                  <span id="reset-button-text"></span>
+                </button>
+                <button id="export-button" type="button" class="btn btn-secondary">
+                  <span class="inline-icon h-4 w-4" aria-hidden="true" id="export-icon"></span>
+                  <span id="export-button-text"></span>
+                </button>
+              </div>
+              <div class="flex flex-col gap-2 text-sm text-[var(--muted)] sm:flex-row sm:items-center sm:justify-between">
+                <p id="endpoint-hint"></p>
+                <p class="mono text-xs sm:text-sm" id="endpoint-current"></p>
+              </div>
+            </form>
+          </section>
+
+          <section aria-labelledby="overview-title" class="space-y-4">
+            <div class="flex items-center justify-between">
+              <h2 id="overview-title" class="text-xl font-bold tracking-tight text-[var(--text)]"></h2>
+              <p class="text-sm text-[var(--muted)]" id="overview-caption"></p>
             </div>
-            <div class="flex flex-col gap-2 text-sm text-[var(--muted)] sm:flex-row sm:items-center sm:justify-between">
-              <p id="endpoint-hint"></p>
-              <p class="mono text-xs sm:text-sm" id="endpoint-current"></p>
-            </div>
-          </form>
+            <div id="overview-grid" class="grid gap-4 md:grid-cols-2 xl:grid-cols-4"></div>
+          </section>
+
+          <div id="status-banner" aria-live="polite"></div>
+
+          <main id="content-area" class="space-y-5" aria-live="polite"></main>
         </section>
 
-        <section aria-labelledby="overview-title" class="space-y-4">
+        <!-- ══════ Tab 2: Account Management ══════ -->
+        <section id="tab-accounts" class="main-tab-section space-y-5">
+          <div id="accounts-stats" class="grid gap-4 md:grid-cols-3"></div>
           <div class="flex items-center justify-between">
-            <h2 id="overview-title" class="text-xl font-bold tracking-tight text-[var(--text)]"></h2>
-            <p class="text-sm text-[var(--muted)]" id="overview-caption"></p>
+            <h2 class="text-xl font-bold tracking-tight text-[var(--text)]" id="accounts-section-title"></h2>
+            <button type="button" id="add-account-btn" class="btn btn-primary btn-sm">
+              <span class="inline-icon h-4 w-4" aria-hidden="true" id="add-account-icon"></span>
+              <span id="add-account-text"></span>
+            </button>
           </div>
-          <div id="overview-grid" class="grid gap-4 md:grid-cols-2 xl:grid-cols-4"></div>
+          <div id="accounts-list" class="grid gap-4 md:grid-cols-2 xl:grid-cols-3"></div>
         </section>
 
-        <div id="status-banner" aria-live="polite"></div>
+        <!-- ══════ Tab 3: Model Management ══════ -->
+        <section id="tab-models" class="main-tab-section space-y-5">
+          <!-- Available Models -->
+          <section class="dashboard-card-strong p-6 sm:p-7 space-y-4">
+            <div class="section-title text-xl text-[var(--text)]">
+              <span class="section-icon" id="models-avail-icon"></span>
+              <span id="models-avail-title"></span>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="admin-table" id="models-available-table">
+                <thead><tr id="models-avail-thead"></tr></thead>
+                <tbody id="models-available-body"></tbody>
+              </table>
+            </div>
+          </section>
+          <!-- Model Mapping -->
+          <section class="dashboard-card p-5 sm:p-6 space-y-4">
+            <div class="flex items-center justify-between">
+              <div class="section-title text-lg text-[var(--text)]">
+                <span class="section-icon" id="models-map-icon"></span>
+                <span id="models-map-title"></span>
+              </div>
+              <button type="button" id="save-mapping-btn" class="btn btn-primary btn-sm">
+                <span id="save-mapping-text"></span>
+              </button>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="admin-table" id="models-mapping-table">
+                <thead><tr id="models-map-thead"></tr></thead>
+                <tbody id="models-mapping-body"></tbody>
+              </table>
+            </div>
+          </section>
+          <!-- Concurrency Config -->
+          <section class="dashboard-card p-5 sm:p-6 space-y-4">
+            <div class="flex items-center justify-between">
+              <div class="section-title text-lg text-[var(--text)]">
+                <span class="section-icon" id="models-conc-icon"></span>
+                <span id="models-conc-title"></span>
+              </div>
+              <button type="button" id="save-concurrency-btn" class="btn btn-primary btn-sm">
+                <span id="save-concurrency-text"></span>
+              </button>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="admin-table" id="models-concurrency-table">
+                <thead><tr id="models-conc-thead"></tr></thead>
+                <tbody id="models-concurrency-body"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
 
-        <main id="content-area" class="space-y-5" aria-live="polite"></main>
+        <!-- ══════ Tab 4: Statistics ══════ -->
+        <section id="tab-statistics" class="main-tab-section space-y-5">
+          <div id="stats-uptime-card" class="dashboard-card-strong p-6 sm:p-7"></div>
+          <div class="grid gap-4 lg:grid-cols-2">
+            <section class="dashboard-card p-5 sm:p-6 space-y-4" id="stats-requests-section">
+              <div class="section-title text-lg text-[var(--text)]">
+                <span class="section-icon" id="stats-req-icon"></span>
+                <span id="stats-req-title"></span>
+              </div>
+              <div id="stats-requests-content"></div>
+            </section>
+            <section class="dashboard-card p-5 sm:p-6 space-y-4" id="stats-accounts-section">
+              <div class="section-title text-lg text-[var(--text)]">
+                <span class="section-icon" id="stats-acct-icon"></span>
+                <span id="stats-acct-title"></span>
+              </div>
+              <div id="stats-accounts-content"></div>
+            </section>
+          </div>
+        </section>
+
+        <!-- ── Add Account Modal ── -->
+        <div class="modal-overlay" id="add-account-modal">
+          <div class="modal-dialog" style="position:relative;">
+            <button type="button" class="modal-close" id="modal-close-btn" aria-label="Close">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+            </button>
+
+            <!-- Step 1: Initial form -->
+            <div id="modal-step-1" class="space-y-5">
+              <h3 class="modal-title" id="modal-title"></h3>
+              <div class="space-y-4">
+                <div class="space-y-1.5">
+                  <label class="text-sm font-semibold text-[var(--text)]" for="modal-label" id="modal-label-label"></label>
+                  <input id="modal-label" class="input-field" type="text" autocomplete="off" />
+                </div>
+                <div class="space-y-1.5">
+                  <label class="text-sm font-semibold text-[var(--text)]" for="modal-type" id="modal-type-label"></label>
+                  <select id="modal-type" class="input-select">
+                    <option value="individual">Individual</option>
+                    <option value="business">Business</option>
+                    <option value="enterprise">Enterprise</option>
+                  </select>
+                </div>
+              </div>
+              <button type="button" id="modal-start-auth-btn" class="btn btn-primary w-full">
+                <span id="modal-start-auth-text"></span>
+              </button>
+            </div>
+
+            <!-- Step 2: Device Code authorization in progress -->
+            <div id="modal-step-2" class="space-y-5" style="display:none;">
+              <h3 class="modal-title" id="modal-device-title"></h3>
+              <div class="space-y-4">
+                <div class="text-sm text-[var(--muted)] space-y-1">
+                  <p id="modal-instr-1"></p>
+                  <p id="modal-instr-2"></p>
+                  <p id="modal-instr-3"></p>
+                </div>
+                <div style="display:flex;align-items:center;gap:0.75rem;padding:1rem;border-radius:var(--radius-lg);background:var(--surface);border:1px solid var(--line);">
+                  <code id="modal-user-code" style="flex:1;font-size:1.75rem;font-weight:800;letter-spacing:0.15em;text-align:center;color:var(--text);font-family:var(--font-mono,monospace);"></code>
+                  <button type="button" id="modal-copy-code-btn" class="btn btn-secondary btn-sm" style="white-space:nowrap;">
+                    <span id="modal-copy-code-text"></span>
+                  </button>
+                </div>
+                <a id="modal-gh-link" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-primary w-full" style="display:inline-flex;align-items:center;justify-content:center;gap:0.5rem;text-decoration:none;">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                  <span id="modal-gh-link-text"></span>
+                </a>
+                <div style="display:flex;align-items:center;justify-content:center;gap:0.5rem;padding:0.75rem 0;" id="modal-waiting-indicator">
+                  <span class="loading-spinner"></span>
+                  <span class="text-sm text-[var(--muted)]" id="modal-waiting-text"></span>
+                </div>
+              </div>
+              <button type="button" id="modal-cancel-auth-btn" class="btn btn-secondary w-full">
+                <span id="modal-cancel-auth-text"></span>
+              </button>
+            </div>
+
+            <!-- Step 3: Success -->
+            <div id="modal-step-3" class="space-y-5" style="display:none;">
+              <div style="text-align:center;padding:1rem 0;">
+                <div style="width:48px;height:48px;margin:0 auto 1rem;border-radius:50%;background:var(--success);display:flex;align-items:center;justify-content:center;">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="24" height="24"><polyline points="20 6 9 17 4 12"/></svg>
+                </div>
+                <h3 class="modal-title" id="modal-success-title" style="margin-bottom:0.5rem;"></h3>
+                <p class="text-sm text-[var(--muted)]" id="modal-success-account"></p>
+              </div>
+              <button type="button" id="modal-done-btn" class="btn btn-primary w-full">
+                <span id="modal-done-text"></span>
+              </button>
+            </div>
+
+            <!-- Step 3 alt: Error -->
+            <div id="modal-step-error" class="space-y-5" style="display:none;">
+              <div style="text-align:center;padding:1rem 0;">
+                <div style="width:48px;height:48px;margin:0 auto 1rem;border-radius:50%;background:var(--danger);display:flex;align-items:center;justify-content:center;">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="24" height="24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                </div>
+                <p class="text-sm text-[var(--muted)]" id="modal-error-message" style="margin-top:0.5rem;"></p>
+              </div>
+              <button type="button" id="modal-retry-btn" class="btn btn-primary w-full">
+                <span id="modal-retry-text"></span>
+              </button>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- ── Toast Container ── -->
+        <div class="toast-container" id="toast-container"></div>
 
         <footer class="pb-3 text-center text-xs leading-6 text-[var(--muted)] sm:text-sm" id="footer-note"></footer>
       </div>
@@ -740,6 +1286,30 @@
             '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 5h5v5"/><path d="M10 14 19 5"/><path d="M19 13v4a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h4"/></svg>',
           terminal:
             '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m6 8 4 4-4 4"/><path d="M13 16h5"/><rect x="3" y="4" width="18" height="16" rx="2"/></svg>',
+          users:
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+          userPlus:
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>',
+          cpu:
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/></svg>',
+          activity:
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>',
+          layers:
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>',
+          trash:
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
+          power:
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>',
+          save:
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>',
+          plus:
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
+          arrowRight:
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>',
+          server:
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>',
+          check:
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
         };
 
         const I18N = {
@@ -849,6 +1419,97 @@
             networkErrorFallback: "无法请求接口，请检查本地服务与地址是否正确。",
             noValue: "--",
             viewMode: "查看模式",
+            // ── Tab Navigation ──
+            tabOverview: "概览",
+            tabAccounts: "账号管理",
+            tabModels: "模型管理",
+            tabStatistics: "运行统计",
+            // ── Account Management ──
+            accountsSectionTitle: "账号列表",
+            accountsTotal: "账号总数",
+            accountsActive: "活跃账号",
+            accountsPremiumRemaining: "Premium 剩余总额",
+            addAccount: "添加账号",
+            accountEnable: "启用",
+            accountDisable: "禁用",
+            accountRefresh: "刷新",
+            accountDelete: "删除",
+            accountDeleteConfirm: "确定要删除这个账号吗？此操作不可撤销。",
+            accountDeleteConfirmTitle: "确认删除",
+            confirmYes: "确认",
+            confirmCancel: "取消",
+            accountLastUsed: "最后使用",
+            accountNeverUsed: "从未使用",
+            accountStatusActive: "活跃",
+            accountStatusExhausted: "已耗尽",
+            accountStatusRateLimited: "限速中",
+            accountStatusBanned: "已封禁",
+            accountStatusError: "错误",
+            accountStatusDisabled: "已禁用",
+            accountStatusUnknown: "未知",
+            accountLabelPlaceholder: "账号标签（可选）",
+            accountNoAccounts: "暂无账号",
+            accountNoAccountsDesc: "点击"添加账号"按钮来添加你的第一个 GitHub 账号。",
+            // ── Add Account Modal ──
+            modalAddTitle: "添加新账号",
+            modalTokenLabel: "GitHub Token",
+            modalLabelLabel: "标签（可选）",
+            modalTypeLabel: "账号类型",
+            modalSubmit: "添加",
+            modalStartAuth: "开始授权",
+            modalDeviceCodeTitle: "GitHub 设备授权",
+            modalDeviceCodeInstr1: "1. 复制下方授权码",
+            modalDeviceCodeInstr2: "2. 点击链接打开 GitHub",
+            modalDeviceCodeInstr3: "3. 粘贴授权码并确认授权",
+            modalDeviceCodeCopy: "复制授权码",
+            modalDeviceCodeCopied: "已复制!",
+            modalDeviceCodeOpenGH: "打开 GitHub 授权页面",
+            modalDeviceCodeWaiting: "等待授权中...",
+            modalDeviceCodeSuccess: "授权成功!",
+            modalDeviceCodeExpired: "授权码已过期，请重试。",
+            modalDeviceCodeDenied: "授权被拒绝，请重试。",
+            modalDeviceCodeError: "授权失败，请重试。",
+            modalDeviceCodeDone: "完成",
+            modalDeviceCodeRetry: "重试",
+            modalDeviceCodeCancel: "取消",
+            // ── Model Management ──
+            modelsAvailableTitle: "可用模型",
+            modelsColName: "模型名称",
+            modelsColVendor: "厂商",
+            modelsColMaxOutput: "最大输出",
+            modelsColPremium: "Premium",
+            modelsColStatus: "状态",
+            modelEnabled: "已启用",
+            modelDisabled: "已禁用",
+            modelMappingTitle: "模型映射",
+            modelMappingFrom: "请求模型",
+            modelMappingTo: "实际模型",
+            modelMappingAction: "操作",
+            modelMappingSave: "保存映射",
+            modelMappingAdd: "添加映射",
+            modelNoMappings: "暂无映射配置",
+            modelConcurrencyTitle: "并发配置",
+            modelConcurrencyModel: "模型",
+            modelConcurrencyMax: "最大并发",
+            modelConcurrencyAction: "操作",
+            modelConcurrencySave: "保存配置",
+            modelConcurrencyAdd: "添加配置",
+            modelNoConcurrency: "暂无并发配置",
+            modelNoModels: "暂无模型数据",
+            modelNoModelsDesc: "无法获取可用模型列表，请确认服务已启动。",
+            // ── Statistics ──
+            statsUptime: "运行时间",
+            statsRequests: "模型请求",
+            statsActiveRequests: "活跃请求",
+            statsQueuedRequests: "排队请求",
+            statsAccountDist: "账号状态分布",
+            statsAutoRefresh: "每 5 秒自动刷新",
+            statsNoData: "暂无统计数据",
+            statsNoDataDesc: "无法获取统计信息，请确认服务已启动。",
+            // ── API errors ──
+            apiError: "API 请求失败",
+            apiSuccess: "操作成功",
+            loading: "加载中...",
           },
           en: {
             title: "Copilot API Usage Dashboard",
@@ -956,6 +1617,97 @@
             networkErrorFallback: "Unable to reach the endpoint. Check the local server and the URL.",
             noValue: "--",
             viewMode: "View mode",
+            // ── Tab Navigation ──
+            tabOverview: "Overview",
+            tabAccounts: "Accounts",
+            tabModels: "Models",
+            tabStatistics: "Statistics",
+            // ── Account Management ──
+            accountsSectionTitle: "Account List",
+            accountsTotal: "Total Accounts",
+            accountsActive: "Active Accounts",
+            accountsPremiumRemaining: "Total Premium Remaining",
+            addAccount: "Add Account",
+            accountEnable: "Enable",
+            accountDisable: "Disable",
+            accountRefresh: "Refresh",
+            accountDelete: "Delete",
+            accountDeleteConfirm: "Are you sure you want to delete this account? This cannot be undone.",
+            accountDeleteConfirmTitle: "Confirm Deletion",
+            confirmYes: "Confirm",
+            confirmCancel: "Cancel",
+            accountLastUsed: "Last used",
+            accountNeverUsed: "Never used",
+            accountStatusActive: "Active",
+            accountStatusExhausted: "Exhausted",
+            accountStatusRateLimited: "Rate Limited",
+            accountStatusBanned: "Banned",
+            accountStatusError: "Error",
+            accountStatusDisabled: "Disabled",
+            accountStatusUnknown: "Unknown",
+            accountLabelPlaceholder: "Account label (optional)",
+            accountNoAccounts: "No accounts",
+            accountNoAccountsDesc: "Click the \"Add Account\" button to add your first GitHub account.",
+            // ── Add Account Modal ──
+            modalAddTitle: "Add New Account",
+            modalTokenLabel: "GitHub Token",
+            modalLabelLabel: "Label (optional)",
+            modalTypeLabel: "Account Type",
+            modalSubmit: "Add",
+            modalStartAuth: "Start Authorization",
+            modalDeviceCodeTitle: "GitHub Device Authorization",
+            modalDeviceCodeInstr1: "1. Copy the code below",
+            modalDeviceCodeInstr2: "2. Click the link to open GitHub",
+            modalDeviceCodeInstr3: "3. Paste the code and authorize",
+            modalDeviceCodeCopy: "Copy Code",
+            modalDeviceCodeCopied: "Copied!",
+            modalDeviceCodeOpenGH: "Open GitHub Authorization",
+            modalDeviceCodeWaiting: "Waiting for authorization...",
+            modalDeviceCodeSuccess: "Authorization successful!",
+            modalDeviceCodeExpired: "Authorization code expired. Please try again.",
+            modalDeviceCodeDenied: "Authorization was denied. Please try again.",
+            modalDeviceCodeError: "Authorization failed. Please try again.",
+            modalDeviceCodeDone: "Done",
+            modalDeviceCodeRetry: "Retry",
+            modalDeviceCodeCancel: "Cancel",
+            // ── Model Management ──
+            modelsAvailableTitle: "Available Models",
+            modelsColName: "Model Name",
+            modelsColVendor: "Vendor",
+            modelsColMaxOutput: "Max Output",
+            modelsColPremium: "Premium",
+            modelsColStatus: "Status",
+            modelEnabled: "Enabled",
+            modelDisabled: "Disabled",
+            modelMappingTitle: "Model Mapping",
+            modelMappingFrom: "Request Model",
+            modelMappingTo: "Actual Model",
+            modelMappingAction: "Action",
+            modelMappingSave: "Save Mapping",
+            modelMappingAdd: "Add Mapping",
+            modelNoMappings: "No mapping configured",
+            modelConcurrencyTitle: "Concurrency Config",
+            modelConcurrencyModel: "Model",
+            modelConcurrencyMax: "Max Concurrent",
+            modelConcurrencyAction: "Action",
+            modelConcurrencySave: "Save Config",
+            modelConcurrencyAdd: "Add Config",
+            modelNoConcurrency: "No concurrency configured",
+            modelNoModels: "No model data",
+            modelNoModelsDesc: "Unable to fetch available models. Make sure the service is running.",
+            // ── Statistics ──
+            statsUptime: "Uptime",
+            statsRequests: "Model Requests",
+            statsActiveRequests: "Active Requests",
+            statsQueuedRequests: "Queued Requests",
+            statsAccountDist: "Account Status Distribution",
+            statsAutoRefresh: "Auto-refreshes every 5 seconds",
+            statsNoData: "No statistics data",
+            statsNoDataDesc: "Unable to fetch statistics. Make sure the service is running.",
+            // ── API errors ──
+            apiError: "API request failed",
+            apiSuccess: "Operation successful",
+            loading: "Loading...",
           },
         };
 
@@ -1073,6 +1825,7 @@
             clampCustomRefreshSeconds(readStoredNumber(STORAGE_KEYS.customRefreshSeconds, 60)),
           activeDetailsTab: "summary",
           detailsOpen: false,
+          activeMainTab: "overview",
         };
 
         let autoRefreshTimer = null;
@@ -1254,6 +2007,28 @@
           }
         }
 
+        function getApiBaseUrl() {
+          try {
+            const endpoint = new URL(state.endpoint);
+            const pathname = endpoint.pathname.replace(/\/usage\/?$/, "");
+            return `${endpoint.origin}${pathname === "/" ? "" : pathname}`;
+          } catch {
+            return state.endpoint.replace(/\/usage\/?$/, "");
+          }
+        }
+
+        function getApiHeaders() {
+          const headers = { "Content-Type": "application/json" };
+          try {
+            const apiKey = localStorage.getItem("dashboard-api-key");
+            if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+          } catch {}
+          const params = readQueryParams();
+          const qKey = readQueryValue(params, "apiKey");
+          if (qKey) headers["Authorization"] = `Bearer ${qKey}`;
+          return headers;
+        }
+
         function buildExportConfigJson() {
           const baseUrl = getExportBaseUrl(state.endpoint) || state.endpoint;
           return JSON.stringify(
@@ -1402,6 +2177,91 @@
             `<span class="pill pill-brand">${icon("terminal")}${escapeHtml("/usage")}</span>`,
           ].join("");
           refs.endpointCurrent.textContent = text("currentTargetLabel", { endpoint: state.endpoint });
+
+          // ── Tab labels and icons ──
+          const tabIconMap = { overview: "chart", accounts: "users", models: "cpu", statistics: "activity" };
+          const tabLabelMap = { overview: "tabOverview", accounts: "tabAccounts", models: "tabModels", statistics: "tabStatistics" };
+          for (const [key, iconName] of Object.entries(tabIconMap)) {
+            const iconEl = document.getElementById(`tab-icon-${key}`);
+            const labelEl = document.getElementById(`tab-label-${key}`);
+            if (iconEl) iconEl.innerHTML = ICONS[iconName] || "";
+            if (labelEl) labelEl.textContent = text(tabLabelMap[key]);
+          }
+
+          // ── Accounts tab static texts ──
+          const acctTitle = document.getElementById("accounts-section-title");
+          if (acctTitle) acctTitle.textContent = text("accountsSectionTitle");
+          const addIcon = document.getElementById("add-account-icon");
+          if (addIcon) addIcon.innerHTML = ICONS.userPlus;
+          const addText = document.getElementById("add-account-text");
+          if (addText) addText.textContent = text("addAccount");
+
+          // ── Models tab static texts ──
+          const mAvailIcon = document.getElementById("models-avail-icon");
+          if (mAvailIcon) mAvailIcon.innerHTML = ICONS.layers;
+          const mAvailTitle = document.getElementById("models-avail-title");
+          if (mAvailTitle) mAvailTitle.textContent = text("modelsAvailableTitle");
+          const mMapIcon = document.getElementById("models-map-icon");
+          if (mMapIcon) mMapIcon.innerHTML = ICONS.arrowRight;
+          const mMapTitle = document.getElementById("models-map-title");
+          if (mMapTitle) mMapTitle.textContent = text("modelMappingTitle");
+          const mConcIcon = document.getElementById("models-conc-icon");
+          if (mConcIcon) mConcIcon.innerHTML = ICONS.server;
+          const mConcTitle = document.getElementById("models-conc-title");
+          if (mConcTitle) mConcTitle.textContent = text("modelConcurrencyTitle");
+          const saveMappingText = document.getElementById("save-mapping-text");
+          if (saveMappingText) saveMappingText.textContent = text("modelMappingSave");
+          const saveConcText = document.getElementById("save-concurrency-text");
+          if (saveConcText) saveConcText.textContent = text("modelConcurrencySave");
+          // Model table headers
+          const mAvailThead = document.getElementById("models-avail-thead");
+          if (mAvailThead) mAvailThead.innerHTML = `<th>${escapeHtml(text("modelsColName"))}</th><th>${escapeHtml(text("modelsColVendor"))}</th><th>${escapeHtml(text("modelsColMaxOutput"))}</th><th>${escapeHtml(text("modelsColPremium"))}</th><th>${escapeHtml(text("modelsColStatus"))}</th>`;
+          const mMapThead = document.getElementById("models-map-thead");
+          if (mMapThead) mMapThead.innerHTML = `<th>${escapeHtml(text("modelMappingFrom"))}</th><th></th><th>${escapeHtml(text("modelMappingTo"))}</th><th>${escapeHtml(text("modelMappingAction"))}</th>`;
+          const mConcThead = document.getElementById("models-conc-thead");
+          if (mConcThead) mConcThead.innerHTML = `<th>${escapeHtml(text("modelConcurrencyModel"))}</th><th>${escapeHtml(text("modelConcurrencyMax"))}</th><th>${escapeHtml(text("modelConcurrencyAction"))}</th>`;
+
+          // ── Stats tab static texts ──
+          const sReqIcon = document.getElementById("stats-req-icon");
+          if (sReqIcon) sReqIcon.innerHTML = ICONS.activity;
+          const sReqTitle = document.getElementById("stats-req-title");
+          if (sReqTitle) sReqTitle.textContent = text("statsRequests");
+          const sAcctIcon = document.getElementById("stats-acct-icon");
+          if (sAcctIcon) sAcctIcon.innerHTML = ICONS.users;
+          const sAcctTitle = document.getElementById("stats-acct-title");
+          if (sAcctTitle) sAcctTitle.textContent = text("statsAccountDist");
+
+          // ── Modal static texts ──
+          const modalTitle = document.getElementById("modal-title");
+          if (modalTitle) modalTitle.textContent = text("modalAddTitle");
+          const modalLabelLabel = document.getElementById("modal-label-label");
+          if (modalLabelLabel) modalLabelLabel.textContent = text("modalLabelLabel");
+          const modalTypeLabel = document.getElementById("modal-type-label");
+          if (modalTypeLabel) modalTypeLabel.textContent = text("modalTypeLabel");
+          const modalStartAuthText = document.getElementById("modal-start-auth-text");
+          if (modalStartAuthText) modalStartAuthText.textContent = text("modalStartAuth");
+          const modalDeviceTitle = document.getElementById("modal-device-title");
+          if (modalDeviceTitle) modalDeviceTitle.textContent = text("modalDeviceCodeTitle");
+          const modalInstr1 = document.getElementById("modal-instr-1");
+          if (modalInstr1) modalInstr1.textContent = text("modalDeviceCodeInstr1");
+          const modalInstr2 = document.getElementById("modal-instr-2");
+          if (modalInstr2) modalInstr2.textContent = text("modalDeviceCodeInstr2");
+          const modalInstr3 = document.getElementById("modal-instr-3");
+          if (modalInstr3) modalInstr3.textContent = text("modalDeviceCodeInstr3");
+          const modalCopyCodeText = document.getElementById("modal-copy-code-text");
+          if (modalCopyCodeText) modalCopyCodeText.textContent = text("modalDeviceCodeCopy");
+          const modalGhLinkText = document.getElementById("modal-gh-link-text");
+          if (modalGhLinkText) modalGhLinkText.textContent = text("modalDeviceCodeOpenGH");
+          const modalWaitingText = document.getElementById("modal-waiting-text");
+          if (modalWaitingText) modalWaitingText.textContent = text("modalDeviceCodeWaiting");
+          const modalCancelAuthText = document.getElementById("modal-cancel-auth-text");
+          if (modalCancelAuthText) modalCancelAuthText.textContent = text("modalDeviceCodeCancel");
+          const modalSuccessTitle = document.getElementById("modal-success-title");
+          if (modalSuccessTitle) modalSuccessTitle.textContent = text("modalDeviceCodeSuccess");
+          const modalDoneText = document.getElementById("modal-done-text");
+          if (modalDoneText) modalDoneText.textContent = text("modalDeviceCodeDone");
+          const modalRetryText = document.getElementById("modal-retry-text");
+          if (modalRetryText) modalRetryText.textContent = text("modalDeviceCodeRetry");
         }
 
         function renderOverview() {
@@ -1839,6 +2699,7 @@
 
         function renderAll() {
           renderStaticTexts();
+          renderTabBar();
           renderOverview();
           renderStatusBanner();
           renderContent();
@@ -1934,6 +2795,741 @@
           window.prompt(text("exportManualCopy"), configJson);
         }
 
+        // ═══════════════════════════════════════
+        //  Toast Notification System
+        // ═══════════════════════════════════════
+        function showToast(message, type = "success") {
+          const container = document.getElementById("toast-container");
+          if (!container) return;
+          const toast = document.createElement("div");
+          toast.className = `toast toast-${type}`;
+          const iconName = type === "error" ? "warning" : "check";
+          toast.innerHTML = `${icon(iconName)}${escapeHtml(message)}`;
+          container.appendChild(toast);
+          setTimeout(() => {
+            toast.style.opacity = "0";
+            toast.style.transition = "opacity 0.2s ease";
+            setTimeout(() => toast.remove(), 200);
+          }, 3000);
+        }
+
+        // ═══════════════════════════════════════
+        //  Main Tab Switching
+        // ═══════════════════════════════════════
+        function renderTabBar() {
+          const tabs = document.querySelectorAll(".main-tab-btn");
+          const sections = document.querySelectorAll(".main-tab-section");
+          tabs.forEach((t) => {
+            const key = t.getAttribute("data-main-tab");
+            t.classList.toggle("is-active", key === state.activeMainTab);
+          });
+          sections.forEach((s) => {
+            const id = s.id.replace("tab-", "");
+            s.classList.toggle("is-active", id === state.activeMainTab);
+          });
+        }
+
+        function switchMainTab(tabKey) {
+          state.activeMainTab = tabKey;
+          renderTabBar();
+          // Load data for tab on switch
+          if (tabKey === "accounts") loadAccounts();
+          if (tabKey === "models") { loadAvailableModels(); loadModelMapping(); loadModelConcurrency(); }
+          if (tabKey === "statistics") { loadStats(); startStatsAutoRefresh(); }
+          if (tabKey !== "statistics") stopStatsAutoRefresh();
+        }
+
+        // ═══════════════════════════════════════
+        //  Admin API Helpers
+        // ═══════════════════════════════════════
+        async function adminFetch(path, options = {}) {
+          const base = getApiBaseUrl();
+          const url = `${base}${path}`;
+          const headers = getApiHeaders();
+          try {
+            const response = await fetch(url, { ...options, headers: { ...headers, ...options.headers } });
+            if (!response.ok) {
+              const errText = await response.text().catch(() => "");
+              throw new Error(`HTTP ${response.status}: ${errText || response.statusText}`);
+            }
+            const ct = response.headers.get("content-type") || "";
+            if (ct.includes("application/json")) return await response.json();
+            return null;
+          } catch (err) {
+            console.error(`Admin API error [${path}]:`, err);
+            throw err;
+          }
+        }
+
+        // ═══════════════════════════════════════
+        //  Modal Management (Device Code Flow)
+        // ═══════════════════════════════════════
+        let deviceCodePollTimer = null;
+
+        function showModalStep(stepId) {
+          ["modal-step-1", "modal-step-2", "modal-step-3", "modal-step-error"].forEach((id) => {
+            const el = document.getElementById(id);
+            if (el) el.style.display = id === stepId ? "" : "none";
+          });
+        }
+
+        function openModal() {
+          showModalStep("modal-step-1");
+          const overlay = document.getElementById("add-account-modal");
+          if (overlay) overlay.classList.add("is-open");
+        }
+
+        function closeModal() {
+          // Stop any active polling
+          if (deviceCodePollTimer) {
+            clearInterval(deviceCodePollTimer);
+            deviceCodePollTimer = null;
+          }
+          const overlay = document.getElementById("add-account-modal");
+          if (overlay) overlay.classList.remove("is-open");
+          // Clear inputs
+          const labelInput = document.getElementById("modal-label");
+          const typeInput = document.getElementById("modal-type");
+          if (labelInput) labelInput.value = "";
+          if (typeInput) typeInput.value = "individual";
+          // Reset to step 1
+          showModalStep("modal-step-1");
+        }
+
+        async function startDeviceCodeAuth() {
+          const startBtn = document.getElementById("modal-start-auth-btn");
+          if (startBtn) startBtn.disabled = true;
+
+          try {
+            const response = await adminFetch("/api/accounts/auth/start", { method: "POST" });
+            if (!response) {
+              showToast(text("modalDeviceCodeError"), "error");
+              if (startBtn) startBtn.disabled = false;
+              return;
+            }
+
+            // Show step 2
+            showModalStep("modal-step-2");
+            if (startBtn) startBtn.disabled = false;
+
+            // Populate user code
+            const userCodeEl = document.getElementById("modal-user-code");
+            if (userCodeEl) userCodeEl.textContent = response.user_code;
+
+            // Set verification link
+            const ghLink = document.getElementById("modal-gh-link");
+            if (ghLink) ghLink.href = response.verification_uri;
+
+            // Reset copy button text
+            const copyText = document.getElementById("modal-copy-code-text");
+            if (copyText) copyText.textContent = text("modalDeviceCodeCopy");
+
+            // Start polling
+            const pollInterval = (response.interval || 5) * 1000;
+            deviceCodePollTimer = setInterval(async () => {
+              try {
+                const pollResponse = await adminFetch("/api/accounts/auth/poll", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    device_code: response.device_code,
+                    label: document.getElementById("modal-label")?.value?.trim() || "",
+                    account_type: document.getElementById("modal-type")?.value || "individual",
+                  }),
+                });
+
+                if (!pollResponse) return;
+
+                if (pollResponse.status === "complete") {
+                  clearInterval(deviceCodePollTimer);
+                  deviceCodePollTimer = null;
+                  showAuthSuccess(pollResponse.account);
+                } else if (pollResponse.status === "expired") {
+                  clearInterval(deviceCodePollTimer);
+                  deviceCodePollTimer = null;
+                  showAuthError(text("modalDeviceCodeExpired"));
+                } else if (pollResponse.status === "denied") {
+                  clearInterval(deviceCodePollTimer);
+                  deviceCodePollTimer = null;
+                  showAuthError(text("modalDeviceCodeDenied"));
+                } else if (pollResponse.status === "error") {
+                  clearInterval(deviceCodePollTimer);
+                  deviceCodePollTimer = null;
+                  showAuthError(pollResponse.message || text("modalDeviceCodeError"));
+                }
+                // "pending" → keep polling
+              } catch (err) {
+                // Network error during poll — keep trying
+                console.error("Poll error:", err);
+              }
+            }, pollInterval);
+          } catch (err) {
+            showToast(text("modalDeviceCodeError") + ": " + err.message, "error");
+            if (startBtn) startBtn.disabled = false;
+          }
+        }
+
+        function showAuthSuccess(account) {
+          showModalStep("modal-step-3");
+          const accountInfo = document.getElementById("modal-success-account");
+          if (accountInfo && account) {
+            const displayName = account.githubLogin || account.label || account.id;
+            accountInfo.textContent = displayName;
+          }
+        }
+
+        function showAuthError(message) {
+          showModalStep("modal-step-error");
+          const errorMsg = document.getElementById("modal-error-message");
+          if (errorMsg) errorMsg.textContent = message;
+        }
+
+        function handleCopyCode() {
+          const userCodeEl = document.getElementById("modal-user-code");
+          if (!userCodeEl) return;
+          const code = userCodeEl.textContent;
+          navigator.clipboard.writeText(code).then(() => {
+            const copyText = document.getElementById("modal-copy-code-text");
+            if (copyText) {
+              copyText.textContent = text("modalDeviceCodeCopied");
+              setTimeout(() => {
+                copyText.textContent = text("modalDeviceCodeCopy");
+              }, 2000);
+            }
+          }).catch(() => {
+            // Fallback: select the text
+            showToast("Failed to copy", "error");
+          });
+        }
+
+        function handleAuthDone() {
+          closeModal();
+          loadAccounts();
+        }
+
+        function handleAuthRetry() {
+          showModalStep("modal-step-1");
+        }
+
+        // ═══════════════════════════════════════
+        //  Confirm Dialog
+        // ═══════════════════════════════════════
+        function showConfirm(title, message) {
+          return new Promise((resolve) => {
+            const overlay = document.createElement("div");
+            overlay.className = "modal-overlay is-open";
+            overlay.innerHTML = `
+              <div class="modal-dialog" style="position:relative;max-width:400px;">
+                <h3 class="modal-title">${escapeHtml(title)}</h3>
+                <p class="mt-3 text-sm leading-6 text-[var(--muted)]">${escapeHtml(message)}</p>
+                <div class="confirm-actions">
+                  <button type="button" class="btn btn-secondary btn-sm" data-confirm="cancel">${escapeHtml(text("confirmCancel"))}</button>
+                  <button type="button" class="btn btn-primary btn-sm" style="background:linear-gradient(135deg,var(--danger),#8b2e28);box-shadow:0 8px 18px rgba(178,71,63,0.18);" data-confirm="yes">${escapeHtml(text("confirmYes"))}</button>
+                </div>
+              </div>
+            `;
+            document.body.appendChild(overlay);
+            overlay.querySelector('[data-confirm="cancel"]').addEventListener("click", () => {
+              overlay.remove();
+              resolve(false);
+            });
+            overlay.querySelector('[data-confirm="yes"]').addEventListener("click", () => {
+              overlay.remove();
+              resolve(true);
+            });
+            overlay.addEventListener("click", (e) => {
+              if (e.target === overlay) { overlay.remove(); resolve(false); }
+            });
+          });
+        }
+
+        // ═══════════════════════════════════════
+        //  Account Management
+        // ═══════════════════════════════════════
+        let accountsData = [];
+
+        function getStatusPill(status) {
+          const map = {
+            active: { label: "accountStatusActive", cls: "pill-success" },
+            exhausted: { label: "accountStatusExhausted", cls: "pill-warning" },
+            rate_limited: { label: "accountStatusRateLimited", cls: "pill-warning" },
+            banned: { label: "accountStatusBanned", cls: "pill-danger" },
+            error: { label: "accountStatusError", cls: "pill-danger" },
+            disabled: { label: "accountStatusDisabled", cls: "pill-neutral" },
+          };
+          const entry = map[status] || { label: "accountStatusUnknown", cls: "pill-neutral" };
+          return `<span class="pill ${entry.cls}">${escapeHtml(text(entry.label))}</span>`;
+        }
+
+        async function loadAccounts() {
+          const statsEl = document.getElementById("accounts-stats");
+          const listEl = document.getElementById("accounts-list");
+          if (!statsEl || !listEl) return;
+          // Show loading
+          listEl.innerHTML = `<div class="dashboard-card p-6 text-center col-span-full"><span class="loading-spinner"></span> <span class="text-sm text-[var(--muted)] ml-2">${escapeHtml(text("loading"))}</span></div>`;
+          try {
+            const data = await adminFetch("/api/accounts");
+            accountsData = Array.isArray(data) ? data : (data && data.accounts ? data.accounts : []);
+          } catch (err) {
+            accountsData = [];
+            listEl.innerHTML = renderAccountsEmpty();
+            statsEl.innerHTML = renderAccountsStats(0, 0, 0);
+            showToast(text("apiError") + ": " + err.message, "error");
+            return;
+          }
+          const totalAccounts = accountsData.length;
+          const activeAccounts = accountsData.filter((a) => a.status === "active").length;
+          const premiumRemaining = accountsData.reduce((sum, a) => {
+            const pq = a.quota_snapshots?.premium_interactions || a.premium_remaining || 0;
+            const rem = typeof pq === "object" ? (pq.remaining ?? pq.quota_remaining ?? 0) : pq;
+            return sum + Number(rem || 0);
+          }, 0);
+          statsEl.innerHTML = renderAccountsStats(totalAccounts, activeAccounts, premiumRemaining);
+          if (accountsData.length === 0) {
+            listEl.innerHTML = renderAccountsEmpty();
+            return;
+          }
+          listEl.innerHTML = accountsData.map((acct) => renderAccountCard(acct)).join("");
+          bindAccountActions();
+        }
+
+        function renderAccountsStats(total, active, premium) {
+          return [
+            { title: text("accountsTotal"), value: formatNumber(total), icon: "users", pill: "pill-brand" },
+            { title: text("accountsActive"), value: formatNumber(active), icon: "check", pill: "pill-success" },
+            { title: text("accountsPremiumRemaining"), value: formatNumber(premium), icon: "spark", pill: "pill-warning" },
+          ].map((c) => `
+            <article class="dashboard-card metric-card p-5 sm:p-6">
+              <div class="flex items-start justify-between gap-3">
+                <span class="text-sm font-semibold text-[var(--muted)]">${escapeHtml(c.title)}</span>
+                <span class="pill ${c.pill}">${icon(c.icon)}</span>
+              </div>
+              <div class="mt-3 text-2xl font-bold text-[var(--text)] mono">${escapeHtml(String(c.value))}</div>
+            </article>
+          `).join("");
+        }
+
+        function renderAccountsEmpty() {
+          return `
+            <div class="dashboard-card-strong p-8 text-center col-span-full space-y-3">
+              <div class="empty-illustration mx-auto">${ICONS.users}</div>
+              <h3 class="text-lg font-bold text-[var(--text)]">${escapeHtml(text("accountNoAccounts"))}</h3>
+              <p class="text-sm text-[var(--muted)] max-w-md mx-auto">${escapeHtml(text("accountNoAccountsDesc"))}</p>
+            </div>
+          `;
+        }
+
+        function renderAccountCard(acct) {
+          const avatarUrl = acct.avatar_url || `https://github.com/${acct.login || "ghost"}.png?size=64`;
+          const login = acct.login || acct.username || "unknown";
+          const label = acct.label || "";
+          const status = acct.status || "unknown";
+          const isDisabled = status === "disabled";
+          const lastUsed = acct.last_used_at ? formatDateTime(acct.last_used_at) : text("accountNeverUsed");
+
+          // Quota progress
+          const pq = acct.quota_snapshots?.premium_interactions || {};
+          const unlimited = Boolean(pq.unlimited);
+          const entitlement = pq.entitlement || 0;
+          const remaining = pq.remaining ?? pq.quota_remaining ?? 0;
+          const percentUsed = unlimited || !entitlement ? 0 : Math.max(0, ((entitlement - remaining) / entitlement) * 100);
+          const tone = getProgressTone(percentUsed, unlimited);
+
+          return `
+            <div class="account-card" data-account-id="${escapeHtml(String(acct.id || login))}">
+              <div class="flex items-center gap-3">
+                <img class="account-avatar" src="${escapeHtml(avatarUrl)}" alt="${escapeHtml(login)}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22><rect fill=%22%23e8e3db%22 width=%2264%22 height=%2264%22/><text x=%2232%22 y=%2238%22 text-anchor=%22middle%22 fill=%22%2316606e%22 font-size=%2224%22>?</text></svg>'" />
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2">
+                    <span class="font-bold text-[var(--text)] truncate">${escapeHtml(login)}</span>
+                    ${label ? `<span class="pill pill-neutral text-xs">${escapeHtml(label)}</span>` : ""}
+                  </div>
+                  <div class="flex items-center gap-2 mt-1">
+                    ${getStatusPill(status)}
+                    <span class="text-xs text-[var(--muted)]">${escapeHtml(text("accountLastUsed"))}: ${escapeHtml(lastUsed)}</span>
+                  </div>
+                </div>
+              </div>
+              ${entitlement || unlimited ? `
+                <div class="space-y-1.5">
+                  <div class="flex justify-between text-xs text-[var(--muted)]">
+                    <span>Premium</span>
+                    <span class="mono">${unlimited ? escapeHtml(text("unlimited")) : `${escapeHtml(formatNumber(remaining))} / ${escapeHtml(formatNumber(entitlement))}`}</span>
+                  </div>
+                  <div class="progress-track">
+                    <div class="progress-fill ${tone}" style="width: ${unlimited ? 100 : Math.min(percentUsed, 100)}%"></div>
+                  </div>
+                </div>
+              ` : ""}
+              <div class="account-actions">
+                <button type="button" class="btn btn-ghost btn-sm" data-acct-action="${isDisabled ? "enable" : "disable"}" data-acct-id="${escapeHtml(String(acct.id || login))}">
+                  ${icon("power")}${escapeHtml(isDisabled ? text("accountEnable") : text("accountDisable"))}
+                </button>
+                <button type="button" class="btn btn-ghost btn-sm" data-acct-action="refresh" data-acct-id="${escapeHtml(String(acct.id || login))}">
+                  ${icon("refresh")}${escapeHtml(text("accountRefresh"))}
+                </button>
+                <button type="button" class="btn btn-danger btn-sm" data-acct-action="delete" data-acct-id="${escapeHtml(String(acct.id || login))}">
+                  ${icon("trash")}${escapeHtml(text("accountDelete"))}
+                </button>
+              </div>
+            </div>
+          `;
+        }
+
+        function bindAccountActions() {
+          document.querySelectorAll("[data-acct-action]").forEach((btn) => {
+            btn.addEventListener("click", async () => {
+              const action = btn.getAttribute("data-acct-action");
+              const id = btn.getAttribute("data-acct-id");
+              try {
+                if (action === "delete") {
+                  const confirmed = await showConfirm(text("accountDeleteConfirmTitle"), text("accountDeleteConfirm"));
+                  if (!confirmed) return;
+                  await adminFetch(`/api/accounts/${encodeURIComponent(id)}`, { method: "DELETE" });
+                  showToast(text("apiSuccess"));
+                } else if (action === "enable" || action === "disable") {
+                  await adminFetch(`/api/accounts/${encodeURIComponent(id)}/status`, {
+                    method: "PUT",
+                    body: JSON.stringify({ status: action === "enable" ? "active" : "disabled" }),
+                  });
+                  showToast(text("apiSuccess"));
+                } else if (action === "refresh") {
+                  await adminFetch(`/api/accounts/${encodeURIComponent(id)}/refresh`, { method: "POST" });
+                  showToast(text("apiSuccess"));
+                }
+              } catch (err) {
+                showToast(text("apiError") + ": " + err.message, "error");
+              }
+              loadAccounts();
+            });
+          });
+        }
+
+        // ═══════════════════════════════════════
+        //  Model Management
+        // ═══════════════════════════════════════
+        let modelMappingData = {};
+        let modelConcurrencyData = {};
+
+        async function loadAvailableModels() {
+          const body = document.getElementById("models-available-body");
+          if (!body) return;
+          body.innerHTML = `<tr><td colspan="5" class="text-center py-6"><span class="loading-spinner"></span></td></tr>`;
+          try {
+            const data = await adminFetch("/api/models/available");
+            const models = Array.isArray(data) ? data : (data && data.models ? data.models : []);
+            if (models.length === 0) {
+              body.innerHTML = `<tr><td colspan="5" class="text-center py-6 text-sm text-[var(--muted)]">${escapeHtml(text("modelNoModels"))}</td></tr>`;
+              return;
+            }
+            body.innerHTML = models.map((m) => `
+              <tr>
+                <td class="font-semibold mono text-sm">${escapeHtml(m.name || m.id || text("noValue"))}</td>
+                <td>${escapeHtml(m.vendor || m.provider || text("noValue"))}</td>
+                <td class="mono">${escapeHtml(m.max_output ? formatNumber(m.max_output) : text("noValue"))}</td>
+                <td>${m.premium ? `<span class="pill pill-warning">${escapeHtml(text("modelsColPremium"))}</span>` : `<span class="pill pill-neutral">-</span>`}</td>
+                <td>${m.enabled !== false ? `<span class="pill pill-success">${escapeHtml(text("modelEnabled"))}</span>` : `<span class="pill pill-neutral">${escapeHtml(text("modelDisabled"))}</span>`}</td>
+              </tr>
+            `).join("");
+          } catch (err) {
+            body.innerHTML = `<tr><td colspan="5" class="text-center py-6 text-sm text-[var(--muted)]">${escapeHtml(text("modelNoModelsDesc"))}</td></tr>`;
+          }
+        }
+
+        async function loadModelMapping() {
+          const body = document.getElementById("models-mapping-body");
+          if (!body) return;
+          try {
+            const data = await adminFetch("/api/models/mapping");
+            modelMappingData = data && typeof data === "object" && !Array.isArray(data) ? data : (data && data.mapping ? data.mapping : {});
+          } catch {
+            modelMappingData = {};
+          }
+          renderModelMappingTable();
+        }
+
+        function renderModelMappingTable() {
+          const body = document.getElementById("models-mapping-body");
+          if (!body) return;
+          const entries = Object.entries(modelMappingData);
+          if (entries.length === 0) {
+            body.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-sm text-[var(--muted)]">${escapeHtml(text("modelNoMappings"))}</td></tr>`;
+          } else {
+            body.innerHTML = entries.map(([from, to], i) => `
+              <tr>
+                <td><input class="input-field mono" type="text" value="${escapeHtml(from)}" data-map-idx="${i}" data-map-field="from" /></td>
+                <td class="text-center text-[var(--muted)]">${icon("arrowRight")}</td>
+                <td><input class="input-field mono" type="text" value="${escapeHtml(to)}" data-map-idx="${i}" data-map-field="to" /></td>
+                <td><button type="button" class="btn btn-danger btn-sm" data-map-delete="${i}">${icon("trash")}</button></td>
+              </tr>
+            `).join("");
+          }
+          // Add row
+          body.innerHTML += `
+            <tr>
+              <td><input class="input-field mono" type="text" placeholder="gpt-4" id="new-map-from" /></td>
+              <td class="text-center text-[var(--muted)]">${icon("arrowRight")}</td>
+              <td><input class="input-field mono" type="text" placeholder="gpt-4o" id="new-map-to" /></td>
+              <td><button type="button" class="btn btn-ghost btn-sm" id="add-mapping-row">${icon("plus")}${escapeHtml(text("modelMappingAdd"))}</button></td>
+            </tr>
+          `;
+          // Bind
+          body.querySelectorAll("[data-map-delete]").forEach((btn) => {
+            btn.addEventListener("click", () => {
+              const entries = Object.entries(modelMappingData);
+              const idx = Number(btn.getAttribute("data-map-delete"));
+              if (entries[idx]) {
+                delete modelMappingData[entries[idx][0]];
+                renderModelMappingTable();
+              }
+            });
+          });
+          body.querySelectorAll("[data-map-field]").forEach((input) => {
+            input.addEventListener("change", () => {
+              // Rebuild from inputs
+              const rows = body.querySelectorAll("tr");
+              const newMap = {};
+              rows.forEach((row) => {
+                const fromInput = row.querySelector('[data-map-field="from"]');
+                const toInput = row.querySelector('[data-map-field="to"]');
+                if (fromInput && toInput && fromInput.value.trim()) {
+                  newMap[fromInput.value.trim()] = toInput.value.trim();
+                }
+              });
+              modelMappingData = newMap;
+            });
+          });
+          const addBtn = document.getElementById("add-mapping-row");
+          if (addBtn) {
+            addBtn.addEventListener("click", () => {
+              const from = document.getElementById("new-map-from")?.value?.trim();
+              const to = document.getElementById("new-map-to")?.value?.trim();
+              if (from && to) {
+                modelMappingData[from] = to;
+                renderModelMappingTable();
+              }
+            });
+          }
+        }
+
+        async function saveModelMapping() {
+          try {
+            await adminFetch("/api/models/mapping", {
+              method: "PUT",
+              body: JSON.stringify(modelMappingData),
+            });
+            showToast(text("apiSuccess"));
+          } catch (err) {
+            showToast(text("apiError") + ": " + err.message, "error");
+          }
+        }
+
+        async function loadModelConcurrency() {
+          const body = document.getElementById("models-concurrency-body");
+          if (!body) return;
+          try {
+            const data = await adminFetch("/api/models/concurrency");
+            modelConcurrencyData = data && typeof data === "object" && !Array.isArray(data) ? data : (data && data.concurrency ? data.concurrency : {});
+          } catch {
+            modelConcurrencyData = {};
+          }
+          renderModelConcurrencyTable();
+        }
+
+        function renderModelConcurrencyTable() {
+          const body = document.getElementById("models-concurrency-body");
+          if (!body) return;
+          const entries = Object.entries(modelConcurrencyData);
+          if (entries.length === 0) {
+            body.innerHTML = `<tr><td colspan="3" class="text-center py-4 text-sm text-[var(--muted)]">${escapeHtml(text("modelNoConcurrency"))}</td></tr>`;
+          } else {
+            body.innerHTML = entries.map(([model, max], i) => `
+              <tr>
+                <td><input class="input-field mono" type="text" value="${escapeHtml(model)}" data-conc-idx="${i}" data-conc-field="model" /></td>
+                <td><input class="input-field mono" type="number" min="1" value="${escapeHtml(String(max))}" data-conc-idx="${i}" data-conc-field="max" /></td>
+                <td><button type="button" class="btn btn-danger btn-sm" data-conc-delete="${i}">${icon("trash")}</button></td>
+              </tr>
+            `).join("");
+          }
+          body.innerHTML += `
+            <tr>
+              <td><input class="input-field mono" type="text" placeholder="gpt-4o" id="new-conc-model" /></td>
+              <td><input class="input-field mono" type="number" min="1" placeholder="5" id="new-conc-max" /></td>
+              <td><button type="button" class="btn btn-ghost btn-sm" id="add-concurrency-row">${icon("plus")}${escapeHtml(text("modelConcurrencyAdd"))}</button></td>
+            </tr>
+          `;
+          body.querySelectorAll("[data-conc-delete]").forEach((btn) => {
+            btn.addEventListener("click", () => {
+              const entries = Object.entries(modelConcurrencyData);
+              const idx = Number(btn.getAttribute("data-conc-delete"));
+              if (entries[idx]) {
+                delete modelConcurrencyData[entries[idx][0]];
+                renderModelConcurrencyTable();
+              }
+            });
+          });
+          body.querySelectorAll("[data-conc-field]").forEach((input) => {
+            input.addEventListener("change", () => {
+              const rows = body.querySelectorAll("tr");
+              const newConc = {};
+              rows.forEach((row) => {
+                const modelInput = row.querySelector('[data-conc-field="model"]');
+                const maxInput = row.querySelector('[data-conc-field="max"]');
+                if (modelInput && maxInput && modelInput.value.trim()) {
+                  newConc[modelInput.value.trim()] = Number(maxInput.value) || 1;
+                }
+              });
+              modelConcurrencyData = newConc;
+            });
+          });
+          const addBtn = document.getElementById("add-concurrency-row");
+          if (addBtn) {
+            addBtn.addEventListener("click", () => {
+              const model = document.getElementById("new-conc-model")?.value?.trim();
+              const max = Number(document.getElementById("new-conc-max")?.value) || 1;
+              if (model) {
+                modelConcurrencyData[model] = max;
+                renderModelConcurrencyTable();
+              }
+            });
+          }
+        }
+
+        async function saveModelConcurrency() {
+          try {
+            await adminFetch("/api/models/concurrency", {
+              method: "PUT",
+              body: JSON.stringify(modelConcurrencyData),
+            });
+            showToast(text("apiSuccess"));
+          } catch (err) {
+            showToast(text("apiError") + ": " + err.message, "error");
+          }
+        }
+
+        // ═══════════════════════════════════════
+        //  Statistics
+        // ═══════════════════════════════════════
+        let statsRefreshTimer = null;
+
+        function startStatsAutoRefresh() {
+          stopStatsAutoRefresh();
+          statsRefreshTimer = setInterval(loadStats, 5000);
+        }
+
+        function stopStatsAutoRefresh() {
+          if (statsRefreshTimer) {
+            clearInterval(statsRefreshTimer);
+            statsRefreshTimer = null;
+          }
+        }
+
+        async function loadStats() {
+          const uptimeCard = document.getElementById("stats-uptime-card");
+          const reqContent = document.getElementById("stats-requests-content");
+          const acctContent = document.getElementById("stats-accounts-content");
+          if (!uptimeCard || !reqContent || !acctContent) return;
+
+          try {
+            const data = await adminFetch("/api/stats");
+            if (!data) throw new Error("Empty response");
+
+            // Uptime
+            const uptimeSeconds = data.uptime_seconds || data.uptime || 0;
+            const hours = Math.floor(uptimeSeconds / 3600);
+            const minutes = Math.floor((uptimeSeconds % 3600) / 60);
+            const seconds = Math.floor(uptimeSeconds % 60);
+            const uptimeStr = `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+
+            uptimeCard.innerHTML = `
+              <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div class="section-title text-xl text-[var(--text)]">
+                    <span class="section-icon">${ICONS.server}</span>
+                    <span>${escapeHtml(text("statsUptime"))}</span>
+                  </div>
+                  <p class="mt-2 text-sm text-[var(--muted)]">${escapeHtml(text("statsAutoRefresh"))}</p>
+                </div>
+                <div class="text-3xl font-bold mono text-[var(--brand)]">${escapeHtml(uptimeStr)}</div>
+              </div>
+            `;
+
+            // Per-model requests
+            const models = data.models || data.model_stats || {};
+            const modelEntries = Object.entries(models);
+            if (modelEntries.length === 0) {
+              reqContent.innerHTML = `<p class="text-sm text-[var(--muted)]">${escapeHtml(text("statsNoData"))}</p>`;
+            } else {
+              const maxVal = Math.max(1, ...modelEntries.map(([, v]) => (v.active || 0) + (v.queued || 0)));
+              reqContent.innerHTML = `
+                <div class="stat-bar-group">
+                  ${modelEntries.map(([model, v]) => {
+                    const active = v.active || 0;
+                    const queued = v.queued || 0;
+                    const total = active + queued;
+                    const pct = Math.min((total / maxVal) * 100, 100);
+                    return `
+                      <div class="stat-bar-row">
+                        <span class="stat-bar-label" title="${escapeHtml(model)}">${escapeHtml(model)}</span>
+                        <div class="stat-bar-track">
+                          <div class="stat-bar-fill progress-fill-brand" style="width:${pct}%"></div>
+                        </div>
+                        <span class="stat-bar-value">${active}<span class="text-[var(--muted)] text-xs">/${queued}q</span></span>
+                      </div>
+                    `;
+                  }).join("")}
+                </div>
+                <div class="mt-3 flex gap-4 text-xs text-[var(--muted)]">
+                  <span>${icon("activity")} ${escapeHtml(text("statsActiveRequests"))}</span>
+                  <span>${icon("clock")} ${escapeHtml(text("statsQueuedRequests"))} (q)</span>
+                </div>
+              `;
+            }
+
+            // Account status distribution
+            const acctStats = data.account_status || data.accounts || {};
+            const statusEntries = Object.entries(acctStats);
+            if (statusEntries.length === 0) {
+              acctContent.innerHTML = `<p class="text-sm text-[var(--muted)]">${escapeHtml(text("statsNoData"))}</p>`;
+            } else {
+              const totalAcct = statusEntries.reduce((sum, [, count]) => sum + (Number(count) || 0), 0) || 1;
+              const statusColorMap = { active: "progress-fill-success", exhausted: "progress-fill-warning", rate_limited: "progress-fill-warning", banned: "progress-fill-danger", error: "progress-fill-danger", disabled: "" };
+              // Stacked bar
+              acctContent.innerHTML = `
+                <div class="space-y-3">
+                  <div class="progress-track" style="height:1.8rem">
+                    <div class="flex h-full">
+                      ${statusEntries.map(([status, count]) => {
+                        const pct = (Number(count) / totalAcct) * 100;
+                        const colorCls = statusColorMap[status] || "progress-fill-brand";
+                        const bgFallback = colorCls ? "" : "background:var(--panel);";
+                        return `<div class="${colorCls}" style="width:${pct}%;${bgFallback}" title="${escapeHtml(status)}: ${count}"></div>`;
+                      }).join("")}
+                    </div>
+                  </div>
+                  <div class="flex flex-wrap gap-3">
+                    ${statusEntries.map(([status, count]) => `
+                      <div class="flex items-center gap-2 text-sm">
+                        ${getStatusPill(status)}
+                        <span class="mono font-bold">${count}</span>
+                      </div>
+                    `).join("")}
+                  </div>
+                </div>
+              `;
+            }
+          } catch (err) {
+            uptimeCard.innerHTML = `
+              <div class="text-center py-4 space-y-2">
+                <div class="empty-illustration mx-auto">${ICONS.activity}</div>
+                <p class="text-sm text-[var(--muted)]">${escapeHtml(text("statsNoDataDesc"))}</p>
+              </div>
+            `;
+            reqContent.innerHTML = `<p class="text-sm text-[var(--muted)]">${escapeHtml(text("statsNoData"))}</p>`;
+            acctContent.innerHTML = `<p class="text-sm text-[var(--muted)]">${escapeHtml(text("statsNoData"))}</p>`;
+          }
+        }
+
         function initialize() {
           refs.endpointForm.addEventListener("submit", handleSubmit);
           refs.resetButton.addEventListener("click", handleReset);
@@ -1942,6 +3538,43 @@
             state.language = state.language === "zh" ? "en" : "zh";
             persistPreferences();
             renderAll();
+          });
+
+          // ── Main tab switching ──
+          document.querySelectorAll(".main-tab-btn").forEach((btn) => {
+            btn.addEventListener("click", () => {
+              const tabKey = btn.getAttribute("data-main-tab");
+              if (tabKey) switchMainTab(tabKey);
+            });
+          });
+
+          // ── Add Account modal (Device Code flow) ──
+          const addAccountBtn = document.getElementById("add-account-btn");
+          if (addAccountBtn) addAccountBtn.addEventListener("click", openModal);
+          const modalCloseBtn = document.getElementById("modal-close-btn");
+          if (modalCloseBtn) modalCloseBtn.addEventListener("click", closeModal);
+          const modalOverlay = document.getElementById("add-account-modal");
+          if (modalOverlay) modalOverlay.addEventListener("click", (e) => { if (e.target === modalOverlay) closeModal(); });
+          const modalStartAuthBtn = document.getElementById("modal-start-auth-btn");
+          if (modalStartAuthBtn) modalStartAuthBtn.addEventListener("click", startDeviceCodeAuth);
+          const modalCopyCodeBtn = document.getElementById("modal-copy-code-btn");
+          if (modalCopyCodeBtn) modalCopyCodeBtn.addEventListener("click", handleCopyCode);
+          const modalCancelAuthBtn = document.getElementById("modal-cancel-auth-btn");
+          if (modalCancelAuthBtn) modalCancelAuthBtn.addEventListener("click", closeModal);
+          const modalDoneBtn = document.getElementById("modal-done-btn");
+          if (modalDoneBtn) modalDoneBtn.addEventListener("click", handleAuthDone);
+          const modalRetryBtn = document.getElementById("modal-retry-btn");
+          if (modalRetryBtn) modalRetryBtn.addEventListener("click", handleAuthRetry);
+
+          // ── Model management save buttons ──
+          const saveMappingBtn = document.getElementById("save-mapping-btn");
+          if (saveMappingBtn) saveMappingBtn.addEventListener("click", saveModelMapping);
+          const saveConcurrencyBtn = document.getElementById("save-concurrency-btn");
+          if (saveConcurrencyBtn) saveConcurrencyBtn.addEventListener("click", saveModelConcurrency);
+
+          // ── Keyboard: Escape closes modal ──
+          document.addEventListener("keydown", (e) => {
+            if (e.key === "Escape") closeModal();
           });
 
           setEndpoint(state.endpoint);

@@ -52,15 +52,16 @@ export async function handleCompletion(c: Context) {
 
     try {
       for await (const rawEvent of response) {
-        if (rawEvent.data === "[DONE]") {
+        const event = rawEvent as { data?: string }
+        if (event.data === "[DONE]") {
           break
         }
 
-        if (!rawEvent.data) {
+        if (!event.data) {
           continue
         }
 
-        const chunk = JSON.parse(rawEvent.data) as ChatCompletionChunk
+        const chunk = JSON.parse(event.data) as ChatCompletionChunk
         const events = translateChunkToAnthropicEvents(chunk, streamState)
 
         for (const event of events) {
@@ -73,11 +74,15 @@ export async function handleCompletion(c: Context) {
     } catch (error) {
       const message = (error as Error).message || String(error)
       consola.warn(`SSE stream interrupted: ${message}`)
-      const errorEvent = translateErrorToAnthropicErrorEvent()
-      await stream.writeSSE({
-        event: errorEvent.type,
-        data: JSON.stringify(errorEvent),
-      })
+      try {
+        const errorEvent = translateErrorToAnthropicErrorEvent()
+        await stream.writeSSE({
+          event: errorEvent.type,
+          data: JSON.stringify(errorEvent),
+        })
+      } catch {
+        // Client already disconnected — nothing we can do
+      }
     }
   })
 }
