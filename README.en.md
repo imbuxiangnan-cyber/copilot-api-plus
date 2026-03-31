@@ -15,12 +15,16 @@ English | [简体中文](README.md)
 - [Quick Start](#-quick-start)
 - [Usage Guide](#-usage-guide)
   - [GitHub Copilot Mode](#1-github-copilot-mode-default)
+- [Multi-Account Management](#-multi-account-management)
+- [Model Routing](#-model-routing)
 - [Proxy Configuration](#-proxy-configuration)
 - [Claude Code Integration](#-claude-code-integration)
+- [opencode Integration](#-opencode-integration)
 - [API Endpoints](#-api-endpoints)
 - [API Key Authentication](#-api-key-authentication)
 - [Technical Details](#-technical-details)
 - [CLI Reference](#️-cli-reference)
+- [Admin API](#-admin-api)
 - [Docker Deployment](#-docker-deployment)
 - [FAQ](#-faq)
 
@@ -39,6 +43,10 @@ English | [简体中文](README.md)
 | 🌐 **Proxy Support** | HTTP/HTTPS proxy with persistent configuration |
 | 🐳 **Docker Support** | Full Docker deployment solution |
 | 🔑 **API Key Auth** | Optional API key authentication for public deployments |
+| 👥 **Multi-Account** | Multiple GitHub accounts with automatic failover on quota exhaustion/rate limiting/bans |
+| 🔀 **Model Routing** | Flexible model name mapping and per-model concurrency control |
+| 📱 **Visual Management** | Web dashboard for account management, model config, and runtime stats |
+| 🛡️ **Network Resilience** | 120s connection timeout + exponential backoff retry (2s/5s/10s) |
 | ✂️ **Context Passthrough** | Full context passthrough to upstream API; clients (e.g. Claude Code) manage compression |
 | 🔍 **Smart Model Matching** | Handles model name format differences (date suffixes, dash/dot versions, etc.) |
 
@@ -114,6 +122,156 @@ npx copilot-api-plus@latest start --account-type enterprise
 | GPT-4.1 | `gpt-4.1` | 1M |
 | o4-mini | `o4-mini` | 200K |
 | Gemini 2.5 Pro | `gemini-2.5-pro` | 1M |
+
+---
+
+## 👥 Multi-Account Management
+
+New in v1.1.0. When one account's quota is exhausted, rate-limited, or banned, the system automatically and seamlessly switches to the next available account.
+
+### Why Multi-Account?
+
+- **Quota pooling**: Combine Copilot quotas from multiple accounts
+- **High availability**: Other accounts take over when one is rate-limited or banned
+- **Seamless failover**: Clients (e.g. Claude Code) need no changes — failover is transparent
+
+### Adding Accounts
+
+#### Option 1: CLI Command (Recommended)
+
+Add accounts via GitHub Device Code flow — no manual token required:
+
+```bash
+# Add a new account
+npx copilot-api-plus@latest add-account
+
+# With a label
+npx copilot-api-plus@latest add-account --label "Work Account"
+
+# With account type
+npx copilot-api-plus@latest add-account --label "Enterprise" --account-type business
+```
+
+A device code will be displayed. Open <https://github.com/login/device> in your browser and enter the code to authorize.
+
+#### Option 2: Web Dashboard
+
+After starting the server, open the Usage Viewer page and switch to the "Account Management" tab:
+
+1. Click "Add Account"
+2. Select "Device Code Authorization"
+3. Complete GitHub authorization in your browser
+4. The account is added automatically upon success
+
+#### Option 3: API
+
+If you already have a GitHub token, add it directly via the API:
+
+```bash
+curl -X POST http://localhost:4141/api/accounts \
+  -H "Content-Type: application/json" \
+  -d '{"githubToken": "ghp_xxx", "label": "My Account"}'
+```
+
+### Managing Accounts
+
+```bash
+# List all accounts
+npx copilot-api-plus@latest list-accounts
+
+# Example output:
+# ┌───┬──────────┬──────────┬────────┬───────────────────┐
+# │ # │ Label    │ Login    │ Status │ Premium Remaining │
+# ├───┼──────────┼──────────┼────────┼───────────────────┤
+# │ 1 │ Primary  │ user1    │ active │ 800/1000          │
+# │ 2 │ Backup   │ user2    │ active │ 950/1000          │
+# └───┴──────────┴──────────┴────────┴───────────────────┘
+
+# Remove an account (by label or index)
+npx copilot-api-plus@latest remove-account "Primary"
+npx copilot-api-plus@latest remove-account 1
+```
+
+### Account Selection Strategy
+
+The system automatically selects the best account in this priority order:
+
+1. **Filter unavailable**: Exclude disabled, banned, exhausted, and cooling-down accounts
+2. **Prefer high quota**: Accounts with more remaining quota are selected first
+3. **Round-robin**: When quotas are equal, the least recently used account is selected
+
+### Account Statuses
+
+| Status | Description | Auto-Recovery |
+|--------|-------------|---------------|
+| `active` | Normal, available | - |
+| `exhausted` | Quota depleted | Recovers when quota resets |
+| `rate_limited` | Rate-limited | Auto-retry after 5-minute cooldown |
+| `banned` | Token invalid/banned | Requires manual action |
+| `error` | Network/other error | Auto-retry after 5-minute cooldown |
+| `disabled` | Manually disabled | Requires manual re-enable |
+
+### Auto-Migration
+
+If you were using single-account mode before, your existing account is automatically migrated to the multi-account system on first startup with v1.1.0. No action required.
+
+---
+
+## 🔀 Model Routing
+
+New in v1.1.0. Flexible model name mapping and per-model concurrency control.
+
+### Model Name Mapping
+
+Map model names requested by clients to different models sent to Copilot:
+
+```bash
+# Configure mapping via API
+curl -X PUT http://localhost:4141/api/models/mapping \
+  -H "Content-Type: application/json" \
+  -d '{"mapping": {"gpt-4": "claude-sonnet-4", "fast": "gpt-4.1-mini"}}'
+```
+
+You can also edit mappings visually in the Web dashboard under the "Model Management" tab.
+
+#### Wildcard Mapping
+
+Use `*` as a key to route all unmatched model names to a single model:
+
+```bash
+curl -X PUT http://localhost:4141/api/models/mapping \
+  -H "Content-Type: application/json" \
+  -d '{"mapping": {"*": "claude-sonnet-4"}}'
+```
+
+### Concurrency Control
+
+Limit the maximum concurrent requests per model to prevent overload:
+
+```bash
+# Set concurrency limits
+curl -X PUT http://localhost:4141/api/models/concurrency \
+  -H "Content-Type: application/json" \
+  -d '{"concurrency": {"claude-sonnet-4": 5, "default": 10}}'
+```
+
+- `default` is the fallback concurrency limit for unspecified models
+- Requests exceeding the limit are queued, not rejected
+
+### View Current Config
+
+```bash
+# View mapping config
+curl http://localhost:4141/api/models/mapping
+
+# View concurrency config
+curl http://localhost:4141/api/models/concurrency
+
+# View available models
+curl http://localhost:4141/api/models/available
+```
+
+Mapping and concurrency settings are persisted to `config.json` and auto-loaded on restart.
 
 ---
 
@@ -229,6 +387,72 @@ Create `.claude/settings.json` in your project root:
 ```
 
 Then start the copilot-api-plus server and run `claude` in that project directory.
+
+---
+
+## 🔧 opencode Integration
+
+[opencode](https://github.com/sst/opencode) is a modern AI coding assistant.
+
+### Configuration
+
+1. Create `opencode.json` in your project root:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "copilot-api-plus": {
+      "api": "openai-compatible",
+      "name": "Copilot API Plus",
+      "options": {
+        "baseURL": "http://127.0.0.1:4141/v1"
+      },
+      "models": {
+        "claude-sonnet-4": {
+          "name": "Claude Sonnet 4",
+          "id": "claude-sonnet-4",
+          "max_tokens": 64000,
+          "profile": "coder",
+          "limit": { "context": 200000 }
+        },
+        "gpt-4.1": {
+          "name": "GPT-4.1",
+          "id": "gpt-4.1",
+          "max_tokens": 32768,
+          "profile": "coder",
+          "limit": { "context": 1047576 }
+        }
+      }
+    }
+  }
+}
+```
+
+2. Start copilot-api-plus:
+
+```bash
+npx copilot-api-plus@latest start
+```
+
+3. In the same directory, run opencode:
+
+```bash
+npx opencode@latest
+```
+
+4. Select `copilot-api-plus` as the provider
+
+### Shortcut: Using Environment Variables
+
+```bash
+# Set environment variables
+export OPENAI_BASE_URL=http://127.0.0.1:4141/v1
+export OPENAI_API_KEY=dummy
+
+# Run opencode
+npx opencode@latest
+```
 
 ---
 
@@ -353,13 +577,14 @@ Each API request outputs a log line with model name, status code, and duration:
 [claude-opus-4-6] 13:13:59 --> POST /v1/messages?beta=true 200 20.1s
 ```
 
-### Network Retry
+### Network Resilience
 
-Built-in retry for transient network errors (TLS disconnect, connection reset, etc.):
+Built-in connection timeout and exponential backoff retry for upstream API requests:
 
-- Up to 2 retries (3 total attempts)
-- Backoff intervals: 1s, 2s
-- Only retries network-layer errors; HTTP error codes (e.g. 400/500) are not retried
+- **Connection timeout**: 120 seconds (AbortController-based)
+- **Retry strategy**: Up to 3 retries (4 total attempts), exponential backoff: 2s → 5s → 10s
+- Only retries network-layer errors (timeout, TLS disconnect, connection reset, etc.); HTTP error codes (e.g. 400/500) are not retried
+- SSE stream interruptions gracefully send error events to the client
 
 ---
 
@@ -375,6 +600,9 @@ Built-in retry for transient network errors (TLS disconnect, connection reset, e
 | `proxy` | Configure proxy settings |
 | `check-usage` | View Copilot usage |
 | `debug` | Show debug information |
+| `add-account` | Add a new GitHub account via Device Code auth |
+| `list-accounts` | List all configured accounts |
+| `remove-account` | Remove an account by label or index |
 
 ### start Options
 
@@ -413,6 +641,114 @@ Built-in retry for transient network errors (TLS disconnect, connection reset, e
 | `--all` | `-a` | Clear all credentials |
 
 > **Tip**: Running `logout` without arguments shows an interactive menu.
+
+### add-account Options
+
+| Option | Alias | Default | Description |
+|--------|-------|---------|-------------|
+| `--label` | `-l` | - | Label for the account |
+| `--account-type` | `-a` | individual | Account type (individual/business/enterprise) |
+| `--verbose` | `-v` | false | Enable verbose logging |
+
+### list-accounts Options
+
+| Option | Alias | Default | Description |
+|--------|-------|---------|-------------|
+| `--verbose` | `-v` | false | Enable verbose logging |
+
+### remove-account Options
+
+| Option | Alias | Default | Description |
+|--------|-------|---------|-------------|
+| `<id>` | - | - | Account label or index (positional argument) |
+| `--label` | `-l` | - | Account label |
+| `--force` | `-f` | false | Skip confirmation prompt |
+| `--verbose` | `-v` | false | Enable verbose logging |
+
+---
+
+## 📡 Admin API
+
+New in v1.1.0. REST API for managing accounts, model configuration, and viewing runtime statistics. All endpoints are under the `/api` prefix.
+
+### Account Management
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/accounts` | List all accounts (tokens masked) |
+| POST | `/api/accounts` | Add an account (requires `githubToken` and `label`) |
+| DELETE | `/api/accounts/:id` | Remove an account by ID |
+| PUT | `/api/accounts/:id/status` | Enable/disable an account (`"active"` or `"disabled"`) |
+| POST | `/api/accounts/:id/refresh` | Force refresh token and quota for an account |
+| GET | `/api/accounts/usage` | Aggregated quota statistics across all accounts |
+
+#### Device Code Auth Flow (for Web UI)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/accounts/auth/start` | Initiate GitHub Device Code flow; returns device code and verification URL |
+| POST | `/api/accounts/auth/poll` | Poll authorization status (requires `device_code`); auto-adds account on success |
+
+#### Examples
+
+```bash
+# List all accounts
+curl http://localhost:4141/api/accounts
+
+# Add an account
+curl -X POST http://localhost:4141/api/accounts \
+  -H "Content-Type: application/json" \
+  -d '{"githubToken": "ghp_xxx", "label": "My Account"}'
+
+# Enable/disable an account
+curl -X PUT http://localhost:4141/api/accounts/<account-id>/status \
+  -H "Content-Type: application/json" \
+  -d '{"status": "disabled"}'
+
+# Force refresh an account
+curl -X POST http://localhost:4141/api/accounts/<account-id>/refresh
+
+# View aggregated quota
+curl http://localhost:4141/api/accounts/usage
+```
+
+### Model Management
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/models/available` | List all models available from Copilot |
+| GET | `/api/models/mapping` | View current model mapping config |
+| PUT | `/api/models/mapping` | Update model mapping (requires `mapping` object) |
+| GET | `/api/models/concurrency` | View current concurrency config |
+| PUT | `/api/models/concurrency` | Update concurrency config (requires `concurrency` object, positive integers) |
+
+#### Examples
+
+```bash
+# View available models
+curl http://localhost:4141/api/models/available
+
+# Set model mapping
+curl -X PUT http://localhost:4141/api/models/mapping \
+  -H "Content-Type: application/json" \
+  -d '{"mapping": {"gpt-4": "claude-sonnet-4", "*": "claude-sonnet-4"}}'
+
+# Set concurrency limits
+curl -X PUT http://localhost:4141/api/models/concurrency \
+  -H "Content-Type: application/json" \
+  -d '{"concurrency": {"claude-sonnet-4": 5, "default": 10}}'
+```
+
+### Runtime Statistics
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/stats` | Runtime stats (account count, active count, model concurrency, uptime) |
+
+```bash
+curl http://localhost:4141/api/stats
+# Returns: {"accounts":{"total":2,"active":2},"models":{...},"uptime":3600}
+```
 
 ---
 
@@ -476,7 +812,8 @@ All data is stored in `~/.local/share/copilot-api-plus/`:
 | File | Description |
 |------|-------------|
 | `github_token` | GitHub Token |
-| `config.json` | Proxy and other settings |
+| `config.json` | Proxy, model mapping, concurrency settings |
+| `accounts.json` | Multi-account data (tokens, status, quotas) |
 
 ### Switching Accounts
 
