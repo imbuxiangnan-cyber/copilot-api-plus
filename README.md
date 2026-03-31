@@ -207,9 +207,9 @@ npx copilot-api-plus@latest remove-account 1
 |------|------|----------|
 | `active` | 正常可用 | - |
 | `exhausted` | 额度耗尽 | 额度重置后自动恢复 |
-| `rate_limited` | 被限流 | 5 分钟冷却后自动重试 |
+| `rate_limited` | 被限流 | 60 秒冷却后自动重试 |
 | `banned` | Token 无效/被封 | 需手动处理 |
-| `error` | 网络/其他错误 | 5 分钟冷却后自动重试 |
+| `error` | 网络/其他错误 | 60 秒冷却后自动重试 |
 | `disabled` | 用户手动禁用 | 需手动启用 |
 
 ### 自动迁移

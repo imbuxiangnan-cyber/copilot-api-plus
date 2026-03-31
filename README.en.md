@@ -206,9 +206,9 @@ The system automatically selects the best account in this priority order:
 |--------|-------------|---------------|
 | `active` | Normal, available | - |
 | `exhausted` | Quota depleted | Recovers when quota resets |
-| `rate_limited` | Rate-limited | Auto-retry after 5-minute cooldown |
+| `rate_limited` | Rate-limited | Auto-retry after 60-second cooldown |
 | `banned` | Token invalid/banned | Requires manual action |
-| `error` | Network/other error | Auto-retry after 5-minute cooldown |
+| `error` | Network/other error | Auto-retry after 60-second cooldown |
 | `disabled` | Manually disabled | Requires manual re-enable |
 
 ### Auto-Migration
