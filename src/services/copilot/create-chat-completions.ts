@@ -304,9 +304,21 @@ async function createWithMultiAccount(payload: ChatCompletionsPayload) {
     triedAccountIds.add(account.id)
 
     if (!account.copilotToken) {
-      consola.warn(`Account ${account.label} has no copilot token, skipping`)
-      accountManager.markAccountStatus(account.id, "error", "No copilot token")
-      continue
+      // Token may be missing after restart — try to refresh before giving up
+      consola.info(
+        `Account ${account.label} has no copilot token, refreshing...`,
+      )
+      await accountManager.refreshAccountToken(account)
+
+      if (!account.copilotToken) {
+        consola.warn(`Account ${account.label}: token refresh failed, skipping`)
+        accountManager.markAccountStatus(
+          account.id,
+          "error",
+          "No copilot token",
+        )
+        continue
+      }
     }
 
     // Build a TokenSource from the account

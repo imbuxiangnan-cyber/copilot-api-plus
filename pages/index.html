@@ -3241,7 +3241,7 @@
           if (!body) return;
           try {
             const data = await adminFetch("/api/models/mapping");
-            modelMappingData = data && typeof data === "object" && !Array.isArray(data) ? data : (data && data.mapping ? data.mapping : {});
+            modelMappingData = data && data.mapping && typeof data.mapping === "object" ? data.mapping : (data && typeof data === "object" && !data.mapping && !data.concurrency ? data : {});
           } catch {
             modelMappingData = {};
           }
@@ -3316,7 +3316,7 @@
           try {
             await adminFetch("/api/models/mapping", {
               method: "PUT",
-              body: JSON.stringify(modelMappingData),
+              body: JSON.stringify({ mapping: modelMappingData }),
             });
             showToast(text("apiSuccess"));
           } catch (err) {
@@ -3329,7 +3329,7 @@
           if (!body) return;
           try {
             const data = await adminFetch("/api/models/concurrency");
-            modelConcurrencyData = data && typeof data === "object" && !Array.isArray(data) ? data : (data && data.concurrency ? data.concurrency : {});
+            modelConcurrencyData = data && data.concurrency && typeof data.concurrency === "object" ? data.concurrency : (data && typeof data === "object" && !data.concurrency ? data : {});
           } catch {
             modelConcurrencyData = {};
           }
@@ -3399,7 +3399,7 @@
           try {
             await adminFetch("/api/models/concurrency", {
               method: "PUT",
-              body: JSON.stringify(modelConcurrencyData),
+              body: JSON.stringify({ concurrency: modelConcurrencyData }),
             });
             showToast(text("apiSuccess"));
           } catch (err) {

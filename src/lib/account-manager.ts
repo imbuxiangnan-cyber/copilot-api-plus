@@ -400,17 +400,20 @@ export class AccountManager {
   /**
    * Start periodic background refresh loops.
    *
+   * The initial token refresh is awaited to ensure accounts are ready before
+   * the first request arrives.  Usage refresh runs in the background.
+   *
    * @param tokenIntervalMs  Token refresh interval (default 25 min).
    * @param usageIntervalMs  Usage refresh interval (default 5 min).
    */
-  startBackgroundRefresh(
+  async startBackgroundRefresh(
     tokenIntervalMs: number = 25 * 60 * 1000,
     usageIntervalMs: number = 5 * 60 * 1000,
-  ): void {
+  ): Promise<void> {
     this.stopBackgroundRefresh()
 
-    // Initial refresh
-    void this.refreshAllTokens()
+    // Initial refresh — await token refresh so accounts are ready for requests
+    await this.refreshAllTokens()
     void this.refreshAllUsage()
 
     this.refreshInterval = setInterval(() => {

@@ -51,7 +51,7 @@ async function initMultiAccount(): Promise<void> {
       )
 
       // Start background token/usage refresh
-      accountManager.startBackgroundRefresh()
+      await accountManager.startBackgroundRefresh()
     } else if (state.githubToken) {
       // No accounts in file — migrate current single account if we have a token
       try {
@@ -63,7 +63,7 @@ async function initMultiAccount(): Promise<void> {
         consola.info(
           `Migrated current account (${account.githubLogin ?? account.label}) to multi-account mode`,
         )
-        accountManager.startBackgroundRefresh()
+        await accountManager.startBackgroundRefresh()
       } catch (migrationError) {
         consola.debug(
           "Could not migrate to multi-account, staying in single-account mode:",
