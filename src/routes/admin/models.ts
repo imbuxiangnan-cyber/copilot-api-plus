@@ -13,7 +13,8 @@ export const modelAdminRoutes = new Hono()
 
 modelAdminRoutes.get("/available", (c) => {
   try {
-    return c.json({ models: state.models ?? [] })
+    const models = state.models?.data ?? []
+    return c.json(models)
   } catch (error) {
     consola.error("Error fetching available models:", error)
     return c.json({ error: "Failed to fetch available models" }, 500)

@@ -450,6 +450,9 @@ export class AccountManager {
   /**
    * Create an Account entry from the legacy single-account global state.
    * Useful for seamless upgrade from single-account to multi-account mode.
+   *
+   * Falls back to creating a minimal entry if API validation fails — the
+   * background refresh will fill in the missing data later.
    */
   async migrateFromLegacy(
     githubToken: string,
@@ -462,13 +465,38 @@ export class AccountManager {
       return existing
     }
 
-    const account = await this.addAccount(
-      githubToken,
-      "Primary (migrated)",
-      accountType,
-    )
-    consola.success("Legacy single-account migrated to multi-account manager")
-    return account
+    try {
+      const account = await this.addAccount(
+        githubToken,
+        "Primary (migrated)",
+        accountType,
+      )
+      consola.success("Legacy single-account migrated to multi-account manager")
+      return account
+    } catch (error) {
+      // API validation failed — create a minimal entry anyway so the account
+      // is visible in the management UI.  Background token/usage refresh will
+      // fill in the missing data.
+      consola.warn(
+        "Could not fully validate legacy account, adding with limited info:",
+        error,
+      )
+
+      const account: Account = {
+        id: randomUUID(),
+        label: "Primary (migrated)",
+        githubToken,
+        copilotToken: undefined,
+        accountType,
+        status: "active",
+        consecutiveFailures: 0,
+        addedAt: Date.now(),
+      }
+
+      this.accounts.push(account)
+      await this.saveAccounts()
+      return account
+    }
   }
 }
 

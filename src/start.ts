@@ -76,7 +76,7 @@ async function initMultiAccount(): Promise<void> {
 
         await accountManager.startBackgroundRefresh()
       } catch (migrationError) {
-        consola.debug(
+        consola.warn(
           "Could not migrate to multi-account, staying in single-account mode:",
           migrationError,
         )

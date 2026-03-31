@@ -3214,7 +3214,7 @@
           body.innerHTML = `<tr><td colspan="5" class="text-center py-6"><span class="loading-spinner"></span></td></tr>`;
           try {
             const data = await adminFetch("/api/models/available");
-            const models = Array.isArray(data) ? data : (data && data.models ? data.models : []);
+            const models = Array.isArray(data) ? data : (data && data.data ? data.data : (data && data.models ? (Array.isArray(data.models) ? data.models : data.models.data || []) : []));
             if (models.length === 0) {
               body.innerHTML = `<tr><td colspan="5" class="text-center py-6 text-sm text-[var(--muted)]">${escapeHtml(text("modelNoModels"))}</td></tr>`;
               return;
@@ -3222,10 +3222,10 @@
             body.innerHTML = models.map((m) => `
               <tr>
                 <td class="font-semibold mono text-sm">${escapeHtml(m.name || m.id || text("noValue"))}</td>
-                <td>${escapeHtml(m.vendor || m.provider || text("noValue"))}</td>
-                <td class="mono">${escapeHtml(m.max_output ? formatNumber(m.max_output) : text("noValue"))}</td>
-                <td>${m.premium ? `<span class="pill pill-warning">${escapeHtml(text("modelsColPremium"))}</span>` : `<span class="pill pill-neutral">-</span>`}</td>
-                <td>${m.enabled !== false ? `<span class="pill pill-success">${escapeHtml(text("modelEnabled"))}</span>` : `<span class="pill pill-neutral">${escapeHtml(text("modelDisabled"))}</span>`}</td>
+                <td>${escapeHtml(m.vendor || text("noValue"))}</td>
+                <td class="mono">${escapeHtml(m.capabilities?.limits?.max_output_tokens ? formatNumber(m.capabilities.limits.max_output_tokens) : text("noValue"))}</td>
+                <td>${m.billing?.is_premium ? `<span class="pill pill-warning">${escapeHtml(text("modelsColPremium"))}</span>` : `<span class="pill pill-neutral">-</span>`}</td>
+                <td>${m.model_picker_enabled !== false ? `<span class="pill pill-success">${escapeHtml(text("modelEnabled"))}</span>` : `<span class="pill pill-neutral">${escapeHtml(text("modelDisabled"))}</span>`}</td>
               </tr>
             `).join("");
           } catch (err) {
