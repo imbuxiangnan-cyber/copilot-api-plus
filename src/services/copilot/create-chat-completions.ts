@@ -280,6 +280,26 @@ async function handleMultiAccountHttpError(
       return null
     }
     default: {
+      // 5xx server errors are likely transient — retry once with same account before switching
+      if (error.response.status >= 500) {
+        consola.warn(
+          `Account ${account.label}: upstream ${error.response.status}, retrying in 2s...`,
+        )
+        await new Promise((r) => setTimeout(r, 2_000))
+        try {
+          const result = await doFetch(
+            retryContext.payload,
+            retryContext.tokenSource,
+          )
+          accountManager.markAccountSuccess(account.id)
+          return result
+        } catch {
+          consola.warn(
+            `Account ${account.label}: upstream ${error.response.status} persists, trying next account...`,
+          )
+          return null
+        }
+      }
       accountManager.markAccountStatus(
         account.id,
         "error",

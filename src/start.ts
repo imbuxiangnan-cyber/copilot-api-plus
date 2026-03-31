@@ -136,12 +136,18 @@ async function setupClaudeCodeEnv(serverUrl: string): Promise<void> {
     },
   )
 
+  // Save selections to state for API access
+  state.selectedModel = selectedModel
+  state.selectedSmallModel = selectedSmallModel
+
   const command = generateEnvScript(
     {
       ANTHROPIC_BASE_URL: serverUrl,
       ANTHROPIC_AUTH_TOKEN: state.apiKeys?.[0] ?? "dummy",
       ANTHROPIC_MODEL: selectedModel,
       ANTHROPIC_DEFAULT_SONNET_MODEL: selectedModel,
+      ANTHROPIC_DEFAULT_OPUS_MODEL: selectedModel,
+      ANTHROPIC_REASONING_MODEL: selectedModel,
       ANTHROPIC_SMALL_FAST_MODEL: selectedSmallModel,
       ANTHROPIC_DEFAULT_HAIKU_MODEL: selectedSmallModel,
       DISABLE_NON_ESSENTIAL_MODEL_CALLS: "1",

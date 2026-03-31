@@ -22,6 +22,10 @@ export interface State {
 
   // Multi-account mode
   multiAccountEnabled: boolean
+
+  // Selected models (from --claude-code setup)
+  selectedModel?: string
+  selectedSmallModel?: string
 }
 
 export const state: State = {
