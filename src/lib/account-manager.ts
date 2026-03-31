@@ -218,7 +218,23 @@ export class AccountManager {
       return true
     })
 
-    if (eligible.length === 0) return undefined
+    if (eligible.length === 0) {
+      // Fallback: if there is exactly one account and it's only cooling down
+      // (not banned/disabled/exhausted), return it anyway.  With a single
+      // account there is nothing to "switch to", so blocking all requests
+      // for the cooldown period would be a self-inflicted outage.
+      if (this.accounts.length === 1) {
+        const solo = this.accounts[0]
+        if (
+          solo.status !== "disabled"
+          && solo.status !== "banned"
+          && solo.status !== "exhausted"
+        ) {
+          return solo
+        }
+      }
+      return undefined
+    }
 
     eligible.sort((a, b) => {
       const aRemaining = a.usage?.premium_remaining ?? -1
@@ -248,7 +264,12 @@ export class AccountManager {
     switch (status) {
       case "rate_limited":
       case "error": {
-        account.cooldownUntil = Date.now() + COOLDOWN_MS
+        // Only apply cooldown when there are other accounts to switch to.
+        // With a single account, cooldown would block ALL requests with
+        // "No available accounts" — effectively a self-inflicted outage.
+        if (this.accounts.length > 1) {
+          account.cooldownUntil = Date.now() + COOLDOWN_MS
+        }
         account.consecutiveFailures += 1
 
         break
