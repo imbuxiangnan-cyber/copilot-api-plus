@@ -62,9 +62,15 @@ export function initProxyFromEnv(): void {
         }
       },
       close() {
+        for (const agent of proxies.values()) {
+          void (agent as unknown as Dispatcher).close()
+        }
         return direct.close()
       },
       destroy() {
+        for (const agent of proxies.values()) {
+          void (agent as unknown as Dispatcher).destroy()
+        }
         return direct.destroy()
       },
     }

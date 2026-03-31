@@ -13,7 +13,7 @@ import { state } from "./state"
 const readGithubToken = () => fs.readFile(PATHS.GITHUB_TOKEN_PATH, "utf8")
 
 const writeGithubToken = (token: string) =>
-  fs.writeFile(PATHS.GITHUB_TOKEN_PATH, token)
+  fs.writeFile(PATHS.GITHUB_TOKEN_PATH, token, { mode: 0o600 })
 
 /**
  * Clear the stored GitHub token from disk and state.
@@ -53,7 +53,7 @@ export const setupCopilotToken = async () => {
     consola.info("Copilot token:", token)
   }
 
-  const refreshInterval = (refresh_in - 60) * 1000
+  const refreshInterval = Math.max((refresh_in - 60) * 1000, 60_000)
   copilotTokenRefreshTimer = setInterval(async () => {
     consola.debug("Refreshing Copilot token")
     try {

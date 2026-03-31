@@ -61,7 +61,13 @@ export async function handleCompletion(c: Context) {
           continue
         }
 
-        const chunk = JSON.parse(event.data) as ChatCompletionChunk
+        let chunk: ChatCompletionChunk
+        try {
+          chunk = JSON.parse(event.data) as ChatCompletionChunk
+        } catch {
+          consola.debug("Skipping malformed SSE chunk")
+          continue
+        }
         const events = translateChunkToAnthropicEvents(chunk, streamState)
 
         for (const event of events) {

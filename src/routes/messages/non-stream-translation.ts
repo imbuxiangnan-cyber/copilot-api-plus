@@ -398,6 +398,15 @@ function getAnthropicToolUseBlocks(
     type: "tool_use",
     id: toolCall.id,
     name: toolCall.function.name,
-    input: JSON.parse(toolCall.function.arguments) as Record<string, unknown>,
+    input: (() => {
+      try {
+        return JSON.parse(toolCall.function.arguments) as Record<
+          string,
+          unknown
+        >
+      } catch {
+        return {}
+      }
+    })(),
   }))
 }

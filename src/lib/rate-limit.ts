@@ -5,42 +5,57 @@ import type { State } from "./state"
 import { HTTPError } from "./error"
 import { sleep } from "./utils"
 
+/** Serialize concurrent rate-limit checks so only one request passes at a time. */
+let rateLimitLock: Promise<void> = Promise.resolve()
+
 export async function checkRateLimit(state: State) {
   if (state.rateLimitSeconds === undefined) return
 
-  const now = Date.now()
+  // Chain on the previous check so concurrent requests are serialized
+  const previous = rateLimitLock
+  let resolve!: () => void
+  rateLimitLock = new Promise<void>((r) => {
+    resolve = r
+  })
 
-  if (!state.lastRequestTimestamp) {
-    state.lastRequestTimestamp = now
-    return
-  }
+  try {
+    await previous
 
-  const elapsedSeconds = (now - state.lastRequestTimestamp) / 1000
+    const now = Date.now()
 
-  if (elapsedSeconds > state.rateLimitSeconds) {
-    state.lastRequestTimestamp = now
-    return
-  }
+    if (!state.lastRequestTimestamp) {
+      state.lastRequestTimestamp = now
+      return
+    }
 
-  const waitTimeSeconds = Math.ceil(state.rateLimitSeconds - elapsedSeconds)
+    const elapsedSeconds = (now - state.lastRequestTimestamp) / 1000
 
-  if (!state.rateLimitWait) {
+    if (elapsedSeconds > state.rateLimitSeconds) {
+      state.lastRequestTimestamp = now
+      return
+    }
+
+    const waitTimeSeconds = Math.ceil(state.rateLimitSeconds - elapsedSeconds)
+
+    if (!state.rateLimitWait) {
+      consola.warn(
+        `Rate limit exceeded. Need to wait ${waitTimeSeconds} more seconds.`,
+      )
+      throw new HTTPError(
+        "Rate limit exceeded",
+        Response.json({ message: "Rate limit exceeded" }, { status: 429 }),
+      )
+    }
+
+    const waitTimeMs = waitTimeSeconds * 1000
     consola.warn(
-      `Rate limit exceeded. Need to wait ${waitTimeSeconds} more seconds.`,
+      `Rate limit reached. Waiting ${waitTimeSeconds} seconds before proceeding...`,
     )
-    throw new HTTPError(
-      "Rate limit exceeded",
-      Response.json({ message: "Rate limit exceeded" }, { status: 429 }),
-    )
+    await sleep(waitTimeMs)
+    // eslint-disable-next-line require-atomic-updates -- serialized by rateLimitLock
+    state.lastRequestTimestamp = Date.now()
+    consola.info("Rate limit wait completed, proceeding with request")
+  } finally {
+    resolve()
   }
-
-  const waitTimeMs = waitTimeSeconds * 1000
-  consola.warn(
-    `Rate limit reached. Waiting ${waitTimeSeconds} seconds before proceeding...`,
-  )
-  await sleep(waitTimeMs)
-  // eslint-disable-next-line require-atomic-updates
-  state.lastRequestTimestamp = now
-  consola.info("Rate limit wait completed, proceeding with request")
-  return
 }

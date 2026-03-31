@@ -95,6 +95,25 @@ async function fetchWithRetry(
 }
 
 // ---------------------------------------------------------------------------
+// Streaming slot release wrapper
+// ---------------------------------------------------------------------------
+
+/**
+ * Wraps an AsyncGenerator so that `releaseSlot` is called when the generator
+ * finishes (return or throw), not when the outer function returns.
+ */
+async function* wrapGeneratorWithRelease(
+  gen: AsyncGenerator,
+  releaseSlot: () => void,
+): AsyncGenerator {
+  try {
+    yield* gen
+  } finally {
+    releaseSlot()
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Public entry point
 // ---------------------------------------------------------------------------
 
@@ -115,15 +134,23 @@ export const createChatCompletions = async (
   const releaseSlot = await modelRouter.acquireSlot(resolvedModel)
 
   try {
-    // Multi-account mode
-    if (state.multiAccountEnabled && accountManager.hasAccounts()) {
-      return await createWithMultiAccount(routedPayload)
+    const result =
+      state.multiAccountEnabled && accountManager.hasAccounts() ?
+        await createWithMultiAccount(routedPayload)
+      : await createWithSingleAccount(routedPayload)
+
+    // For streaming responses, wrap the generator so the slot is released
+    // when the stream ends (not when this function returns).
+    if (Symbol.asyncIterator in result) {
+      return wrapGeneratorWithRelease(result, releaseSlot)
     }
 
-    // Single account mode (original behavior)
-    return await createWithSingleAccount(routedPayload)
-  } finally {
+    // Non-streaming: release immediately
     releaseSlot()
+    return result
+  } catch (error) {
+    releaseSlot()
+    throw error
   }
 }
 

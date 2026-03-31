@@ -1,6 +1,7 @@
 import type { Context, MiddlewareHandler } from "hono"
 
 import { HTTPException } from "hono/http-exception"
+import { timingSafeEqual } from "node:crypto"
 
 import { state } from "./state"
 
@@ -54,8 +55,15 @@ export const apiKeyAuthMiddleware: MiddlewareHandler = async (c, next) => {
     })
   }
 
-  // Check if the provided key matches any of the configured keys
-  const isValidKey = state.apiKeys.includes(providedKey)
+  // Check if the provided key matches any of the configured keys (timing-safe)
+  const isValidKey = state.apiKeys.some((key) => {
+    if (key.length !== providedKey.length) return false
+    try {
+      return timingSafeEqual(Buffer.from(key), Buffer.from(providedKey))
+    } catch {
+      return false
+    }
+  })
 
   if (!isValidKey) {
     throw new HTTPException(401, {

@@ -1165,9 +1165,9 @@
                 <div class="space-y-1.5">
                   <label class="text-sm font-semibold text-[var(--text)]" for="modal-type" id="modal-type-label"></label>
                   <select id="modal-type" class="input-select">
-                    <option value="individual">Individual</option>
-                    <option value="business">Business</option>
-                    <option value="enterprise">Enterprise</option>
+                    <option value="individual" id="opt-type-individual">Individual</option>
+                    <option value="business" id="opt-type-business">Business</option>
+                    <option value="enterprise" id="opt-type-enterprise">Enterprise</option>
                   </select>
                 </div>
               </div>
@@ -1456,6 +1456,9 @@
             modalTokenLabel: "GitHub Token",
             modalLabelLabel: "标签（可选）",
             modalTypeLabel: "账号类型",
+            accountTypeIndividual: "个人版",
+            accountTypeBusiness: "商业版",
+            accountTypeEnterprise: "企业版",
             modalSubmit: "添加",
             modalStartAuth: "开始授权",
             modalDeviceCodeTitle: "GitHub 设备授权",
@@ -1654,6 +1657,9 @@
             modalTokenLabel: "GitHub Token",
             modalLabelLabel: "Label (optional)",
             modalTypeLabel: "Account Type",
+            accountTypeIndividual: "Individual",
+            accountTypeBusiness: "Business",
+            accountTypeEnterprise: "Enterprise",
             modalSubmit: "Add",
             modalStartAuth: "Start Authorization",
             modalDeviceCodeTitle: "GitHub Device Authorization",
@@ -1810,6 +1816,19 @@
         })();
         const queryAutoRefresh = readQueryBoolean(queryParams, "autoRefresh");
 
+        // Extract apiKey from URL, persist to localStorage, then strip from URL
+        (() => {
+          const qKey = readQueryValue(queryParams, "apiKey");
+          if (qKey) {
+            try { localStorage.setItem("dashboard-api-key", qKey); } catch {}
+            try {
+              const url = new URL(window.location.href);
+              url.searchParams.delete("apiKey");
+              window.history.replaceState({}, "", url.toString());
+            } catch {}
+          }
+        })();
+
         const state = {
           language: getValidLanguage(queryLanguage || readStoredValue(STORAGE_KEYS.language, "zh")),
           endpoint: queryEndpoint || DEFAULT_ENDPOINT,
@@ -1922,7 +1941,7 @@
         }
 
         function getMode(data) {
-          if (!data || typeof data !== "object") return "unknown";
+          if (!data || typeof data !== "object") return "copilot";
           if (data.quota_snapshots) return "copilot";
           return "copilot";
         }
@@ -2255,6 +2274,12 @@
           if (modalLabelLabel) modalLabelLabel.textContent = text("modalLabelLabel");
           const modalTypeLabel = document.getElementById("modal-type-label");
           if (modalTypeLabel) modalTypeLabel.textContent = text("modalTypeLabel");
+          const optIndividual = document.getElementById("opt-type-individual");
+          if (optIndividual) optIndividual.textContent = text("accountTypeIndividual");
+          const optBusiness = document.getElementById("opt-type-business");
+          if (optBusiness) optBusiness.textContent = text("accountTypeBusiness");
+          const optEnterprise = document.getElementById("opt-type-enterprise");
+          if (optEnterprise) optEnterprise.textContent = text("accountTypeEnterprise");
           const modalStartAuthText = document.getElementById("modal-start-auth-text");
           if (modalStartAuthText) modalStartAuthText.textContent = text("modalStartAuth");
           const modalDeviceTitle = document.getElementById("modal-device-title");
@@ -2717,7 +2742,9 @@
         function renderAll() {
           renderStaticTexts();
           renderTabBar();
-          renderOverview();
+          // Skip overview rebuild if user has focus inside it (prevents input destruction)
+          const overviewHasFocus = refs.overviewGrid && refs.overviewGrid.contains(document.activeElement);
+          if (!overviewHasFocus) renderOverview();
           renderStatusBanner();
           renderContent();
           refs.modeChip.textContent = state.data ? getModeLabel(getMode(state.data)) : text("modeChipLabel");
@@ -3210,10 +3237,13 @@
             btn.addEventListener("click", async () => {
               const action = btn.getAttribute("data-acct-action");
               const id = btn.getAttribute("data-acct-id");
+              btn.disabled = true;
+              const origHTML = btn.innerHTML;
+              btn.innerHTML = icon("refresh") + " ...";
               try {
                 if (action === "delete") {
                   const confirmed = await showConfirm(text("accountDeleteConfirmTitle"), text("accountDeleteConfirm"));
-                  if (!confirmed) return;
+                  if (!confirmed) { btn.disabled = false; btn.innerHTML = origHTML; return; }
                   await adminFetch(`/api/accounts/${encodeURIComponent(id)}`, { method: "DELETE" });
                   showToast(text("apiSuccess"));
                 } else if (action === "enable" || action === "disable") {
@@ -3228,6 +3258,9 @@
                 }
               } catch (err) {
                 showToast(text("apiError") + ": " + err.message, "error");
+              } finally {
+                btn.disabled = false;
+                btn.innerHTML = origHTML;
               }
               loadAccounts();
             });
@@ -3347,6 +3380,19 @@
 
         async function saveModelMapping() {
           try {
+            // Flush any unfocused input edits before saving
+            const body = document.getElementById("models-mapping-body");
+            if (body) {
+              const newMap = {};
+              body.querySelectorAll("tr").forEach((row) => {
+                const fromInput = row.querySelector('[data-map-field="from"]');
+                const toInput = row.querySelector('[data-map-field="to"]');
+                if (fromInput && toInput && fromInput.value.trim()) {
+                  newMap[fromInput.value.trim()] = toInput.value.trim();
+                }
+              });
+              if (Object.keys(newMap).length > 0) modelMappingData = newMap;
+            }
             await adminFetch("/api/models/mapping", {
               method: "PUT",
               body: JSON.stringify({ mapping: modelMappingData }),
@@ -3430,6 +3476,19 @@
 
         async function saveModelConcurrency() {
           try {
+            // Flush any unfocused input edits before saving
+            const body = document.getElementById("models-concurrency-body");
+            if (body) {
+              const newConc = {};
+              body.querySelectorAll("tr").forEach((row) => {
+                const modelInput = row.querySelector('[data-conc-field="model"]');
+                const maxInput = row.querySelector('[data-conc-field="max"]');
+                if (modelInput && maxInput && modelInput.value.trim()) {
+                  newConc[modelInput.value.trim()] = Number(maxInput.value) || 1;
+                }
+              });
+              if (Object.keys(newConc).length > 0) modelConcurrencyData = newConc;
+            }
             await adminFetch("/api/models/concurrency", {
               method: "PUT",
               body: JSON.stringify({ concurrency: modelConcurrencyData }),
@@ -3519,13 +3578,11 @@
               `;
             }
 
-            // Account status distribution — fetch fresh if needed
-            if (accountsData.length === 0) {
-              try {
-                const acctResp = await adminFetch("/api/accounts");
-                accountsData = Array.isArray(acctResp) ? acctResp : (acctResp && acctResp.accounts ? acctResp.accounts : []);
-              } catch {}
-            }
+            // Account status distribution — always fetch fresh data
+            try {
+              const acctResp = await adminFetch("/api/accounts");
+              accountsData = Array.isArray(acctResp) ? acctResp : (acctResp && acctResp.accounts ? acctResp.accounts : []);
+            } catch {}
             const acctStats = {};
             accountsData.forEach((a) => { acctStats[a.status || "unknown"] = (acctStats[a.status || "unknown"] || 0) + 1; });
             const statusEntries = Object.entries(acctStats);
@@ -3626,9 +3683,9 @@
           const saveConcurrencyBtn = document.getElementById("save-concurrency-btn");
           if (saveConcurrencyBtn) saveConcurrencyBtn.addEventListener("click", saveModelConcurrency);
 
-          // ── Keyboard: Escape closes modal ──
+          // ── Keyboard: Escape closes modal (only if not actively polling) ──
           document.addEventListener("keydown", (e) => {
-            if (e.key === "Escape") closeModal();
+            if (e.key === "Escape" && !deviceCodePollTimer) closeModal();
           });
 
           setEndpoint(state.endpoint);

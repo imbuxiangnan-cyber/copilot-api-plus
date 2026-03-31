@@ -53,26 +53,33 @@ export function generateEnvScript(
   switch (shell) {
     case "powershell": {
       commandBlock = filteredEnvVars
-        .map(([key, value]) => `$env:${key} = ${value}`)
+        .map(([key, value]) => `$env:${key} = "${value}"`)
+
         .join("; ")
       break
     }
     case "cmd": {
       commandBlock = filteredEnvVars
-        .map(([key, value]) => `set ${key}=${value}`)
+        .map(([key, value]) => `set "${key}=${value}"`)
         .join(" & ")
       break
     }
     case "fish": {
       commandBlock = filteredEnvVars
-        .map(([key, value]) => `set -gx ${key} ${value}`)
+        .map(
+          ([key, value]) =>
+            `set -gx ${key} '${value.replaceAll("'", String.raw`\'`)}'`,
+        )
         .join("; ")
       break
     }
     default: {
       // bash, zsh, sh
       const assignments = filteredEnvVars
-        .map(([key, value]) => `${key}=${value}`)
+        .map(
+          ([key, value]) =>
+            `${key}='${value.replaceAll("'", String.raw`'\''`)}'`,
+        )
         .join(" ")
       commandBlock = filteredEnvVars.length > 0 ? `export ${assignments}` : ""
       break

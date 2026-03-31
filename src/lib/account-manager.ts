@@ -108,7 +108,10 @@ export class AccountManager {
       ({ copilotToken: _dropped, ...rest }) => rest,
     )
     try {
-      await fs.writeFile(ACCOUNTS_PATH, JSON.stringify(data, null, 2), "utf8")
+      await fs.writeFile(ACCOUNTS_PATH, JSON.stringify(data, null, 2), {
+        encoding: "utf8",
+        mode: 0o600,
+      })
     } catch (err) {
       consola.error("Failed to save accounts:", err)
     }

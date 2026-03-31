@@ -1,12 +1,32 @@
-import { copilotBaseUrl, copilotHeaders } from "~/lib/api-config"
+import { accountManager } from "~/lib/account-manager"
+import {
+  copilotBaseUrl,
+  copilotHeaders,
+  type TokenSource,
+} from "~/lib/api-config"
 import { HTTPError } from "~/lib/error"
 import { state } from "~/lib/state"
 
 export const getModels = async () => {
-  const url = `${copilotBaseUrl(state)}/models`
+  // In multi-account mode, use the active account's token
+  let source: TokenSource = state
+  if (state.multiAccountEnabled && accountManager.hasAccounts()) {
+    const account = accountManager.getActiveAccount()
+    if (account?.copilotToken) {
+      source = {
+        copilotToken: account.copilotToken,
+        copilotApiEndpoint: account.copilotApiEndpoint,
+        accountType: account.accountType,
+        githubToken: account.githubToken,
+        vsCodeVersion: state.vsCodeVersion,
+      }
+    }
+  }
+
+  const url = `${copilotBaseUrl(source)}/models`
 
   const response = await fetch(url, {
-    headers: copilotHeaders(state),
+    headers: copilotHeaders(source),
   })
 
   if (!response.ok) throw new HTTPError("Failed to get models", response)
