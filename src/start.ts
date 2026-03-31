@@ -3,7 +3,6 @@
 // Load environment variables from .env file
 import "dotenv/config"
 /* eslint-disable require-atomic-updates */
-/* eslint-disable max-lines-per-function */
 import { defineCommand } from "citty"
 import clipboard from "clipboardy"
 import consola from "consola"
@@ -115,8 +114,52 @@ async function initModelRouting(): Promise<void> {
 }
 
 /**
- * Validate a provided GitHub token by fetching the user profile.
+ * Interactively select models and generate a Claude Code environment script.
  */
+async function setupClaudeCodeEnv(serverUrl: string): Promise<void> {
+  const modelList = state.models?.data
+  invariant(modelList, "Models should be loaded by now")
+
+  const selectedModel = await consola.prompt(
+    "Select a model to use with Claude Code",
+    {
+      type: "select",
+      options: modelList.map((model) => model.id),
+    },
+  )
+
+  const selectedSmallModel = await consola.prompt(
+    "Select a small model to use with Claude Code",
+    {
+      type: "select",
+      options: modelList.map((model) => model.id),
+    },
+  )
+
+  const command = generateEnvScript(
+    {
+      ANTHROPIC_BASE_URL: serverUrl,
+      ANTHROPIC_AUTH_TOKEN: state.apiKeys?.[0] ?? "dummy",
+      ANTHROPIC_MODEL: selectedModel,
+      ANTHROPIC_DEFAULT_SONNET_MODEL: selectedModel,
+      ANTHROPIC_SMALL_FAST_MODEL: selectedSmallModel,
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: selectedSmallModel,
+      DISABLE_NON_ESSENTIAL_MODEL_CALLS: "1",
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+    },
+    "claude",
+  )
+
+  try {
+    clipboard.writeSync(command)
+    consola.success("Copied Claude Code command to clipboard!")
+  } catch {
+    consola.warn(
+      "Failed to copy to clipboard. Here is the Claude Code command:",
+    )
+    consola.log(command)
+  }
+}
 async function validateGitHubToken(token: string): Promise<void> {
   state.githubToken = token
   consola.info("Using provided GitHub token")
@@ -220,48 +263,7 @@ export async function runServer(options: RunServerOptions): Promise<void> {
   const serverUrl = `http://localhost:${options.port}`
 
   if (options.claudeCode) {
-    const modelList = state.models?.data
-    invariant(modelList, "Models should be loaded by now")
-
-    const selectedModel = await consola.prompt(
-      "Select a model to use with Claude Code",
-      {
-        type: "select",
-        options: modelList.map((model) => model.id),
-      },
-    )
-
-    const selectedSmallModel = await consola.prompt(
-      "Select a small model to use with Claude Code",
-      {
-        type: "select",
-        options: modelList.map((model) => model.id),
-      },
-    )
-
-    const command = generateEnvScript(
-      {
-        ANTHROPIC_BASE_URL: serverUrl,
-        ANTHROPIC_AUTH_TOKEN: "dummy",
-        ANTHROPIC_MODEL: selectedModel,
-        ANTHROPIC_DEFAULT_SONNET_MODEL: selectedModel,
-        ANTHROPIC_SMALL_FAST_MODEL: selectedSmallModel,
-        ANTHROPIC_DEFAULT_HAIKU_MODEL: selectedSmallModel,
-        DISABLE_NON_ESSENTIAL_MODEL_CALLS: "1",
-        CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
-      },
-      "claude",
-    )
-
-    try {
-      clipboard.writeSync(command)
-      consola.success("Copied Claude Code command to clipboard!")
-    } catch {
-      consola.warn(
-        "Failed to copy to clipboard. Here is the Claude Code command:",
-      )
-      consola.log(command)
-    }
+    await setupClaudeCodeEnv(serverUrl)
   }
 
   const multiAccountInfo =
