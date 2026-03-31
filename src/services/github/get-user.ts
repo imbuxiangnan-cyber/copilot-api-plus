@@ -2,10 +2,18 @@ import { GITHUB_API_BASE_URL, standardHeaders } from "~/lib/api-config"
 import { HTTPError } from "~/lib/error"
 import { state } from "~/lib/state"
 
-export async function getGitHubUser() {
+/**
+ * Fetch the GitHub user profile.
+ *
+ * @param githubToken  Optional explicit token.  When omitted, falls back to
+ *                     the global `state.githubToken`.  Prefer passing a token
+ *                     explicitly to avoid race conditions in multi-account mode.
+ */
+export async function getGitHubUser(githubToken?: string) {
+  const token = githubToken ?? state.githubToken
   const response = await fetch(`${GITHUB_API_BASE_URL}/user`, {
     headers: {
-      authorization: `token ${state.githubToken}`,
+      authorization: `token ${token}`,
       ...standardHeaders(),
     },
   })

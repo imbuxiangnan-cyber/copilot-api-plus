@@ -3080,9 +3080,7 @@
           const totalAccounts = accountsData.length;
           const activeAccounts = accountsData.filter((a) => a.status === "active").length;
           const premiumRemaining = accountsData.reduce((sum, a) => {
-            const pq = a.quota_snapshots?.premium_interactions || a.premium_remaining || 0;
-            const rem = typeof pq === "object" ? (pq.remaining ?? pq.quota_remaining ?? 0) : pq;
-            return sum + Number(rem || 0);
+            return sum + Number(a.usage?.premium_remaining || 0);
           }, 0);
           statsEl.innerHTML = renderAccountsStats(totalAccounts, activeAccounts, premiumRemaining);
           if (accountsData.length === 0) {
@@ -3120,19 +3118,18 @@
         }
 
         function renderAccountCard(acct) {
-          const avatarUrl = acct.avatar_url || `https://github.com/${acct.login || "ghost"}.png?size=64`;
-          const login = acct.login || acct.username || "unknown";
+          const login = acct.githubLogin || "unknown";
+          const avatarUrl = `https://github.com/${login}.png?size=64`;
           const label = acct.label || "";
           const status = acct.status || "unknown";
           const isDisabled = status === "disabled";
-          const lastUsed = acct.last_used_at ? formatDateTime(acct.last_used_at) : text("accountNeverUsed");
+          const lastUsed = acct.lastUsedAt ? formatDateTime(acct.lastUsedAt) : text("accountNeverUsed");
 
           // Quota progress
-          const pq = acct.quota_snapshots?.premium_interactions || {};
-          const unlimited = Boolean(pq.unlimited);
-          const entitlement = pq.entitlement || 0;
-          const remaining = pq.remaining ?? pq.quota_remaining ?? 0;
-          const percentUsed = unlimited || !entitlement ? 0 : Math.max(0, ((entitlement - remaining) / entitlement) * 100);
+          const entitlement = acct.usage?.premium_total || 0;
+          const remaining = acct.usage?.premium_remaining || 0;
+          const unlimited = false;
+          const percentUsed = !entitlement ? 0 : Math.max(0, ((entitlement - remaining) / entitlement) * 100);
           const tone = getProgressTone(percentUsed, unlimited);
 
           return `
@@ -3435,7 +3432,7 @@
             if (!data) throw new Error("Empty response");
 
             // Uptime
-            const uptimeSeconds = data.uptime_seconds || data.uptime || 0;
+            const uptimeSeconds = data.uptime || 0;
             const hours = Math.floor(uptimeSeconds / 3600);
             const minutes = Math.floor((uptimeSeconds % 3600) / 60);
             const seconds = Math.floor(uptimeSeconds % 60);
@@ -3486,8 +3483,9 @@
               `;
             }
 
-            // Account status distribution
-            const acctStats = data.account_status || data.accounts || {};
+            // Account status distribution — compute from accountsData (client-side)
+            const acctStats = {};
+            accountsData.forEach((a) => { acctStats[a.status || "unknown"] = (acctStats[a.status || "unknown"] || 0) + 1; });
             const statusEntries = Object.entries(acctStats);
             if (statusEntries.length === 0) {
               acctContent.innerHTML = `<p class="text-sm text-[var(--muted)]">${escapeHtml(text("statsNoData"))}</p>`;

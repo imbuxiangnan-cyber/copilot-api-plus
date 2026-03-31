@@ -78,7 +78,11 @@ export class ModelRouter {
    */
   async acquireSlot(resolvedModel: string): Promise<() => void> {
     const maxConcurrency =
-      this.config.concurrency[resolvedModel] ?? DEFAULT_MAX_CONCURRENCY
+      (this.config.concurrency as Partial<Record<string, number>>)[
+        resolvedModel
+      ]
+      ?? (this.config.concurrency as Partial<Record<string, number>>)["default"]
+      ?? DEFAULT_MAX_CONCURRENCY
 
     let queue = this.queues.get(resolvedModel)
     if (!queue) {

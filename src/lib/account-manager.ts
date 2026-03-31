@@ -4,7 +4,6 @@ import fs from "node:fs/promises"
 
 import { HTTPError } from "~/lib/error"
 import { PATHS } from "~/lib/paths"
-import { state } from "~/lib/state"
 import { getCopilotToken } from "~/services/github/get-copilot-token"
 import { getCopilotUsage } from "~/services/github/get-copilot-usage"
 import { getGitHubUser } from "~/services/github/get-user"
@@ -142,38 +141,30 @@ export class AccountManager {
     label: string,
     accountType: string = "individual",
   ): Promise<Account> {
-    // 1. Validate token – get GitHub login
-    // getGitHubUser still reads from state.githubToken, so we swap temporarily.
-    const originalToken = state.githubToken
-    try {
-      state.githubToken = githubToken
-      const user = await getGitHubUser()
+    // 1. Validate token – get GitHub login (pass token explicitly, no state mutation)
+    const user = await getGitHubUser(githubToken)
 
-      // 2. Obtain Copilot token – pass token directly (no state mutation)
-      const tokenData = await getCopilotToken(githubToken)
+    // 2. Obtain Copilot token – pass token directly (no state mutation)
+    const tokenData = await getCopilotToken(githubToken)
 
-      const account: Account = {
-        id: randomUUID(),
-        label,
-        githubToken,
-        copilotToken: tokenData.token,
-        copilotApiEndpoint: tokenData.endpoints?.api,
-        accountType,
-        status: "active",
-        consecutiveFailures: 0,
-        githubLogin: user.login,
-        addedAt: Date.now(),
-      }
-
-      this.accounts.push(account)
-      await this.saveAccounts()
-
-      consola.success(`Account added: ${label} (${user.login})`)
-      return account
-    } finally {
-      // eslint-disable-next-line require-atomic-updates
-      state.githubToken = originalToken
+    const account: Account = {
+      id: randomUUID(),
+      label,
+      githubToken,
+      copilotToken: tokenData.token,
+      copilotApiEndpoint: tokenData.endpoints?.api,
+      accountType,
+      status: "active",
+      consecutiveFailures: 0,
+      githubLogin: user.login,
+      addedAt: Date.now(),
     }
+
+    this.accounts.push(account)
+    await this.saveAccounts()
+
+    consola.success(`Account added: ${label} (${user.login})`)
+    return account
   }
 
   async removeAccount(id: string): Promise<boolean> {

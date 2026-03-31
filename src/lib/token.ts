@@ -26,6 +26,23 @@ export async function clearGithubToken(): Promise<void> {
   consola.info("GitHub token cleared")
 }
 
+/** Handle to the single-account Copilot token refresh interval. */
+let copilotTokenRefreshTimer: ReturnType<typeof setInterval> | undefined
+
+/**
+ * Stop the single-account Copilot token refresh interval.
+ * Called when multi-account mode is activated to avoid duplicate refreshes.
+ */
+export function stopCopilotTokenRefresh(): void {
+  if (copilotTokenRefreshTimer) {
+    clearInterval(copilotTokenRefreshTimer)
+    copilotTokenRefreshTimer = undefined
+    consola.debug(
+      "Single-account Copilot token refresh stopped (multi-account active)",
+    )
+  }
+}
+
 export const setupCopilotToken = async () => {
   const { token, refresh_in } = await getCopilotToken()
   state.copilotToken = token
@@ -37,7 +54,7 @@ export const setupCopilotToken = async () => {
   }
 
   const refreshInterval = (refresh_in - 60) * 1000
-  setInterval(async () => {
+  copilotTokenRefreshTimer = setInterval(async () => {
     consola.debug("Refreshing Copilot token")
     try {
       await refreshCopilotToken()

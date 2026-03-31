@@ -17,7 +17,11 @@ import { ensurePaths } from "./lib/paths"
 import { initProxyFromEnv } from "./lib/proxy"
 import { generateEnvScript } from "./lib/shell"
 import { state } from "./lib/state"
-import { setupCopilotToken, setupGitHubToken } from "./lib/token"
+import {
+  setupCopilotToken,
+  setupGitHubToken,
+  stopCopilotTokenRefresh,
+} from "./lib/token"
 import { cacheModels, cacheVSCodeVersion } from "./lib/utils"
 import { server } from "./server"
 
@@ -50,6 +54,9 @@ async function initMultiAccount(): Promise<void> {
         `Multi-account mode enabled with ${accountManager.accountCount} account(s)`,
       )
 
+      // Stop single-account token refresh — multi-account has its own
+      stopCopilotTokenRefresh()
+
       // Start background token/usage refresh
       await accountManager.startBackgroundRefresh()
     } else if (state.githubToken) {
@@ -63,6 +70,10 @@ async function initMultiAccount(): Promise<void> {
         consola.info(
           `Migrated current account (${account.githubLogin ?? account.label}) to multi-account mode`,
         )
+
+        // Stop single-account token refresh — multi-account has its own
+        stopCopilotTokenRefresh()
+
         await accountManager.startBackgroundRefresh()
       } catch (migrationError) {
         consola.debug(
