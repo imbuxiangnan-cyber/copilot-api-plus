@@ -144,7 +144,11 @@ export class ModelRouter {
 
     for (const [model, queue] of this.queues) {
       const maxConcurrency =
-        this.config.concurrency[model] ?? DEFAULT_MAX_CONCURRENCY
+        (this.config.concurrency as Partial<Record<string, number>>)[model]
+        ?? (this.config.concurrency as Partial<Record<string, number>>)[
+          "default"
+        ]
+        ?? DEFAULT_MAX_CONCURRENCY
 
       stats[model] = {
         active: queue.active,

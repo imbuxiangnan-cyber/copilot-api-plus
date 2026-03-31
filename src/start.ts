@@ -128,6 +128,11 @@ async function setupClaudeCodeEnv(serverUrl: string): Promise<void> {
     },
   )
 
+  if (typeof selectedModel === "symbol") {
+    consola.info("Model selection cancelled")
+    return
+  }
+
   const selectedSmallModel = await consola.prompt(
     "Select a small model to use with Claude Code",
     {
@@ -135,6 +140,11 @@ async function setupClaudeCodeEnv(serverUrl: string): Promise<void> {
       options: modelList.map((model) => model.id),
     },
   )
+
+  if (typeof selectedSmallModel === "symbol") {
+    consola.info("Model selection cancelled")
+    return
+  }
 
   // Save selections to state for API access
   state.selectedModel = selectedModel

@@ -41,9 +41,9 @@ export function getConfigPath(): string {
 export async function loadConfig(): Promise<AppConfig> {
   try {
     const configPath = getConfigPath()
-    const content = await fs.readFile(configPath)
-    // Buffer can be passed to JSON.parse directly (better performance)
-    return JSON.parse(content as unknown as string) as AppConfig
+    // eslint-disable-next-line unicorn/prefer-json-parse-buffer
+    const content = await fs.readFile(configPath, "utf8")
+    return JSON.parse(content) as AppConfig
   } catch {
     return {}
   }

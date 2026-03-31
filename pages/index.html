@@ -1074,13 +1074,14 @@
 
         <!-- ══════ Tab 3: Model Management ══════ -->
         <section id="tab-models" class="main-tab-section space-y-5">
-          <!-- Available Models -->
+          <!-- Available Models (collapsible, default collapsed) -->
           <section class="dashboard-card-strong p-6 sm:p-7 space-y-4">
-            <div class="section-title text-xl text-[var(--text)]">
+            <div class="section-title text-xl text-[var(--text)]" style="cursor:pointer;user-select:none;" id="models-avail-toggle">
               <span class="section-icon" id="models-avail-icon"></span>
               <span id="models-avail-title"></span>
+              <span style="margin-left:auto;font-size:0.8rem;color:var(--muted);transition:transform 0.2s;" id="models-avail-arrow">▶</span>
             </div>
-            <div class="overflow-x-auto">
+            <div class="overflow-x-auto" id="models-avail-content" style="display:none;">
               <table class="admin-table" id="models-available-table">
                 <thead><tr id="models-avail-thead"></tr></thead>
                 <tbody id="models-available-body"></tbody>
@@ -3015,11 +3016,12 @@
           if (errorMsg) errorMsg.textContent = message;
         }
 
-        function handleCopyCode() {
+        async function handleCopyCode() {
           const userCodeEl = document.getElementById("modal-user-code");
           if (!userCodeEl) return;
           const code = userCodeEl.textContent;
-          navigator.clipboard.writeText(code).then(() => {
+          const copied = await copyTextToClipboard(code);
+          if (copied) {
             const copyText = document.getElementById("modal-copy-code-text");
             if (copyText) {
               copyText.textContent = text("modalDeviceCodeCopied");
@@ -3027,10 +3029,9 @@
                 copyText.textContent = text("modalDeviceCodeCopy");
               }, 2000);
             }
-          }).catch(() => {
-            // Fallback: select the text
-            showToast("Failed to copy", "error");
-          });
+          } else {
+            showToast(text("exportManualCopy"), "error");
+          }
         }
 
         function handleAuthDone() {
@@ -3181,7 +3182,7 @@
               ${entitlement || unlimited ? `
                 <div class="space-y-1.5">
                   <div class="flex justify-between text-xs text-[var(--muted)]">
-                    <span>Premium</span>
+                    <span>${escapeHtml(text("modelsColPremium"))}</span>
                     <span class="mono">${unlimited ? escapeHtml(text("unlimited")) : `${escapeHtml(formatNumber(remaining))} / ${escapeHtml(formatNumber(entitlement))}`}</span>
                   </div>
                   <div class="progress-track">
@@ -3247,6 +3248,9 @@
             const data = await adminFetch("/api/models/available");
             const models = Array.isArray(data) ? data : (data && data.data ? data.data : (data && data.models ? (Array.isArray(data.models) ? data.models : data.models.data || []) : []));
             window._availableModels = models;
+            // Show count in title
+            const titleEl = document.getElementById("models-avail-title");
+            if (titleEl) titleEl.textContent = text("modelsAvailableTitle") + ` (${models.length})`;
             if (models.length === 0) {
               body.innerHTML = `<tr><td colspan="5" class="text-center py-6 text-sm text-[var(--muted)]">${escapeHtml(text("modelNoModels"))}</td></tr>`;
               return;
@@ -3515,7 +3519,13 @@
               `;
             }
 
-            // Account status distribution — compute from accountsData (client-side)
+            // Account status distribution — fetch fresh if needed
+            if (accountsData.length === 0) {
+              try {
+                const acctResp = await adminFetch("/api/accounts");
+                accountsData = Array.isArray(acctResp) ? acctResp : (acctResp && acctResp.accounts ? acctResp.accounts : []);
+              } catch {}
+            }
             const acctStats = {};
             accountsData.forEach((a) => { acctStats[a.status || "unknown"] = (acctStats[a.status || "unknown"] || 0) + 1; });
             const statusEntries = Object.entries(acctStats);
@@ -3564,6 +3574,20 @@
           refs.endpointForm.addEventListener("submit", handleSubmit);
           refs.resetButton.addEventListener("click", handleReset);
           refs.exportButton.addEventListener("click", handleExportConfig);
+
+          // ── Collapsible available models ──
+          const modelsToggle = document.getElementById("models-avail-toggle");
+          if (modelsToggle) {
+            modelsToggle.addEventListener("click", () => {
+              const content = document.getElementById("models-avail-content");
+              const arrow = document.getElementById("models-avail-arrow");
+              if (!content) return;
+              const isHidden = content.style.display === "none";
+              content.style.display = isHidden ? "" : "none";
+              if (arrow) arrow.textContent = isHidden ? "▼" : "▶";
+            });
+          }
+
           refs.langToggle.addEventListener("click", () => {
             state.language = state.language === "zh" ? "en" : "zh";
             persistPreferences();
