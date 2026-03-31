@@ -130,14 +130,26 @@ export const createChatCompletions = async (
     consola.debug(`Model routed: ${payload.model} → ${resolvedModel}`)
   }
 
+  // Force-inject reasoning_effort when not already set
+  // This enables thinking mode for all requests, significantly improving output quality
+  // Only inject for models known to support it (currently claude-*-4.6 variants)
+  const supportsReasoning = /^claude-.+-4\.6/.test(resolvedModel)
+  const thinkingPayload: ChatCompletionsPayload = {
+    ...routedPayload,
+    ...(!routedPayload.reasoning_effort
+      && supportsReasoning && {
+        reasoning_effort: "high" as const,
+      }),
+  }
+
   // Acquire concurrency slot
   const releaseSlot = await modelRouter.acquireSlot(resolvedModel)
 
   try {
     const result =
       state.multiAccountEnabled && accountManager.hasAccounts() ?
-        await createWithMultiAccount(routedPayload)
-      : await createWithSingleAccount(routedPayload)
+        await createWithMultiAccount(thinkingPayload)
+      : await createWithSingleAccount(thinkingPayload)
 
     // For streaming responses, wrap the generator so the slot is released
     // when the stream ends (not when this function returns).
@@ -520,6 +532,7 @@ export interface ChatCompletionChunk {
 interface Delta {
   content?: string | null
   reasoning_content?: string | null
+  reasoning_text?: string | null
   role?: "user" | "assistant" | "system" | "tool"
   tool_calls?: Array<{
     index: number
@@ -562,6 +575,7 @@ interface ResponseMessage {
   role: "assistant"
   content: string | null
   reasoning_content?: string | null
+  reasoning_text?: string | null
   tool_calls?: Array<ToolCall>
 }
 
@@ -604,6 +618,9 @@ export interface ChatCompletionsPayload {
     type: "enabled"
     budget_tokens?: number
   }
+
+  // OpenAI reasoning_effort parameter — triggers Copilot thinking mode
+  reasoning_effort?: "low" | "medium" | "high" | null
 }
 
 export interface Tool {

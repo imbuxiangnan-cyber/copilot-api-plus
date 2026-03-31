@@ -57,7 +57,8 @@ export function translateChunkToAnthropicEvents(
     state.messageStartSent = true
   }
 
-  if (delta.reasoning_content) {
+  const reasoningContent = delta.reasoning_content ?? delta.reasoning_text
+  if (reasoningContent) {
     // Close any non-thinking block that might be open
     if (state.contentBlockOpen && !state.thinkingBlockOpen) {
       events.push({
@@ -87,7 +88,7 @@ export function translateChunkToAnthropicEvents(
       index: state.contentBlockIndex,
       delta: {
         type: "thinking_delta",
-        thinking: delta.reasoning_content,
+        thinking: reasoningContent,
       },
     })
   }

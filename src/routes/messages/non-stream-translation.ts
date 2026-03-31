@@ -46,6 +46,10 @@ export function translateToOpenAI(
     tool_choice: translateAnthropicToolChoiceToOpenAI(payload.tool_choice),
     // Pass through thinking parameter as-is to Copilot
     ...(payload.thinking && { thinking: payload.thinking }),
+    // Convert Anthropic thinking to reasoning_effort=high for Copilot
+    ...(payload.thinking?.type === "enabled" && {
+      reasoning_effort: "high" as const,
+    }),
   }
 }
 
@@ -326,6 +330,7 @@ function translateAnthropicToolChoiceToOpenAI(
 
 // Response translation
 
+// eslint-disable-next-line complexity
 export function translateToAnthropic(
   response: ChatCompletionResponse,
 ): AnthropicResponse {
@@ -340,7 +345,7 @@ export function translateToAnthropic(
   // Process all choices to extract thinking, text and tool use blocks
   for (const choice of response.choices) {
     const thinkingBlocks = getAnthropicThinkingBlocks(
-      choice.message.reasoning_content,
+      choice.message.reasoning_content ?? choice.message.reasoning_text,
     )
     const textBlocks = getAnthropicTextBlocks(choice.message.content)
     const toolUseBlocks = getAnthropicToolUseBlocks(choice.message.tool_calls)

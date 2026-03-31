@@ -50,8 +50,10 @@ export async function handleCompletion(c: Context) {
   const response = await createChatCompletions(payload)
 
   if (isNonStreaming(response)) {
-    consola.debug("Non-streaming response:", JSON.stringify(response))
-    return c.json(response)
+    // Map reasoning_text to reasoning_content for OpenAI-compatible clients
+    const mappedResponse = mapReasoningFields(response)
+    consola.debug("Non-streaming response:", JSON.stringify(mappedResponse))
+    return c.json(mappedResponse)
   }
 
   consola.debug("Streaming response")
@@ -71,3 +73,32 @@ export async function handleCompletion(c: Context) {
 const isNonStreaming = (
   response: Awaited<ReturnType<typeof createChatCompletions>>,
 ): response is ChatCompletionResponse => Object.hasOwn(response, "choices")
+
+/**
+ * Map `reasoning_text` (Copilot-specific) to `reasoning_content` (OpenAI-compatible)
+ * so that downstream OpenAI-compatible clients can consume the reasoning output.
+ */
+function mapReasoningFields(
+  response: ChatCompletionResponse,
+): ChatCompletionResponse {
+  const hasReasoningText = response.choices.some(
+    (c) => (c.message as Record<string, unknown>).reasoning_text,
+  )
+  if (!hasReasoningText) return response
+
+  return {
+    ...response,
+    choices: response.choices.map((choice) => {
+      const msg = choice.message as Record<string, unknown>
+      if (!msg.reasoning_text) return choice
+      return {
+        ...choice,
+        message: {
+          ...choice.message,
+          reasoning_content:
+            (msg.reasoning_text as string) || choice.message.reasoning_content,
+        },
+      }
+    }),
+  }
+}
