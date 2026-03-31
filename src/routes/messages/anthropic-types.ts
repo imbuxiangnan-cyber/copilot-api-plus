@@ -203,4 +203,7 @@ export interface AnthropicStreamState {
       anthropicBlockIndex: number
     }
   }
+  // Thinking state
+  thinkingBlockOpen: boolean
+  thinkingRequested: boolean
 }

@@ -48,6 +48,8 @@ export async function handleCompletion(c: Context) {
       contentBlockIndex: 0,
       contentBlockOpen: false,
       toolCalls: {},
+      thinkingBlockOpen: false,
+      thinkingRequested: Boolean(anthropicPayload.thinking),
     }
 
     try {

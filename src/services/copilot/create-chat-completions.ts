@@ -519,6 +519,7 @@ export interface ChatCompletionChunk {
 
 interface Delta {
   content?: string | null
+  reasoning_content?: string | null
   role?: "user" | "assistant" | "system" | "tool"
   tool_calls?: Array<{
     index: number
@@ -560,6 +561,7 @@ export interface ChatCompletionResponse {
 interface ResponseMessage {
   role: "assistant"
   content: string | null
+  reasoning_content?: string | null
   tool_calls?: Array<ToolCall>
 }
 
@@ -596,6 +598,12 @@ export interface ChatCompletionsPayload {
     | { type: "function"; function: { name: string } }
     | null
   user?: string | null
+
+  // Anthropic thinking parameter — passed through transparently to Copilot
+  thinking?: {
+    type: "enabled"
+    budget_tokens?: number
+  }
 }
 
 export interface Tool {

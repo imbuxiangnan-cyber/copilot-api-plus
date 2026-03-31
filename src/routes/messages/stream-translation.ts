@@ -57,7 +57,53 @@ export function translateChunkToAnthropicEvents(
     state.messageStartSent = true
   }
 
+  if (delta.reasoning_content) {
+    // Close any non-thinking block that might be open
+    if (state.contentBlockOpen && !state.thinkingBlockOpen) {
+      events.push({
+        type: "content_block_stop",
+        index: state.contentBlockIndex,
+      })
+      state.contentBlockIndex++
+      state.contentBlockOpen = false
+    }
+
+    if (!state.thinkingBlockOpen) {
+      // Start a new thinking block
+      events.push({
+        type: "content_block_start",
+        index: state.contentBlockIndex,
+        content_block: {
+          type: "thinking",
+          thinking: "",
+        },
+      })
+      state.contentBlockOpen = true
+      state.thinkingBlockOpen = true
+    }
+
+    events.push({
+      type: "content_block_delta",
+      index: state.contentBlockIndex,
+      delta: {
+        type: "thinking_delta",
+        thinking: delta.reasoning_content,
+      },
+    })
+  }
+
   if (delta.content) {
+    // Close thinking block if transitioning from thinking to text
+    if (state.thinkingBlockOpen) {
+      events.push({
+        type: "content_block_stop",
+        index: state.contentBlockIndex,
+      })
+      state.contentBlockIndex++
+      state.contentBlockOpen = false
+      state.thinkingBlockOpen = false
+    }
+
     if (isToolBlockOpen(state)) {
       // A tool block was open, so close it before starting a text block.
       events.push({
@@ -91,6 +137,17 @@ export function translateChunkToAnthropicEvents(
   }
 
   if (delta.tool_calls) {
+    // Close thinking block if transitioning from thinking to tool calls
+    if (state.thinkingBlockOpen) {
+      events.push({
+        type: "content_block_stop",
+        index: state.contentBlockIndex,
+      })
+      state.contentBlockIndex++
+      state.contentBlockOpen = false
+      state.thinkingBlockOpen = false
+    }
+
     for (const toolCall of delta.tool_calls) {
       if (toolCall.id && toolCall.function?.name) {
         // New tool call starting.

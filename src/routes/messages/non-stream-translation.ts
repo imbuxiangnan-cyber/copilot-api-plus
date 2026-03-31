@@ -44,6 +44,8 @@ export function translateToOpenAI(
     user: payload.metadata?.user_id,
     tools: translateAnthropicToolsToOpenAI(payload.tools),
     tool_choice: translateAnthropicToolChoiceToOpenAI(payload.tool_choice),
+    // Pass through thinking parameter as-is to Copilot
+    ...(payload.thinking && { thinking: payload.thinking }),
   }
 }
 
@@ -328,17 +330,22 @@ export function translateToAnthropic(
   response: ChatCompletionResponse,
 ): AnthropicResponse {
   // Merge content from all choices
+  const allThinkingBlocks: Array<AnthropicThinkingBlock> = []
   const allTextBlocks: Array<AnthropicTextBlock> = []
   const allToolUseBlocks: Array<AnthropicToolUseBlock> = []
   let stopReason: "stop" | "length" | "tool_calls" | "content_filter" | null =
     null // default
   stopReason = response.choices[0]?.finish_reason ?? stopReason
 
-  // Process all choices to extract text and tool use blocks
+  // Process all choices to extract thinking, text and tool use blocks
   for (const choice of response.choices) {
+    const thinkingBlocks = getAnthropicThinkingBlocks(
+      choice.message.reasoning_content,
+    )
     const textBlocks = getAnthropicTextBlocks(choice.message.content)
     const toolUseBlocks = getAnthropicToolUseBlocks(choice.message.tool_calls)
 
+    allThinkingBlocks.push(...thinkingBlocks)
     allTextBlocks.push(...textBlocks)
     allToolUseBlocks.push(...toolUseBlocks)
 
@@ -348,14 +355,13 @@ export function translateToAnthropic(
     }
   }
 
-  // Note: GitHub Copilot doesn't generate thinking blocks, so we don't include them in responses
-
   return {
     id: response.id,
     type: "message",
     role: "assistant",
     model: response.model,
-    content: [...allTextBlocks, ...allToolUseBlocks],
+    // Anthropic convention: thinking blocks come first, then text, then tool_use
+    content: [...allThinkingBlocks, ...allTextBlocks, ...allToolUseBlocks],
     stop_reason: mapOpenAIStopReasonToAnthropic(stopReason),
     stop_sequence: null,
     usage: {
@@ -370,6 +376,15 @@ export function translateToAnthropic(
       }),
     },
   }
+}
+
+function getAnthropicThinkingBlocks(
+  reasoningContent: string | null | undefined,
+): Array<AnthropicThinkingBlock> {
+  if (!reasoningContent) {
+    return []
+  }
+  return [{ type: "thinking", thinking: reasoningContent }]
 }
 
 function getAnthropicTextBlocks(
