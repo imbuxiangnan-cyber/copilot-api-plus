@@ -50,6 +50,7 @@
 | 🛡️ **网络弹性** | 120s 连接超时 + 指数退避重试（2s/5s/10s） |
 | ✂️ **上下文透传** | 全量透传上下文至上游 API，由客户端（如 Claude Code）自行管理压缩 |
 | 🔍 **智能模型匹配** | 自动处理模型名格式差异（日期后缀、dash/dot 版本号等） |
+| 🧠 **Thinking 思考链** | 自动为支持的模型启用深度思考（thinking/reasoning），提升代码质量 |
 
 ---
 
@@ -736,8 +737,8 @@ Anthropic 格式的模型名（如 `claude-opus-4-6`）和 Copilot 的模型列�
 每次 API 请求会输出一行日志，包含模型名、状态码和耗时：
 
 ```log
-[claude-opus-4-6] 13:13:39 <-- POST /v1/messages?beta=true
-[claude-opus-4-6] 13:13:59 --> POST /v1/messages?beta=true 200 20.1s
+[claude-opus-4-6 thinking] 13:13:39 <-- POST /v1/messages?beta=true
+[claude-opus-4-6 thinking] 13:13:59 --> POST /v1/messages?beta=true 200 20.1s
 ```
 
 ### 网络弹性

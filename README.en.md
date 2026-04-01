@@ -49,6 +49,7 @@ English | [简体中文](README.md)
 | 🛡️ **Network Resilience** | 120s connection timeout + exponential backoff retry (2s/5s/10s) |
 | ✂️ **Context Passthrough** | Full context passthrough to upstream API; clients (e.g. Claude Code) manage compression |
 | 🔍 **Smart Model Matching** | Handles model name format differences (date suffixes, dash/dot versions, etc.) |
+| 🧠 **Thinking Chain** | Automatically enables deep thinking (thinking/reasoning) for supported models, improving code quality |
 
 ---
 
@@ -573,8 +574,8 @@ For Anthropic endpoints (`/v1/messages`), `translateModelName` also handles lega
 Each API request outputs a log line with model name, status code, and duration:
 
 ```log
-[claude-opus-4-6] 13:13:39 <-- POST /v1/messages?beta=true
-[claude-opus-4-6] 13:13:59 --> POST /v1/messages?beta=true 200 20.1s
+[claude-opus-4-6 thinking] 13:13:39 <-- POST /v1/messages?beta=true
+[claude-opus-4-6 thinking] 13:13:59 --> POST /v1/messages?beta=true 200 20.1s
 ```
 
 ### Network Resilience

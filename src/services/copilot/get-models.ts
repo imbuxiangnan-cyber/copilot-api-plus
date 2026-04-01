@@ -52,6 +52,10 @@ interface ModelSupports {
   tool_calls?: boolean
   parallel_tool_calls?: boolean
   dimensions?: boolean
+  // Thinking/reasoning capabilities
+  max_thinking_budget?: number
+  min_thinking_budget?: number
+  adaptive_thinking?: boolean
 }
 
 interface ModelCapabilities {

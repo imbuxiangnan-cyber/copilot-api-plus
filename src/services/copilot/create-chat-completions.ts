@@ -11,6 +11,7 @@ import { HTTPError } from "~/lib/error"
 import { modelRouter } from "~/lib/model-router"
 import { state } from "~/lib/state"
 import { refreshCopilotToken } from "~/lib/token"
+import { findModel } from "~/lib/utils"
 
 // ---------------------------------------------------------------------------
 // Fetch with timeout helper
@@ -125,6 +126,89 @@ async function* wrapGeneratorWithRelease(
  */
 const reasoningUnsupportedModels = new Set<string>()
 
+/**
+ * Compute an appropriate thinking_budget from model capabilities.
+ * Returns undefined if the model does not support thinking.
+ */
+function getThinkingBudget(
+  model: import("~/services/copilot/get-models").Model | undefined,
+): number | undefined {
+  if (!model) return undefined
+  const { supports, limits } = model.capabilities
+  const maxBudget = supports.max_thinking_budget
+  if (!maxBudget || maxBudget <= 0) return undefined
+  const maxOutput = limits.max_output_tokens ?? 0
+  const upperBound = Math.min(maxBudget, Math.max(maxOutput - 1, 0))
+  const lowerBound = supports.min_thinking_budget ?? 1024
+  return Math.max(upperBound, lowerBound)
+}
+
+/**
+ * Inject thinking parameters into the payload based on model capabilities.
+ *
+ * Strategy (in priority order):
+ *   1. If the client already set reasoning_effort or thinking_budget → keep as-is
+ *   2. If model capabilities declare max_thinking_budget → inject thinking_budget
+ *   3. Otherwise → inject reasoning_effort="high" (works on claude-*-4.6)
+ *
+ * The fallback to reasoning_effort ensures thinking works even when the
+ * /models endpoint doesn't expose thinking budget fields.
+ */
+function injectThinking(
+  payload: ChatCompletionsPayload,
+  resolvedModel: string,
+): ChatCompletionsPayload {
+  // Client already specified thinking params — respect them
+  if (payload.reasoning_effort || payload.thinking_budget) {
+    return payload
+  }
+
+  // Try model-capability-based injection (thinking_budget)
+  const model = findModel(resolvedModel)
+  const budget = getThinkingBudget(model)
+  if (budget) {
+    return { ...payload, thinking_budget: budget }
+  }
+
+  // Fallback: inject reasoning_effort="high" (auto-detected at runtime)
+  if (!reasoningUnsupportedModels.has(resolvedModel)) {
+    return { ...payload, reasoning_effort: "high" as const }
+  }
+
+  return payload
+}
+
+// ---------------------------------------------------------------------------
+// Thinking injection logging (debug level)
+// ---------------------------------------------------------------------------
+
+function logThinkingInjection(
+  original: ChatCompletionsPayload,
+  injected: ChatCompletionsPayload,
+  resolvedModel: string,
+) {
+  if (original.reasoning_effort || original.thinking_budget) {
+    consola.debug(
+      `Thinking: client-specified (reasoning_effort=${original.reasoning_effort ?? "none"} / thinking_budget=${original.thinking_budget ?? "none"})`,
+    )
+  } else if (
+    injected.thinking_budget
+    && injected.thinking_budget !== original.thinking_budget
+  ) {
+    consola.debug(
+      `Thinking: injected thinking_budget=${injected.thinking_budget} for "${resolvedModel}"`,
+    )
+  } else if (injected.reasoning_effort === "high") {
+    consola.debug(
+      `Thinking: injected reasoning_effort=high for "${resolvedModel}"`,
+    )
+  } else if (reasoningUnsupportedModels.has(resolvedModel)) {
+    consola.debug(
+      `Thinking: skipped — "${resolvedModel}" does not support reasoning`,
+    )
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Public entry point
 // ---------------------------------------------------------------------------
@@ -142,18 +226,15 @@ export const createChatCompletions = async (
     consola.debug(`Model routed: ${payload.model} → ${resolvedModel}`)
   }
 
-  // Force-inject reasoning_effort=high when:
-  //   1. The client didn't already set it
-  //   2. The model hasn't been flagged as unsupported
-  const shouldInject =
-    !routedPayload.reasoning_effort
-    && !reasoningUnsupportedModels.has(resolvedModel)
-  const thinkingPayload: ChatCompletionsPayload = {
-    ...routedPayload,
-    ...(shouldInject && {
-      reasoning_effort: "high" as const,
-    }),
-  }
+  // ---------------------------------------------------------------------------
+  // Thinking injection: use model capabilities to decide strategy
+  // ---------------------------------------------------------------------------
+  const thinkingPayload = injectThinking(routedPayload, resolvedModel)
+  const wasInjected =
+    thinkingPayload.reasoning_effort !== routedPayload.reasoning_effort
+    || thinkingPayload.thinking_budget !== routedPayload.thinking_budget
+
+  logThinkingInjection(routedPayload, thinkingPayload, resolvedModel)
 
   // Acquire concurrency slot
   const releaseSlot = await modelRouter.acquireSlot(resolvedModel)
@@ -174,7 +255,7 @@ export const createChatCompletions = async (
     // Auto-detect models that don't support reasoning_effort:
     // On 400 "Unrecognized request argument", strip the parameter and retry.
     const isReasoningRejected =
-      shouldInject
+      wasInjected
       && error instanceof HTTPError
       && error.response.status === 400
       && error.message.includes("Unrecognized request argument")
@@ -677,6 +758,9 @@ export interface ChatCompletionsPayload {
 
   // OpenAI reasoning_effort parameter — triggers Copilot thinking mode
   reasoning_effort?: "low" | "medium" | "high" | null
+
+  // Copilot thinking budget — number of tokens allocated for thinking
+  thinking_budget?: number | null
 }
 
 export interface Tool {

@@ -5,12 +5,12 @@ export const standardHeaders = () => ({
   accept: "application/json",
 })
 
-const COPILOT_VERSION = "0.26.7"
+const COPILOT_VERSION = "0.38.2"
 const EDITOR_PLUGIN_VERSION = `copilot-chat/${COPILOT_VERSION}`
 const USER_AGENT = `GitHubCopilotChat/${COPILOT_VERSION}`
 
-// Updated to match latest Zed implementation - 2025-05-01 returns Claude models
-const API_VERSION = "2025-05-01"
+// Updated to match latest Zed implementation - 2025-10-01 returns Claude models
+const API_VERSION = "2025-10-01"
 
 /**
  * Common interface for anything that can supply Copilot/GitHub credentials.
@@ -49,7 +49,9 @@ export const copilotHeaders = (
     "editor-version": `vscode/${source.vsCodeVersion}`,
     "editor-plugin-version": EDITOR_PLUGIN_VERSION,
     "user-agent": USER_AGENT,
-    "openai-intent": "conversation-panel",
+    "openai-intent": "conversation-agent",
+    "x-interaction-type": "conversation-agent",
+    "x-agent-task-id": randomUUID(),
     "x-github-api-version": API_VERSION,
     "x-request-id": randomUUID(),
     "x-vscode-user-agent-library-version": "electron-fetch",

@@ -50,6 +50,10 @@ export function translateToOpenAI(
     ...(payload.thinking?.type === "enabled" && {
       reasoning_effort: "high" as const,
     }),
+    // Convert Anthropic thinking budget_tokens to Copilot thinking_budget
+    ...(payload.thinking?.budget_tokens && {
+      thinking_budget: payload.thinking.budget_tokens,
+    }),
   }
 }
 
