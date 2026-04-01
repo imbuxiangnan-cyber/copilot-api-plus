@@ -114,6 +114,18 @@ async function* wrapGeneratorWithRelease(
 }
 
 // ---------------------------------------------------------------------------
+// Reasoning-effort auto-detection cache
+// ---------------------------------------------------------------------------
+
+/**
+ * Models that are known NOT to support the `reasoning_effort` parameter.
+ * Populated at runtime: the first time a model returns 400 with
+ * "Unrecognized request argument", it is added here and all future
+ * requests to that model skip the injection automatically.
+ */
+const reasoningUnsupportedModels = new Set<string>()
+
+// ---------------------------------------------------------------------------
 // Public entry point
 // ---------------------------------------------------------------------------
 
@@ -130,26 +142,24 @@ export const createChatCompletions = async (
     consola.debug(`Model routed: ${payload.model} → ${resolvedModel}`)
   }
 
-  // Force-inject reasoning_effort when not already set
-  // This enables thinking mode for all requests, significantly improving output quality
-  // Only inject for models known to support it (currently claude-*-4.6 variants)
-  const supportsReasoning = /^claude-.+-4\.6/.test(resolvedModel)
+  // Force-inject reasoning_effort=high when:
+  //   1. The client didn't already set it
+  //   2. The model hasn't been flagged as unsupported
+  const shouldInject =
+    !routedPayload.reasoning_effort
+    && !reasoningUnsupportedModels.has(resolvedModel)
   const thinkingPayload: ChatCompletionsPayload = {
     ...routedPayload,
-    ...(!routedPayload.reasoning_effort
-      && supportsReasoning && {
-        reasoning_effort: "high" as const,
-      }),
+    ...(shouldInject && {
+      reasoning_effort: "high" as const,
+    }),
   }
 
   // Acquire concurrency slot
   const releaseSlot = await modelRouter.acquireSlot(resolvedModel)
 
   try {
-    const result =
-      state.multiAccountEnabled && accountManager.hasAccounts() ?
-        await createWithMultiAccount(thinkingPayload)
-      : await createWithSingleAccount(thinkingPayload)
+    const result = await dispatchRequest(thinkingPayload)
 
     // For streaming responses, wrap the generator so the slot is released
     // when the stream ends (not when this function returns).
@@ -161,9 +171,55 @@ export const createChatCompletions = async (
     releaseSlot()
     return result
   } catch (error) {
+    // Auto-detect models that don't support reasoning_effort:
+    // On 400 "Unrecognized request argument", strip the parameter and retry.
+    const isReasoningRejected =
+      shouldInject
+      && error instanceof HTTPError
+      && error.response.status === 400
+      && error.message.includes("Unrecognized request argument")
+
+    if (isReasoningRejected) {
+      reasoningUnsupportedModels.add(resolvedModel)
+      consola.info(
+        `Model "${resolvedModel}" does not support reasoning_effort — disabled for future requests`,
+      )
+      return retryWithoutReasoning(routedPayload, releaseSlot)
+    }
+
     releaseSlot()
     throw error
   }
+}
+
+/**
+ * Retry a request without reasoning_effort after the model rejected it.
+ * Handles slot release for both streaming and non-streaming responses.
+ */
+async function retryWithoutReasoning(
+  payload: ChatCompletionsPayload,
+  releaseSlot: () => void,
+) {
+  try {
+    const result = await dispatchRequest(payload)
+    if (Symbol.asyncIterator in result) {
+      return wrapGeneratorWithRelease(result, releaseSlot)
+    }
+    releaseSlot()
+    return result
+  } catch (retryError) {
+    releaseSlot()
+    throw retryError
+  }
+}
+
+/**
+ * Dispatch request to either single-account or multi-account path.
+ */
+function dispatchRequest(payload: ChatCompletionsPayload) {
+  return state.multiAccountEnabled && accountManager.hasAccounts() ?
+      createWithMultiAccount(payload)
+    : createWithSingleAccount(payload)
 }
 
 // ---------------------------------------------------------------------------
