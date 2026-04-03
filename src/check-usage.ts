@@ -3,6 +3,7 @@ import consola from "consola"
 
 import { ensurePaths } from "./lib/paths"
 import { setupGitHubToken } from "./lib/token"
+import { rootCause } from "./lib/utils"
 import {
   getCopilotUsage,
   type QuotaDetail,
@@ -51,7 +52,8 @@ export const checkUsage = defineCommand({
           + `  ${completionsLine}`,
       )
     } catch (err) {
-      consola.error("Failed to fetch Copilot usage:", err)
+      consola.warn(`Failed to fetch Copilot usage: ${rootCause(err)}`)
+      consola.debug("Failed to fetch Copilot usage:", err)
       process.exit(1)
     }
   },

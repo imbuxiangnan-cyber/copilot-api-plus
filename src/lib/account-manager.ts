@@ -4,6 +4,7 @@ import fs from "node:fs/promises"
 
 import { HTTPError } from "~/lib/error"
 import { PATHS } from "~/lib/paths"
+import { rootCause } from "~/lib/utils"
 import { getCopilotToken } from "~/services/github/get-copilot-token"
 import { getCopilotUsage } from "~/services/github/get-copilot-usage"
 import { getGitHubUser } from "~/services/github/get-user"
@@ -94,7 +95,8 @@ export class AccountManager {
         this.accounts = []
         return
       }
-      consola.error("Failed to load accounts:", err)
+      consola.warn(`Failed to load accounts: ${rootCause(err)}`)
+      consola.debug("Failed to load accounts:", err)
       this.accounts = []
     }
   }
@@ -113,7 +115,8 @@ export class AccountManager {
         mode: 0o600,
       })
     } catch (err) {
-      consola.error("Failed to save accounts:", err)
+      consola.warn(`Failed to save accounts: ${rootCause(err)}`)
+      consola.debug("Failed to save accounts:", err)
     }
   }
 
@@ -373,7 +376,10 @@ export class AccountManager {
         this.debouncedSave()
       }
     } catch (err) {
-      consola.error(`Account ${account.label}: failed to refresh usage:`, err)
+      consola.warn(
+        `Account ${account.label}: failed to refresh usage: ${rootCause(err)}`,
+      )
+      consola.debug(`Account ${account.label}: failed to refresh usage:`, err)
     }
   }
 

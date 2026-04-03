@@ -12,6 +12,20 @@ export const sleep = (ms: number) =>
     setTimeout(resolve, ms)
   })
 
+/**
+ * Extract the root-cause message from an unknown thrown value.
+ *
+ * If the error wraps another error via the standard `cause` property, the
+ * inner message is returned instead — giving a one-line summary of *why*
+ * the operation failed without the noise of the full stack trace.
+ */
+export function rootCause(err: unknown): string {
+  if (err instanceof Error) {
+    return err.cause instanceof Error ? err.cause.message : err.message
+  }
+  return String(err)
+}
+
 export const isNullish = (value: unknown): value is null | undefined =>
   value === null || value === undefined
 

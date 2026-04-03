@@ -6,7 +6,7 @@ import { applyProxyConfig } from "./lib/config"
 import { ensurePaths } from "./lib/paths"
 import { initProxyFromEnv } from "./lib/proxy"
 import { state } from "./lib/state"
-import { cacheVSCodeVersion } from "./lib/utils"
+import { cacheVSCodeVersion, rootCause } from "./lib/utils"
 import { getDeviceCode } from "./services/github/get-device-code"
 import { pollAccessToken } from "./services/github/poll-access-token"
 
@@ -79,7 +79,8 @@ export const addAccount = defineCommand({
       )
       consola.info(`Total accounts: ${accountManager.accountCount}`)
     } catch (err) {
-      consola.error("Failed to add account:", err)
+      consola.warn(`Failed to add account: ${rootCause(err)}`)
+      consola.debug("Failed to add account:", err)
       process.exitCode = 1
     }
   },
@@ -161,7 +162,8 @@ export const listAccounts = defineCommand({
       consola.log(botBorder)
       consola.log("")
     } catch (err) {
-      consola.error("Failed to list accounts:", err)
+      consola.warn(`Failed to list accounts: ${rootCause(err)}`)
+      consola.debug("Failed to list accounts:", err)
       process.exitCode = 1
     }
   },
@@ -271,7 +273,8 @@ export const removeAccount = defineCommand({
         process.exitCode = 1
       }
     } catch (err) {
-      consola.error("Failed to remove account:", err)
+      consola.warn(`Failed to remove account: ${rootCause(err)}`)
+      consola.debug("Failed to remove account:", err)
       process.exitCode = 1
     }
   },
