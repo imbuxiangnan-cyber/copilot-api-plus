@@ -328,12 +328,20 @@ async function createWithSingleAccount(payload: ChatCompletionsPayload) {
     "X-Initiator": isAgentCall ? "agent" : "user",
   })
 
+  // Determine endpoint based on model vendor
+  // OpenAI vendor models (gpt-4.1, etc.) use /v1/responses
+  // Anthropic/other vendor models use /chat/completions
+  const resolvedModelObj = findModel(resolvedModel)
+  const isOpenAIVendor = resolvedModelObj?.vendor === "OpenAI"
+  const chatEndpoint = isOpenAIVendor ? "/v1/responses" : "/chat/completions"
+
   consola.debug("Sending request to Copilot:", {
-    model: payload.model,
-    endpoint: `${copilotBaseUrl(state)}/chat/completions`,
+    model: resolvedModel,
+    endpoint: `${copilotBaseUrl(state)}${chatEndpoint}`,
+    vendor: resolvedModelObj?.vendor ?? "unknown",
   })
 
-  const url = `${copilotBaseUrl(state)}/chat/completions`
+  const url = `${copilotBaseUrl(state)}${chatEndpoint}`
 
   // Request usage stats in the final stream chunk
   const body =
@@ -592,11 +600,19 @@ async function doFetch(
     "X-Initiator": isAgentCall ? "agent" : "user",
   })
 
-  const url = `${copilotBaseUrl(source)}/chat/completions`
+  // Determine endpoint based on model vendor
+  // OpenAI vendor models (gpt-4.1, etc.) use /v1/responses
+  // Anthropic/other vendor models use /chat/completions
+  const resolvedModelObj = findModel(payload.model)
+  const isOpenAIVendor = resolvedModelObj?.vendor === "OpenAI"
+  const chatEndpoint = isOpenAIVendor ? "/v1/responses" : "/chat/completions"
+
+  const url = `${copilotBaseUrl(source)}${chatEndpoint}`
 
   consola.debug("Sending request to Copilot (multi-account):", {
     model: payload.model,
     endpoint: url,
+    vendor: resolvedModelObj?.vendor ?? "unknown",
   })
 
   const body =

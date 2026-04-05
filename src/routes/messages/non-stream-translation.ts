@@ -27,9 +27,53 @@ import { mapOpenAIStopReasonToAnthropic } from "./utils"
 
 // Payload translation
 
+/**
+ * Resolve reasoning_effort from Anthropic request body.
+ *
+ * Priority:
+ * 1. Explicit output_config.effort — preserves user's intent directly.
+ *    low/medium/high/max map 1:1; max maps to xhigh.
+ * 2. Fallback: thinking.type + budget_tokens:
+ *    - adaptive → high
+ *    - enabled with budget → low (<4000) / medium (4000-15999) / high (≥16000)
+ *    - enabled without budget → high (conservative default)
+ *    - disabled / absent → None
+ */
+function resolveReasoningEffort(
+  payload: AnthropicMessagesPayload,
+): "low" | "medium" | "high" | "xhigh" | undefined {
+  // Priority 1: explicit output_config.effort
+  if (payload.output_config?.effort) {
+    const effort = payload.output_config.effort
+    if (effort === "max") return "xhigh"
+    return effort // low | medium | high
+  }
+
+  // Priority 2: thinking.type + budget_tokens fallback
+  const thinking = payload.thinking
+  if (!thinking) return undefined
+
+  switch (thinking.type) {
+    case "adaptive":
+      return "high"
+    case "enabled": {
+      const budget = thinking.budget_tokens
+      if (!budget) return "high"
+      if (budget < 4000) return "low"
+      if (budget < 16000) return "medium"
+      return "high"
+    }
+    default:
+      return undefined
+  }
+}
+
 export function translateToOpenAI(
   payload: AnthropicMessagesPayload,
 ): ChatCompletionsPayload {
+  // Resolve reasoning_effort from payload
+  const reasoningEffort = resolveReasoningEffort(payload)
+
   return {
     model: translateModelName(payload.model),
     messages: translateAnthropicMessagesToOpenAI(
@@ -44,16 +88,11 @@ export function translateToOpenAI(
     user: payload.metadata?.user_id,
     tools: translateAnthropicToolsToOpenAI(payload.tools),
     tool_choice: translateAnthropicToolChoiceToOpenAI(payload.tool_choice),
+    // Inject reasoning_effort based on resolved priority
+    ...(reasoningEffort && { reasoning_effort: reasoningEffort }),
     // Pass through thinking parameter as-is to Copilot
+    // (for models that accept thinking_budget directly)
     ...(payload.thinking && { thinking: payload.thinking }),
-    // Convert Anthropic thinking to reasoning_effort=high for Copilot
-    ...(payload.thinking?.type === "enabled" && {
-      reasoning_effort: "high" as const,
-    }),
-    // Convert Anthropic thinking budget_tokens to Copilot thinking_budget
-    ...(payload.thinking?.budget_tokens && {
-      thinking_budget: payload.thinking.budget_tokens,
-    }),
   }
 }
 

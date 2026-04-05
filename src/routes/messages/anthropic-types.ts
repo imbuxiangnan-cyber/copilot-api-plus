@@ -22,6 +22,10 @@ export interface AnthropicMessagesPayload {
     type: "enabled"
     budget_tokens?: number
   }
+  // Claude Code output_config - for specifying reasoning effort level
+  output_config?: {
+    effort?: "low" | "medium" | "high" | "max"
+  }
   service_tier?: "auto" | "standard_only"
 }
 
