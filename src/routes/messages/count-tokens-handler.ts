@@ -3,7 +3,7 @@ import type { Context } from "hono"
 import consola from "consola"
 
 import { getTokenCount } from "~/lib/tokenizer"
-import { findModel } from "~/lib/utils"
+import { findModel, rootCause } from "~/lib/utils"
 
 import { type AnthropicMessagesPayload } from "./anthropic-types"
 import { translateModelName, translateToOpenAI } from "./non-stream-translation"
@@ -71,7 +71,8 @@ export async function handleCountTokens(c: Context) {
       input_tokens: finalTokenCount,
     })
   } catch (error) {
-    consola.error("Error counting tokens:", error)
+    consola.warn(`Error counting tokens: ${rootCause(error)}`)
+    consola.debug("Error counting tokens:", error)
     return c.json({
       input_tokens: 1,
     })

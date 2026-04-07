@@ -3,6 +3,8 @@ import type { ContentfulStatusCode } from "hono/utils/http-status"
 
 import consola from "consola"
 
+import { rootCause } from "~/lib/utils"
+
 export class HTTPError extends Error {
   response: Response
 
@@ -33,8 +35,8 @@ export async function forwardError(c: Context, error: unknown) {
       } catch {
         errorJson = errorText
       }
-      consola.error("Error occurred:", error)
-      consola.error("HTTP error:", errorJson)
+      consola.warn(`Error occurred: ${rootCause(error)}`)
+      consola.debug("HTTP error:", errorJson)
     }
 
     return c.json(

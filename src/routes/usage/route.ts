@@ -3,6 +3,7 @@ import { Hono } from "hono"
 
 import { accountManager } from "~/lib/account-manager"
 import { state } from "~/lib/state"
+import { rootCause } from "~/lib/utils"
 import { getCopilotUsage } from "~/services/github/get-copilot-usage"
 
 export const usageRoute = new Hono()
@@ -20,7 +21,8 @@ usageRoute.get("/", async (c) => {
     const usage = await getCopilotUsage()
     return c.json(usage)
   } catch (error) {
-    consola.error("Error fetching usage:", error)
+    consola.warn(`Error fetching usage: ${rootCause(error)}`)
+    consola.debug("Error fetching usage:", error)
     return c.json({ error: "Failed to fetch Copilot usage" }, 500)
   }
 })

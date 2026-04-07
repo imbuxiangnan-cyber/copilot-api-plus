@@ -9,6 +9,7 @@ import {
   GITHUB_CLIENT_ID,
   standardHeaders,
 } from "~/lib/api-config"
+import { rootCause } from "~/lib/utils"
 import { getDeviceCode } from "~/services/github/get-device-code"
 
 export const accountRoutes = new Hono()
@@ -44,7 +45,8 @@ accountRoutes.get("/", (c) => {
     const accounts = accountManager.getAccounts().map((a) => sanitiseAccount(a))
     return c.json({ accounts })
   } catch (error) {
-    consola.error("Error listing accounts:", error)
+    consola.warn(`Error listing accounts: ${rootCause(error)}`)
+    consola.debug("Error listing accounts:", error)
     return c.json({ error: "Failed to list accounts" }, 500)
   }
 })
@@ -73,7 +75,8 @@ accountRoutes.post("/", async (c) => {
 
     return c.json({ account: sanitiseAccount(account) }, 201)
   } catch (error) {
-    consola.error("Error adding account:", error)
+    consola.warn(`Error adding account: ${rootCause(error)}`)
+    consola.debug("Error adding account:", error)
     return c.json({ error: "Failed to add account" }, 500)
   }
 })
@@ -93,7 +96,8 @@ accountRoutes.delete("/:id", async (c) => {
 
     return c.json({ success: true })
   } catch (error) {
-    consola.error("Error removing account:", error)
+    consola.warn(`Error removing account: ${rootCause(error)}`)
+    consola.debug("Error removing account:", error)
     return c.json({ error: "Failed to remove account" }, 500)
   }
 })
@@ -129,7 +133,8 @@ accountRoutes.put("/:id/status", async (c) => {
 
     return c.json({ account: sanitiseAccount(account) })
   } catch (error) {
-    consola.error("Error updating account status:", error)
+    consola.warn(`Error updating account status: ${rootCause(error)}`)
+    consola.debug("Error updating account status:", error)
     return c.json({ error: "Failed to update account status" }, 500)
   }
 })
@@ -152,7 +157,8 @@ accountRoutes.post("/:id/refresh", async (c) => {
 
     return c.json({ account: sanitiseAccount(account) })
   } catch (error) {
-    consola.error("Error refreshing account:", error)
+    consola.warn(`Error refreshing account: ${rootCause(error)}`)
+    consola.debug("Error refreshing account:", error)
     return c.json({ error: "Failed to refresh account" }, 500)
   }
 })
@@ -166,7 +172,8 @@ accountRoutes.post("/auth/start", async (c) => {
     const deviceCode = await getDeviceCode()
     return c.json(deviceCode)
   } catch (error) {
-    consola.error("Error starting device code flow:", error)
+    consola.warn(`Error starting device code flow: ${rootCause(error)}`)
+    consola.debug("Error starting device code flow:", error)
     return c.json({ error: "Failed to start device code authorization" }, 500)
   }
 })
@@ -247,7 +254,8 @@ accountRoutes.post("/auth/poll", async (c) => {
     // Unexpected response shape
     return c.json({ status: "pending" })
   } catch (error) {
-    consola.error("Error polling device code:", error)
+    consola.warn(`Error polling device code: ${rootCause(error)}`)
+    consola.debug("Error polling device code:", error)
     return c.json({ error: "Failed to poll device code authorization" }, 500)
   }
 })
@@ -290,7 +298,8 @@ accountRoutes.get("/usage", (c) => {
       accounts: accountSummaries,
     })
   } catch (error) {
-    consola.error("Error fetching aggregated usage:", error)
+    consola.warn(`Error fetching aggregated usage: ${rootCause(error)}`)
+    consola.debug("Error fetching aggregated usage:", error)
     return c.json({ error: "Failed to fetch aggregated usage" }, 500)
   }
 })

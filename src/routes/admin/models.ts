@@ -4,6 +4,7 @@ import { Hono } from "hono"
 import { saveModelMappingConfig } from "~/lib/config"
 import { modelRouter } from "~/lib/model-router"
 import { state } from "~/lib/state"
+import { rootCause } from "~/lib/utils"
 
 export const modelAdminRoutes = new Hono()
 
@@ -16,7 +17,8 @@ modelAdminRoutes.get("/available", (c) => {
     const models = state.models?.data ?? []
     return c.json(models)
   } catch (error) {
-    consola.error("Error fetching available models:", error)
+    consola.warn(`Error fetching available models: ${rootCause(error)}`)
+    consola.debug("Error fetching available models:", error)
     return c.json({ error: "Failed to fetch available models" }, 500)
   }
 })
@@ -29,7 +31,8 @@ modelAdminRoutes.get("/mapping", (c) => {
   try {
     return c.json(modelRouter.getConfig())
   } catch (error) {
-    consola.error("Error fetching model mapping:", error)
+    consola.warn(`Error fetching model mapping: ${rootCause(error)}`)
+    consola.debug("Error fetching model mapping:", error)
     return c.json({ error: "Failed to fetch model mapping" }, 500)
   }
 })
@@ -63,7 +66,8 @@ modelAdminRoutes.put("/mapping", async (c) => {
 
     return c.json(modelRouter.getConfig())
   } catch (error) {
-    consola.error("Error updating model mapping:", error)
+    consola.warn(`Error updating model mapping: ${rootCause(error)}`)
+    consola.debug("Error updating model mapping:", error)
     return c.json({ error: "Failed to update model mapping" }, 500)
   }
 })
@@ -76,7 +80,8 @@ modelAdminRoutes.get("/concurrency", (c) => {
   try {
     return c.json({ concurrency: modelRouter.getConfig().concurrency })
   } catch (error) {
-    consola.error("Error fetching concurrency config:", error)
+    consola.warn(`Error fetching concurrency config: ${rootCause(error)}`)
+    consola.debug("Error fetching concurrency config:", error)
     return c.json({ error: "Failed to fetch concurrency config" }, 500)
   }
 })
@@ -110,7 +115,8 @@ modelAdminRoutes.put("/concurrency", async (c) => {
 
     return c.json({ concurrency: modelRouter.getConfig().concurrency })
   } catch (error) {
-    consola.error("Error updating concurrency config:", error)
+    consola.warn(`Error updating concurrency config: ${rootCause(error)}`)
+    consola.debug("Error updating concurrency config:", error)
     return c.json({ error: "Failed to update concurrency config" }, 500)
   }
 })
