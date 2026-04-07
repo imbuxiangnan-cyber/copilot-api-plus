@@ -11,7 +11,7 @@ import { HTTPError } from "~/lib/error"
 import { modelRouter } from "~/lib/model-router"
 import { state } from "~/lib/state"
 import { refreshCopilotToken } from "~/lib/token"
-import { findModel } from "~/lib/utils"
+import { findModel, rootCause } from "~/lib/utils"
 
 // ---------------------------------------------------------------------------
 // Fetch with timeout helper
@@ -361,7 +361,8 @@ async function createWithSingleAccount(payload: ChatCompletionsPayload) {
         body: bodyString,
       })
     } catch (refreshError) {
-      consola.error("Failed to refresh token:", refreshError)
+      consola.warn(`Failed to refresh token: ${rootCause(refreshError)}`)
+      consola.debug("Failed to refresh token:", refreshError)
       // Fall through to the error handling below
     }
   }

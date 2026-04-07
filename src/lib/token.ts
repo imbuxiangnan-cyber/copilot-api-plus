@@ -9,6 +9,7 @@ import { pollAccessToken } from "~/services/github/poll-access-token"
 
 import { HTTPError } from "./error"
 import { state } from "./state"
+import { rootCause } from "./utils"
 
 const readGithubToken = () => fs.readFile(PATHS.GITHUB_TOKEN_PATH, "utf8")
 
@@ -59,7 +60,8 @@ export const setupCopilotToken = async () => {
     try {
       await refreshCopilotToken()
     } catch (error) {
-      consola.error("Failed to refresh Copilot token:", error)
+      consola.warn(`Failed to refresh Copilot token: ${rootCause(error)}`)
+      consola.debug("Failed to refresh Copilot token:", error)
 
       // If we get a 401, the GitHub token might be invalid
       // Log the error but don't crash - the next API request will fail
@@ -152,7 +154,8 @@ export async function setupGitHubToken(
       throw error
     }
 
-    consola.error("Failed to get GitHub token:", error)
+    consola.warn(`Failed to get GitHub token: ${rootCause(error)}`)
+    consola.debug("Failed to get GitHub token:", error)
     throw error
   }
 }

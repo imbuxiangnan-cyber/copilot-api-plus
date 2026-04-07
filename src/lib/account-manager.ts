@@ -330,7 +330,10 @@ export class AccountManager {
           `Account ${account.label}: token invalid, marked as banned`,
         )
       } else {
-        consola.error(
+        consola.warn(
+          `Account ${account.label}: failed to refresh Copilot token: ${rootCause(err)}`,
+        )
+        consola.debug(
           `Account ${account.label}: failed to refresh Copilot token:`,
           err,
         )
