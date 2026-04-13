@@ -34,6 +34,15 @@ const FETCH_TIMEOUT_MS = 120_000
 const RETRY_DELAYS = [2_000]
 
 /**
+ * Shorter timeout for retry attempts.  The first request uses the full
+ * FETCH_TIMEOUT_MS (120 s) to accommodate slow models.  Retries happen
+ * after a connection-pool reset, so a fresh socket should connect quickly —
+ * if it doesn't respond within 20 s, the upstream is genuinely down and
+ * waiting longer just burns time (and possibly credits).
+ */
+const RETRY_TIMEOUT_MS = 20_000
+
+/**
  * Wrapper around `fetch()` that aborts if the server doesn't respond within
  * `timeoutMs`.  The timeout only covers the period until the response headers
  * arrive – once the body starts streaming, the timeout is cleared so that
@@ -78,7 +87,11 @@ async function fetchWithRetry(
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
-      return await fetchWithTimeout(url, buildInit())
+      // First attempt: full timeout (slow models may need up to 120 s).
+      // Retries: short timeout — after pool reset a fresh socket should
+      // connect in seconds; if it doesn't, the network is truly down.
+      const timeout = attempt === 0 ? FETCH_TIMEOUT_MS : RETRY_TIMEOUT_MS
+      return await fetchWithTimeout(url, buildInit(), timeout)
     } catch (error: unknown) {
       lastError = error
 
