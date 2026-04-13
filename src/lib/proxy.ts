@@ -6,9 +6,16 @@ import { Agent, ProxyAgent, setGlobalDispatcher, type Dispatcher } from "undici"
 // Initialised by `initProxyFromEnv`; the dispatcher closure captures the
 // *variables* (not their values), so replacing them is enough.
 const agentOptions = {
-  keepAliveTimeout: 30_000,
-  keepAliveMaxTimeout: 60_000,
-  connect: { timeout: 15_000 },
+  keepAliveTimeout: 60_000,
+  keepAliveMaxTimeout: 300_000,
+  connect: {
+    timeout: 15_000,
+    // Send TCP keep-alive probes every 15 s to prevent HTTP proxies
+    // (e.g. Clash) from killing idle SSE connections during long model
+    // thinking phases where no HTTP-level data flows for 60+ seconds.
+    keepAlive: true,
+    keepAliveInitialDelay: 15_000,
+  },
 }
 let direct: Agent | undefined
 let proxies = new Map<string, ProxyAgent>()
