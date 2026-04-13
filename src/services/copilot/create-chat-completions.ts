@@ -9,6 +9,7 @@ import {
 } from "~/lib/api-config"
 import { HTTPError } from "~/lib/error"
 import { modelRouter } from "~/lib/model-router"
+import { resetConnections } from "~/lib/proxy"
 import { state } from "~/lib/state"
 import { refreshCopilotToken } from "~/lib/token"
 import { findModel, rootCause } from "~/lib/utils"
@@ -79,6 +80,14 @@ async function fetchWithRetry(
       return await fetchWithTimeout(url, buildInit())
     } catch (error: unknown) {
       lastError = error
+
+      // After the first network failure, destroy all pooled connections so
+      // that retries use fresh sockets instead of hitting the same stale
+      // ones (which would each wait ~60 s before timing out).
+      if (attempt === 0) {
+        resetConnections()
+      }
+
       if (attempt < maxAttempts - 1) {
         const delay = RETRY_DELAYS[attempt]
         consola.warn(

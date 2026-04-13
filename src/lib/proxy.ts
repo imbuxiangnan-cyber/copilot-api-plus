@@ -2,23 +2,23 @@ import consola from "consola"
 import { getProxyForUrl } from "proxy-from-env"
 import { Agent, ProxyAgent, setGlobalDispatcher, type Dispatcher } from "undici"
 
+// Module-level references so that `resetConnections` can swap them out.
+// Initialised by `initProxyFromEnv`; the dispatcher closure captures the
+// *variables* (not their values), so replacing them is enough.
+const agentOptions = {
+  keepAliveTimeout: 30_000,
+  keepAliveMaxTimeout: 60_000,
+  connect: { timeout: 15_000 },
+}
+let direct: Agent | undefined
+let proxies = new Map<string, ProxyAgent>()
+
 export function initProxyFromEnv(): void {
   if (typeof Bun !== "undefined") return
 
   try {
-    // Connection management: prevent stale sockets from causing
-    // "TypeError: terminated" / "other side closed" errors.
-    // - keepAliveTimeout: close idle sockets before the proxy server does
-    // - keepAliveMaxTimeout: hard cap on connection reuse lifetime
-    // - connect.timeout: fail fast on stuck TLS handshakes
-    const agentOptions = {
-      keepAliveTimeout: 30_000,
-      keepAliveMaxTimeout: 60_000,
-      connect: { timeout: 15_000 },
-    }
-
-    const direct = new Agent(agentOptions)
-    const proxies = new Map<string, ProxyAgent>()
+    direct = new Agent(agentOptions)
+    proxies = new Map<string, ProxyAgent>()
 
     // We only need a minimal dispatcher that implements `dispatch` at runtime.
     // Typing the object as `Dispatcher` forces TypeScript to require many
@@ -65,13 +65,16 @@ export function initProxyFromEnv(): void {
         for (const agent of proxies.values()) {
           void (agent as unknown as Dispatcher).close()
         }
-        return direct.close()
+        // `direct` is always set before the dispatcher is installed.
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        return direct!.close()
       },
       destroy() {
         for (const agent of proxies.values()) {
           void (agent as unknown as Dispatcher).destroy()
         }
-        return direct.destroy()
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        return direct!.destroy()
       },
     }
 
@@ -80,4 +83,34 @@ export function initProxyFromEnv(): void {
   } catch (err) {
     consola.debug("Proxy setup skipped:", err)
   }
+}
+
+/**
+ * Destroy all pooled connections (direct + proxy agents) and replace them
+ * with fresh instances.  The global dispatcher's `dispatch` method captures
+ * `direct` and `proxies` by reference, so subsequent requests automatically
+ * use the new agents — no need to call `setGlobalDispatcher` again.
+ *
+ * Call this after a network error to discard stale/half-closed sockets that
+ * would otherwise cause every retry to wait ~60 s before timing out.
+ *
+ * Under the Bun runtime (which doesn't use undici) this is a no-op.
+ */
+export function resetConnections(): void {
+  if (typeof Bun !== "undefined") return
+  if (!direct) return
+
+  const oldDirect = direct
+  const oldProxies = proxies
+
+  direct = new Agent(agentOptions)
+  proxies = new Map<string, ProxyAgent>()
+
+  // Tear down old agents in the background — errors are non-fatal.
+  void (oldDirect as unknown as Dispatcher).close().catch(() => {})
+  for (const agent of oldProxies.values()) {
+    void (agent as unknown as Dispatcher).close().catch(() => {})
+  }
+
+  consola.debug("Connection pool reset — stale sockets cleared")
 }
