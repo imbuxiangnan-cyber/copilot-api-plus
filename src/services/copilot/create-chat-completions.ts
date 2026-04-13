@@ -26,11 +26,12 @@ import { findModel, rootCause } from "~/lib/utils"
 const FETCH_TIMEOUT_MS = 120_000
 
 /**
- * Retry delays in ms (exponential back-off).
- * After a network error we wait longer before each retry to let the
- * Copilot backend recover and avoid triggering connection-level throttling.
+ * Retry delays in ms.  After the first failure the connection pool is reset
+ * (see `resetConnections`), so a single retry with a fresh socket is usually
+ * enough.  Keeping retries minimal avoids wasting Copilot request credits
+ * (billed per request).
  */
-const RETRY_DELAYS = [2_000, 5_000, 10_000]
+const RETRY_DELAYS = [2_000]
 
 /**
  * Wrapper around `fetch()` that aborts if the server doesn't respond within
@@ -466,25 +467,16 @@ async function handleMultiAccountHttpError(
       return null
     }
     default: {
-      // 5xx server errors are likely transient — retry once with same account before switching
+      // 5xx: upstream error — don't retry to avoid wasting request credits.
+      // doFetch already retried once via fetchWithRetry; a second round
+      // is unlikely to help and doubles the credit cost.
       if (error.response.status >= 500) {
-        consola.warn(
-          `Account ${account.label}: upstream ${error.response.status}, retrying in 2s...`,
+        accountManager.markAccountStatus(
+          account.id,
+          "error",
+          `HTTP ${error.response.status}`,
         )
-        await new Promise((r) => setTimeout(r, 2_000))
-        try {
-          const result = await doFetch(
-            retryContext.payload,
-            retryContext.tokenSource,
-          )
-          accountManager.markAccountSuccess(account.id)
-          return result
-        } catch {
-          consola.warn(
-            `Account ${account.label}: upstream ${error.response.status} persists, trying next account...`,
-          )
-          return null
-        }
+        return null
       }
       accountManager.markAccountStatus(
         account.id,
