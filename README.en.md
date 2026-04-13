@@ -46,7 +46,7 @@ English | [简体中文](README.md)
 | 👥 **Multi-Account** | Multiple GitHub accounts with automatic failover on quota exhaustion/rate limiting/bans |
 | 🔀 **Model Routing** | Flexible model name mapping and per-model concurrency control |
 | 📱 **Visual Management** | Web dashboard for account management, model config, and runtime stats |
-| 🛡️ **Network Resilience** | 120s connection timeout + exponential backoff retry (2s/5s/10s) |
+| 🛡️ **Network Resilience** | 120s connection timeout + smart retry (pool reset + fast-fail) |
 | ✂️ **Context Passthrough** | Full context passthrough to upstream API; clients (e.g. Claude Code) manage compression |
 | 🔍 **Smart Model Matching** | Handles model name format differences (date suffixes, dash/dot versions, etc.) |
 | 🧠 **Thinking Chain** | Automatically enables deep thinking (thinking/reasoning) for supported models, improving code quality |
@@ -580,10 +580,11 @@ Each API request outputs a log line with model name, status code, and duration:
 
 ### Network Resilience
 
-Built-in connection timeout and exponential backoff retry for upstream API requests:
+Built-in connection timeout and smart retry for upstream API requests, minimizing Copilot request credit consumption:
 
-- **Connection timeout**: 120 seconds (AbortController-based)
-- **Retry strategy**: Up to 3 retries (4 total attempts), exponential backoff: 2s → 5s → 10s
+- **Connection timeout**: 120 seconds for the first attempt, 20 seconds for retries (fail fast)
+- **Retry strategy**: Up to 1 retry (2 total attempts), 2-second delay
+- **Connection pool reset**: Automatically destroys all pooled connections on the first network error and creates fresh instances, preventing retries from hitting stale sockets
 - Only retries network-layer errors (timeout, TLS disconnect, connection reset, etc.); HTTP error codes (e.g. 400/500) are not retried
 - SSE stream interruptions gracefully send error events to the client
 
