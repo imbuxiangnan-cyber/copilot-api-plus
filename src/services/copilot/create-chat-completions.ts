@@ -9,7 +9,11 @@ import {
 } from "~/lib/api-config"
 import { HTTPError } from "~/lib/error"
 import { modelRouter } from "~/lib/model-router"
-import { resetConnections } from "~/lib/proxy"
+import {
+  notifyStreamEnd,
+  notifyStreamStart,
+  resetConnections,
+} from "~/lib/proxy"
 import { state } from "~/lib/state"
 import { refreshCopilotToken } from "~/lib/token"
 import { findModel, rootCause } from "~/lib/utils"
@@ -30,20 +34,21 @@ const FETCH_TIMEOUT_MS = 120_000
  * (see `resetConnections`), so retries use fresh sockets.  We allow up to
  * 2 retries because SSE streams through HTTP proxies are frequently
  * interrupted during long model thinking phases (~60 s idle timeout on
- * many proxy nodes), and each retry may also be cut short by the same
- * timeout.  Keeping the delay short avoids wasting wall-clock time.
+ * many proxy nodes).  Keeping the delay short avoids wasting wall-clock time.
  */
 const RETRY_DELAYS = [2_000, 3_000]
 
 /**
- * Timeout for retry attempts.  The first request uses the full
- * FETCH_TIMEOUT_MS (120 s) to accommodate slow models.  Retries also
- * need a generous timeout because the model restarts its thinking from
- * scratch — 20 s was too short and caused immediate failures.  90 s
- * gives the model enough time to produce a response while still failing
- * faster than the initial attempt if the network is truly down.
+ * Timeout for retry attempts (waiting for response headers only).
+ * Response headers typically arrive within 3–5 s, even on slow models.
+ * 30 s is generous enough for a fresh socket to connect and receive
+ * headers, while still failing fast when the upstream is truly down.
+ *
+ * NOTE: This does NOT affect the SSE streaming phase — once headers
+ * arrive, the timeout is cleared and the stream runs until completion
+ * or interruption.
  */
-const RETRY_TIMEOUT_MS = 90_000
+const RETRY_TIMEOUT_MS = 30_000
 
 /**
  * Wrapper around `fetch()` that aborts if the server doesn't respond within
@@ -128,14 +133,17 @@ async function fetchWithRetry(
 /**
  * Wraps an AsyncGenerator so that `releaseSlot` is called when the generator
  * finishes (return or throw), not when the outer function returns.
+ * Also tracks active streams for the proxy-tunnel keepalive mechanism.
  */
 async function* wrapGeneratorWithRelease(
   gen: AsyncGenerator,
   releaseSlot: () => void,
 ): AsyncGenerator {
+  notifyStreamStart()
   try {
     yield* gen
   } finally {
+    notifyStreamEnd()
     releaseSlot()
   }
 }

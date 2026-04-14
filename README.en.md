@@ -46,7 +46,7 @@ English | [简体中文](README.md)
 | 👥 **Multi-Account** | Multiple GitHub accounts with automatic failover on quota exhaustion/rate limiting/bans |
 | 🔀 **Model Routing** | Flexible model name mapping and per-model concurrency control |
 | 📱 **Visual Management** | Web dashboard for account management, model config, and runtime stats |
-| 🛡️ **Network Resilience** | 120s connection timeout + smart retry (pool reset + HTTP/2 keepalive + proxy optimization) |
+| 🛡️ **Network Resilience** | 120s timeout + smart retry + proxy tunnel keepalive (45s heartbeat) |
 | ✂️ **Context Passthrough** | Full context passthrough to upstream API; clients (e.g. Claude Code) manage compression |
 | 🔍 **Smart Model Matching** | Handles model name format differences (date suffixes, dash/dot versions, etc.) |
 | 🧠 **Thinking Chain** | Automatically enables deep thinking (thinking/reasoning) for supported models, improving code quality |
@@ -582,11 +582,11 @@ Each API request outputs a log line with model name, status code, and duration:
 
 Built-in connection timeout and smart retry for upstream API requests, minimizing Copilot request credit consumption:
 
-- **Connection timeout**: 120 seconds for the first attempt, 90 seconds for retries (enough time for model thinking)
+- **Connection timeout**: 120 seconds for the first attempt, 30 seconds for retries (headers typically arrive in 3–5s)
 - **Retry strategy**: Up to 2 retries (3 total attempts), 2-3 second delays
 - **Connection pool reset**: Automatically destroys all pooled connections on the first network error and creates fresh instances, preventing retries from hitting stale sockets
-- **HTTP/2 keepalive**: Enables HTTP/2 protocol; PING frames traverse proxy tunnels to prevent idle disconnections
-- **TCP keepalive**: Sends TCP probes every 15s to prevent proxies/firewalls from dropping idle connections
+- **Proxy tunnel keepalive**: Sends lightweight heartbeat requests every 45s while SSE streams are active, preventing proxy nodes from killing CONNECT tunnels due to inactivity
+- **HTTP/2 support**: Enables HTTP/2 protocol for better multiplexing performance
 - Only retries network-layer errors (timeout, TLS disconnect, connection reset, etc.); HTTP error codes (e.g. 400/500) are not retried
 - SSE stream interruptions gracefully send error events to the client
 
