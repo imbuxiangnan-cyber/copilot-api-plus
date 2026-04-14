@@ -21,6 +21,8 @@ const agentOptions = {
 }
 let direct: Agent | undefined
 let proxies = new Map<string, ProxyAgent>()
+/** Whether a proxy is actually configured and in use. */
+let proxyActive = false
 
 // ---------------------------------------------------------------------------
 // Proxy-tunnel keepalive: periodic lightweight requests through the proxy
@@ -66,9 +68,10 @@ function stopKeepalive(): void {
 
 /**
  * Call when an SSE stream starts.  Activates the proxy-tunnel keepalive
- * if this is the first active stream.
+ * if this is the first active stream and a proxy is configured.
  */
 export function notifyStreamStart(): void {
+  if (!proxyActive) return
   streamCount++
   if (streamCount === 1) startKeepalive()
 }
@@ -78,6 +81,7 @@ export function notifyStreamStart(): void {
  * once no streams are active.
  */
 export function notifyStreamEnd(): void {
+  if (!proxyActive) return
   streamCount = Math.max(0, streamCount - 1)
   if (streamCount === 0) stopKeepalive()
 }
@@ -148,6 +152,7 @@ export function initProxyFromEnv(): void {
     }
 
     setGlobalDispatcher(dispatcher as unknown as Dispatcher)
+    proxyActive = true
     consola.debug("HTTP proxy configured from environment (per-URL)")
   } catch (err) {
     consola.debug("Proxy setup skipped:", err)
