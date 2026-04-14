@@ -11,6 +11,21 @@ import { HTTPError } from "./error"
 import { state } from "./state"
 import { rootCause } from "./utils"
 
+/** Check if an error is a transient network/connection error */
+function isNetworkError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  const cause = (error as { cause?: { code?: string } }).cause
+  const code = cause?.code ?? (error as { code?: string }).code
+  return [
+    "ECONNREFUSED",
+    "ECONNRESET",
+    "ENOTFOUND",
+    "ETIMEDOUT",
+    "UND_ERR_CONNECT_TIMEOUT",
+    "UND_ERR_SOCKET",
+  ].includes(code ?? "")
+}
+
 const readGithubToken = () => fs.readFile(PATHS.GITHUB_TOKEN_PATH, "utf8")
 
 const writeGithubToken = (token: string) =>
@@ -140,6 +155,14 @@ export async function setupGitHubToken(
           )
           await clearGithubToken()
           // Fall through to perform fresh authentication
+        } else if (isNetworkError(error)) {
+          // Network error — token is on disk and might still be valid,
+          // we just can't verify right now. Continue without throwing.
+          consola.warn(
+            `Could not verify GitHub token (network issue): ${rootCause(error)}`,
+          )
+          consola.debug("Network error during token validation:", error)
+          return
         } else {
           throw error
         }
@@ -156,6 +179,14 @@ export async function setupGitHubToken(
 
     consola.warn(`Failed to get GitHub token: ${rootCause(error)}`)
     consola.debug("Failed to get GitHub token:", error)
+
+    // Network errors are non-fatal — the server can still try to start
+    // with whatever token is on disk. It will fail on first API call if
+    // the token is actually missing/invalid.
+    if (isNetworkError(error)) {
+      return
+    }
+
     throw error
   }
 }

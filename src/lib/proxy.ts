@@ -6,8 +6,13 @@ import { Agent, ProxyAgent, setGlobalDispatcher, type Dispatcher } from "undici"
 // Initialised by `initProxyFromEnv`; the dispatcher closure captures the
 // *variables* (not their values), so replacing them is enough.
 const agentOptions = {
-  keepAliveTimeout: 60_000,
-  keepAliveMaxTimeout: 300_000,
+  keepAliveTimeout: 300_000,
+  keepAliveMaxTimeout: 600_000,
+  // Allow HTTP/2 when the target supports it.  HTTP/2 PING frames flow
+  // through CONNECT tunnels as encrypted data, which keeps proxy nodes
+  // from treating the connection as "idle" during long model thinking
+  // phases — crucial when using HTTP proxies (Clash, V2Ray, etc.).
+  allowH2: true,
   connect: {
     timeout: 15_000,
     // Send TCP keep-alive probes every 15 s to prevent HTTP proxies

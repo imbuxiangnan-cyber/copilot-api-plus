@@ -27,20 +27,23 @@ const FETCH_TIMEOUT_MS = 120_000
 
 /**
  * Retry delays in ms.  After the first failure the connection pool is reset
- * (see `resetConnections`), so a single retry with a fresh socket is usually
- * enough.  Keeping retries minimal avoids wasting Copilot request credits
- * (billed per request).
+ * (see `resetConnections`), so retries use fresh sockets.  We allow up to
+ * 2 retries because SSE streams through HTTP proxies are frequently
+ * interrupted during long model thinking phases (~60 s idle timeout on
+ * many proxy nodes), and each retry may also be cut short by the same
+ * timeout.  Keeping the delay short avoids wasting wall-clock time.
  */
-const RETRY_DELAYS = [2_000]
+const RETRY_DELAYS = [2_000, 3_000]
 
 /**
- * Shorter timeout for retry attempts.  The first request uses the full
- * FETCH_TIMEOUT_MS (120 s) to accommodate slow models.  Retries happen
- * after a connection-pool reset, so a fresh socket should connect quickly —
- * if it doesn't respond within 20 s, the upstream is genuinely down and
- * waiting longer just burns time (and possibly credits).
+ * Timeout for retry attempts.  The first request uses the full
+ * FETCH_TIMEOUT_MS (120 s) to accommodate slow models.  Retries also
+ * need a generous timeout because the model restarts its thinking from
+ * scratch — 20 s was too short and caused immediate failures.  90 s
+ * gives the model enough time to produce a response while still failing
+ * faster than the initial attempt if the network is truly down.
  */
-const RETRY_TIMEOUT_MS = 20_000
+const RETRY_TIMEOUT_MS = 90_000
 
 /**
  * Wrapper around `fetch()` that aborts if the server doesn't respond within

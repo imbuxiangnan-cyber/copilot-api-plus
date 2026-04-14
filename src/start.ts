@@ -21,7 +21,7 @@ import {
   setupGitHubToken,
   stopCopilotTokenRefresh,
 } from "./lib/token"
-import { cacheModels, cacheVSCodeVersion } from "./lib/utils"
+import { cacheModels, cacheVSCodeVersion, rootCause } from "./lib/utils"
 import { server } from "./server"
 
 interface RunServerOptions {
@@ -244,9 +244,18 @@ export async function runServer(options: RunServerOptions): Promise<void> {
   // Standard Copilot mode
   await cacheVSCodeVersion()
 
-  await (options.githubToken ?
-    validateGitHubToken(options.githubToken)
-  : setupGitHubToken())
+  try {
+    await (options.githubToken ?
+      validateGitHubToken(options.githubToken)
+    : setupGitHubToken())
+  } catch (error) {
+    // Network errors during token validation shouldn't prevent startup
+    // The token might still be valid, and we'll find out on first API call
+    consola.error(`GitHub authentication failed: ${rootCause(error)}`)
+    consola.info(
+      "The server will start, but requests may fail until connectivity is restored",
+    )
+  }
 
   try {
     await setupCopilotToken()
