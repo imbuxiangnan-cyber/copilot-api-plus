@@ -49,7 +49,7 @@ English | [简体中文](README.md)
 | 🛡️ **Network Resilience** | 120s timeout + smart retry + instant stream recovery + proxy tunnel keepalive (45s heartbeat) |
 | ✂️ **Context Passthrough** | Full context passthrough to upstream API; clients (e.g. Claude Code) manage compression |
 | 🔍 **Smart Model Matching** | Handles model name format differences (date suffixes, dash/dot versions, etc.) |
-| 🧠 **Thinking Chain** | Automatically enables deep thinking (reasoning_effort) with Anthropic adaptive/enabled mode auto-translation |
+| 🧠 **Thinking Chain** | Automatically enables deep thinking for supported models, improving code quality |
 
 ---
 
