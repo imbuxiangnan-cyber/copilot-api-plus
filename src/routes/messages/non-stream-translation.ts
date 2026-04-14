@@ -49,11 +49,9 @@ export function translateToOpenAI(
     user: payload.metadata?.user_id,
     tools: translateAnthropicToolsToOpenAI(payload.tools),
     tool_choice: toolChoice,
-    // Pass through thinking parameter as-is to Copilot (only when safe)
-    ...(!isForced && payload.thinking && { thinking: payload.thinking }),
-    // Convert Anthropic thinking to reasoning_effort=high for Copilot
+    // Convert Anthropic thinking (enabled/adaptive) to reasoning_effort=high for Copilot
     ...(!isForced
-      && payload.thinking?.type === "enabled" && {
+      && payload.thinking && {
         reasoning_effort: "high" as const,
       }),
     // Convert Anthropic thinking budget_tokens to Copilot thinking_budget

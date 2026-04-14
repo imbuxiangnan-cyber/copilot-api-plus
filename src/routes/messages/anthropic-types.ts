@@ -19,7 +19,7 @@ export interface AnthropicMessagesPayload {
     name?: string
   }
   thinking?: {
-    type: "enabled"
+    type: "enabled" | "adaptive"
     budget_tokens?: number
   }
   service_tier?: "auto" | "standard_only"

@@ -805,12 +805,6 @@ export interface ChatCompletionsPayload {
     | null
   user?: string | null
 
-  // Anthropic thinking parameter — passed through transparently to Copilot
-  thinking?: {
-    type: "enabled"
-    budget_tokens?: number
-  }
-
   // OpenAI reasoning_effort parameter — triggers Copilot thinking mode
   reasoning_effort?: "low" | "medium" | "high" | null
 

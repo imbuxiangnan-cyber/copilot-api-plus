@@ -46,10 +46,10 @@ English | [简体中文](README.md)
 | 👥 **Multi-Account** | Multiple GitHub accounts with automatic failover on quota exhaustion/rate limiting/bans |
 | 🔀 **Model Routing** | Flexible model name mapping and per-model concurrency control |
 | 📱 **Visual Management** | Web dashboard for account management, model config, and runtime stats |
-| 🛡️ **Network Resilience** | 60s timeout + smart retry + instant stream recovery + proxy tunnel keepalive (45s heartbeat) |
+| 🛡️ **Network Resilience** | 120s timeout + smart retry + instant stream recovery + proxy tunnel keepalive (45s heartbeat) |
 | ✂️ **Context Passthrough** | Full context passthrough to upstream API; clients (e.g. Claude Code) manage compression |
 | 🔍 **Smart Model Matching** | Handles model name format differences (date suffixes, dash/dot versions, etc.) |
-| 🧠 **Thinking Chain** | Automatically enables deep thinking (thinking/reasoning) for supported models, improving code quality |
+| 🧠 **Thinking Chain** | Automatically enables deep thinking (reasoning_effort) with Anthropic adaptive/enabled mode auto-translation |
 
 ---
 
@@ -582,7 +582,7 @@ Each API request outputs a log line with model name, status code, and duration:
 
 Built-in connection timeout and smart retry for upstream API requests, minimizing Copilot request credit consumption:
 
-- **Connection timeout**: 60 seconds for the first attempt, 30 seconds for retries (headers typically arrive in 3–5s)
+- **Connection timeout**: 120 seconds for the first attempt, 30 seconds for retries (headers typically arrive in 3–5s)
 - **Retry strategy**: Up to 2 retries (3 total attempts), 2-3 second delays
 - **Instant stream recovery**: On SSE stream interruption, immediately destroys the connection pool so the next request uses fresh sockets — recovery drops from ~135s to seconds
 - **Connection pool reset**: Automatically destroys all pooled connections on the first network error and creates fresh instances, preventing retries from hitting stale sockets
