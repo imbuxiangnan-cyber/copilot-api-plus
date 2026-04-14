@@ -252,7 +252,7 @@ function logThinkingInjection(
 ) {
   if (original.reasoning_effort || original.thinking_budget) {
     consola.debug(
-      `Thinking: client-specified (reasoning_effort=${original.reasoning_effort ?? "none"} / thinking_budget=${original.thinking_budget ?? "none"})`,
+      `Thinking: translated (reasoning_effort=${original.reasoning_effort ?? "none"} / thinking_budget=${original.thinking_budget ?? "none"})`,
     )
   } else if (
     injected.thinking_budget
