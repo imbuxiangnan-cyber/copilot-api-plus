@@ -4,6 +4,7 @@ import consola from "consola"
 import { streamSSE, type SSEMessage } from "hono/streaming"
 
 import { awaitApproval } from "~/lib/approval"
+import { resetConnections } from "~/lib/proxy"
 import { checkRateLimit } from "~/lib/rate-limit"
 import { state } from "~/lib/state"
 import { findModel, isNullish } from "~/lib/utils"
@@ -66,6 +67,7 @@ export async function handleCompletion(c: Context) {
     } catch (error) {
       const message = (error as Error).message || String(error)
       consola.warn(`SSE stream interrupted: ${message}`)
+      resetConnections()
     }
   })
 }

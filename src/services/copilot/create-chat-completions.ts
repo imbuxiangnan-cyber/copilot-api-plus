@@ -25,9 +25,9 @@ import { findModel, rootCause } from "~/lib/utils"
 /**
  * Timeout for the initial HTTP connection + headers (not the body/stream).
  * Copilot's slow models (e.g. claude-opus) can take up to ~60s to start
- * streaming, so we give 120s for the connection phase.
+ * streaming, so we give 60s for the connection phase.
  */
-const FETCH_TIMEOUT_MS = 120_000
+const FETCH_TIMEOUT_MS = 60_000
 
 /**
  * Retry delays in ms.  After the first failure the connection pool is reset
@@ -140,11 +140,21 @@ async function* wrapGeneratorWithRelease(
   releaseSlot: () => void,
 ): AsyncGenerator {
   notifyStreamStart()
+  let streamError = false
   try {
     yield* gen
+  } catch (error) {
+    streamError = true
+    throw error
   } finally {
     notifyStreamEnd()
     releaseSlot()
+    // After a stream error, destroy all pooled connections so the next
+    // request from the client gets a fresh socket instantly instead of
+    // waiting ~60s on a stale one.
+    if (streamError) {
+      resetConnections()
+    }
   }
 }
 
