@@ -24,10 +24,10 @@ import { findModel, rootCause } from "~/lib/utils"
 
 /**
  * Timeout for the initial HTTP connection + headers (not the body/stream).
- * Copilot's slow models (e.g. claude-opus) can take up to ~60s to start
- * streaming, so we give 60s for the connection phase.
+ * Copilot's slow models (e.g. claude-opus with thinking) can take up to
+ * ~120s to start streaming, so we give a generous timeout for headers.
  */
-const FETCH_TIMEOUT_MS = 60_000
+const FETCH_TIMEOUT_MS = 120_000
 
 /**
  * Retry delays in ms.  After the first failure the connection pool is reset
