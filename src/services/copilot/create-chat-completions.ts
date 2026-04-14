@@ -188,12 +188,26 @@ function getThinkingBudget(
 }
 
 /**
+ * Check whether tool_choice forces tool use (not "auto" or "none").
+ * Thinking/reasoning cannot be enabled when tool_choice forces a tool.
+ */
+function isToolChoiceForced(
+  toolChoice: ChatCompletionsPayload["tool_choice"],
+): boolean {
+  if (!toolChoice) return false
+  if (toolChoice === "auto" || toolChoice === "none") return false
+  // "required" or { type: "function", ... } are forced
+  return true
+}
+
+/**
  * Inject thinking parameters into the payload based on model capabilities.
  *
  * Strategy (in priority order):
  *   1. If the client already set reasoning_effort or thinking_budget → keep as-is
- *   2. If model capabilities declare max_thinking_budget → inject thinking_budget
- *   3. Otherwise → inject reasoning_effort="high" (works on claude-*-4.6)
+ *   2. If tool_choice forces tool use → skip (API rejects the combination)
+ *   3. If model capabilities declare max_thinking_budget → inject thinking_budget
+ *   4. Otherwise → inject reasoning_effort="high" (works on claude-*-4.6)
  *
  * The fallback to reasoning_effort ensures thinking works even when the
  * /models endpoint doesn't expose thinking budget fields.
@@ -204,6 +218,11 @@ function injectThinking(
 ): ChatCompletionsPayload {
   // Client already specified thinking params — respect them
   if (payload.reasoning_effort || payload.thinking_budget) {
+    return payload
+  }
+
+  // Thinking cannot be enabled when tool_choice forces tool use
+  if (isToolChoiceForced(payload.tool_choice)) {
     return payload
   }
 

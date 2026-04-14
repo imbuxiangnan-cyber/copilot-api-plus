@@ -30,6 +30,11 @@ import { mapOpenAIStopReasonToAnthropic } from "./utils"
 export function translateToOpenAI(
   payload: AnthropicMessagesPayload,
 ): ChatCompletionsPayload {
+  const toolChoice = translateAnthropicToolChoiceToOpenAI(payload.tool_choice)
+  // Thinking cannot be enabled when tool_choice forces tool use
+  const isForced =
+    Boolean(toolChoice) && toolChoice !== "auto" && toolChoice !== "none"
+
   return {
     model: translateModelName(payload.model),
     messages: translateAnthropicMessagesToOpenAI(
@@ -43,17 +48,19 @@ export function translateToOpenAI(
     top_p: payload.top_p,
     user: payload.metadata?.user_id,
     tools: translateAnthropicToolsToOpenAI(payload.tools),
-    tool_choice: translateAnthropicToolChoiceToOpenAI(payload.tool_choice),
-    // Pass through thinking parameter as-is to Copilot
-    ...(payload.thinking && { thinking: payload.thinking }),
+    tool_choice: toolChoice,
+    // Pass through thinking parameter as-is to Copilot (only when safe)
+    ...(!isForced && payload.thinking && { thinking: payload.thinking }),
     // Convert Anthropic thinking to reasoning_effort=high for Copilot
-    ...(payload.thinking?.type === "enabled" && {
-      reasoning_effort: "high" as const,
-    }),
+    ...(!isForced
+      && payload.thinking?.type === "enabled" && {
+        reasoning_effort: "high" as const,
+      }),
     // Convert Anthropic thinking budget_tokens to Copilot thinking_budget
-    ...(payload.thinking?.budget_tokens && {
-      thinking_budget: payload.thinking.budget_tokens,
-    }),
+    ...(!isForced
+      && payload.thinking?.budget_tokens && {
+        thinking_budget: payload.thinking.budget_tokens,
+      }),
   }
 }
 
