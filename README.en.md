@@ -583,12 +583,12 @@ Each API request outputs a log line with model name, status code, and duration:
 Built-in connection timeout and smart retry for upstream API requests, minimizing Copilot request credit consumption:
 
 - **Connection timeout**: 120 seconds for the first attempt, 30 seconds for retries (headers typically arrive in 3–5s)
-- **Retry strategy**: Up to 2 retries (3 total attempts), 2-3 second delays
+- **Retry strategy**: Up to 1 retry (2 total attempts), 2-second delay. **Timeout errors are never retried** — a timeout means the request likely reached Copilot and a credit was already consumed
 - **Instant stream recovery**: On SSE stream interruption, immediately destroys the connection pool so the next request uses fresh sockets — recovery drops from ~135s to seconds
 - **Connection pool reset**: Automatically destroys all pooled connections on the first network error and creates fresh instances, preventing retries from hitting stale sockets
 - **Proxy tunnel keepalive**: Sends lightweight heartbeat requests every 45s while SSE streams are active, preventing proxy nodes from killing CONNECT tunnels due to inactivity
 - **HTTP/2 support**: Enables HTTP/2 protocol for better multiplexing performance
-- Only retries network-layer errors (timeout, TLS disconnect, connection reset, etc.); HTTP error codes (e.g. 400/500) are not retried
+- Only retries network-layer connection errors (TLS disconnect, connection reset, etc.); timeout and HTTP error codes (e.g. 400/500) are not retried
 - SSE stream interruptions gracefully send error events to the client
 
 ---

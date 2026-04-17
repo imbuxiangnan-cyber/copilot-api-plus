@@ -188,3 +188,157 @@ export function resetConnections(): void {
 
   consola.debug("Connection pool reset — stale sockets cleared")
 }
+
+// ---------------------------------------------------------------------------
+// Per-account connection isolation
+// ---------------------------------------------------------------------------
+
+/** Separate connection pools per account to prevent cross-account correlation. */
+const accountAgents = new Map<string, Agent>()
+const accountProxyAgents = new Map<string, Map<string, ProxyAgent>>()
+
+/**
+ * Get or create an isolated undici Agent for a specific account.
+ * Each account gets its own connection pool so that GitHub cannot correlate
+ * accounts by shared TCP connections or TLS sessions.
+ */
+export function getAccountDispatcher(
+  accountId: string,
+  accountProxy?: string,
+): {
+  dispatch: (
+    options: Dispatcher.DispatchOptions,
+    handler: Dispatcher.DispatchHandler,
+  ) => boolean
+} {
+  // Return a dispatcher that routes through per-account agents
+  return {
+    dispatch(
+      options: Dispatcher.DispatchOptions,
+      handler: Dispatcher.DispatchHandler,
+    ) {
+      try {
+        const origin =
+          typeof options.origin === "string" ?
+            new URL(options.origin)
+          : (options.origin as URL)
+        // Account-level proxy takes precedence over environment proxy
+        let proxyUrl: string | undefined
+        if (accountProxy) {
+          proxyUrl = accountProxy
+        } else {
+          const get = getProxyForUrl as unknown as (
+            u: string,
+          ) => string | undefined
+          const raw = get(origin.toString())
+          proxyUrl = raw && raw.length > 0 ? raw : undefined
+        }
+
+        if (!proxyUrl) {
+          // Direct connection — use per-account agent
+          let agent = accountAgents.get(accountId)
+          if (!agent) {
+            agent = new Agent(agentOptions)
+            accountAgents.set(accountId, agent)
+          }
+          return (agent as unknown as Dispatcher).dispatch(options, handler)
+        }
+
+        // Proxy connection — use per-account proxy agent
+        let proxyMap = accountProxyAgents.get(accountId)
+        if (!proxyMap) {
+          proxyMap = new Map<string, ProxyAgent>()
+          accountProxyAgents.set(accountId, proxyMap)
+        }
+        let proxyAgent = proxyMap.get(proxyUrl)
+        if (!proxyAgent) {
+          proxyAgent = new ProxyAgent({ uri: proxyUrl, ...agentOptions })
+          proxyMap.set(proxyUrl, proxyAgent)
+        }
+        return (proxyAgent as unknown as Dispatcher).dispatch(options, handler)
+      } catch {
+        // Fallback to per-account direct agent
+        let agent = accountAgents.get(accountId)
+        if (!agent) {
+          agent = new Agent(agentOptions)
+          accountAgents.set(accountId, agent)
+        }
+        return (agent as unknown as Dispatcher).dispatch(options, handler)
+      }
+    },
+  }
+}
+
+/**
+ * Reset connection pools for a specific account.
+ */
+export function resetAccountConnections(accountId: string): void {
+  const oldAgent = accountAgents.get(accountId)
+  if (oldAgent) {
+    void (oldAgent as unknown as Dispatcher).close().catch(() => {})
+    accountAgents.delete(accountId)
+  }
+  const oldProxies = accountProxyAgents.get(accountId)
+  if (oldProxies) {
+    for (const agent of oldProxies.values()) {
+      void (agent as unknown as Dispatcher).close().catch(() => {})
+    }
+    accountProxyAgents.delete(accountId)
+  }
+}
+
+/**
+ * Reset all per-account connection pools.
+ */
+export function resetAllAccountConnections(): void {
+  for (const [id] of accountAgents) {
+    resetAccountConnections(id)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Periodic connection pool recreation
+// ---------------------------------------------------------------------------
+
+let connectionRecycleTimer: ReturnType<typeof setInterval> | undefined
+
+/**
+ * Start periodic connection pool recreation for all per-account pools.
+ * Simulates "VS Code restart" behavior — stale connections are replaced
+ * with fresh ones at randomized intervals to avoid timing correlation.
+ *
+ * @param baseIntervalMs  Base interval (default 4 hours).
+ */
+export function startConnectionRecycling(
+  baseIntervalMs: number = 4 * 60 * 60 * 1000,
+): void {
+  stopConnectionRecycling()
+
+  connectionRecycleTimer = setInterval(() => {
+    // Add ±25% jitter to avoid all accounts recycling at the same time
+    const jitter = baseIntervalMs * 0.25 * (Math.random() * 2 - 1)
+    setTimeout(
+      () => {
+        resetAllAccountConnections()
+        consola.debug("Per-account connection pools recycled")
+      },
+      Math.max(0, jitter),
+    )
+  }, baseIntervalMs)
+
+  // Don't prevent Node from exiting
+  connectionRecycleTimer.unref()
+  consola.info(
+    `Connection pool recycling started (interval: ~${Math.round(baseIntervalMs / 3_600_000)}h)`,
+  )
+}
+
+/**
+ * Stop periodic connection pool recreation.
+ */
+export function stopConnectionRecycling(): void {
+  if (connectionRecycleTimer) {
+    clearInterval(connectionRecycleTimer)
+    connectionRecycleTimer = undefined
+  }
+}

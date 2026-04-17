@@ -1,9 +1,10 @@
 import consola from "consola"
-import { randomUUID } from "node:crypto"
+import { randomBytes, randomUUID } from "node:crypto"
 import fs from "node:fs/promises"
 
 import { HTTPError } from "~/lib/error"
 import { PATHS } from "~/lib/paths"
+import { startConnectionRecycling, stopConnectionRecycling } from "~/lib/proxy"
 import { rootCause } from "~/lib/utils"
 import { getCopilotToken } from "~/services/github/get-copilot-token"
 import { getCopilotUsage } from "~/services/github/get-copilot-usage"
@@ -48,6 +49,16 @@ export interface Account {
     lastCheckedAt: number
   }
 
+  // Anti-correlation
+  /** Stable per-account machine identifier – persisted to disk. */
+  machineId?: string
+  /** Runtime-only session identifier – regenerated on every startup. */
+  sessionId?: string
+  /** Timestamp of the last request sent using this account. */
+  lastRequestAt?: number
+  /** Optional per-account proxy URL (e.g. "http://proxy:8080" or "socks5://proxy:1080"). */
+  proxy?: string
+
   // Metadata
   githubLogin?: string
   addedAt: number
@@ -58,7 +69,7 @@ export interface Account {
 // ---------------------------------------------------------------------------
 
 /** Fields excluded from the JSON file (short-lived / runtime-only). */
-type PersistedAccount = Omit<Account, "copilotToken">
+type PersistedAccount = Omit<Account, "copilotToken" | "sessionId">
 
 const ACCOUNTS_PATH = PATHS.ACCOUNTS_PATH
 
@@ -88,7 +99,12 @@ export class AccountManager {
       // eslint-disable-next-line unicorn/prefer-json-parse-buffer
       const raw = await fs.readFile(ACCOUNTS_PATH, "utf8")
       const parsed = JSON.parse(raw) as Array<PersistedAccount>
-      this.accounts = parsed.map((a) => ({ ...a, copilotToken: undefined }))
+      this.accounts = parsed.map((a) => ({
+        ...a,
+        copilotToken: undefined,
+        sessionId: randomUUID(),
+        machineId: a.machineId || randomBytes(32).toString("hex"),
+      }))
       consola.info(`Loaded ${this.accounts.length} account(s) from disk`)
     } catch (err: unknown) {
       if ((err as NodeJS.ErrnoException).code === "ENOENT") {
@@ -163,6 +179,8 @@ export class AccountManager {
       status: "active",
       consecutiveFailures: 0,
       githubLogin: user.login,
+      machineId: randomBytes(32).toString("hex"),
+      sessionId: randomUUID(),
       addedAt: Date.now(),
     }
 
@@ -430,9 +448,13 @@ export class AccountManager {
     consola.info(
       `Background refresh started (tokens: ${tokenIntervalMs / 60_000}m, usage: ${usageIntervalMs / 60_000}m)`,
     )
+
+    // Start periodic connection pool recycling (~4h with jitter)
+    startConnectionRecycling()
   }
 
   stopBackgroundRefresh(): void {
+    stopConnectionRecycling()
     if (this.refreshInterval) {
       clearInterval(this.refreshInterval)
       this.refreshInterval = undefined
@@ -502,6 +524,8 @@ export class AccountManager {
         accountType,
         status: "active",
         consecutiveFailures: 0,
+        machineId: randomBytes(32).toString("hex"),
+        sessionId: randomUUID(),
         addedAt: Date.now(),
       }
 

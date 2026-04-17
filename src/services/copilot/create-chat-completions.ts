@@ -10,8 +10,10 @@ import {
 import { HTTPError } from "~/lib/error"
 import { modelRouter } from "~/lib/model-router"
 import {
+  getAccountDispatcher,
   notifyStreamEnd,
   notifyStreamStart,
+  resetAccountConnections,
   resetConnections,
 } from "~/lib/proxy"
 import { state } from "~/lib/state"
@@ -31,12 +33,14 @@ const FETCH_TIMEOUT_MS = 120_000
 
 /**
  * Retry delays in ms.  After the first failure the connection pool is reset
- * (see `resetConnections`), so retries use fresh sockets.  We allow up to
- * 2 retries because SSE streams through HTTP proxies are frequently
- * interrupted during long model thinking phases (~60 s idle timeout on
- * many proxy nodes).  Keeping the delay short avoids wasting wall-clock time.
+ * (see `resetConnections`), so retries use fresh sockets.
+ *
+ * We only allow 1 retry (2 total attempts) to minimize credit waste.
+ * Timeout errors are NOT retried at all — they indicate the request likely
+ * reached Copilot (consuming a credit) and the upstream is slow or the
+ * proxy killed the connection mid-flight.
  */
-const RETRY_DELAYS = [2_000, 3_000]
+const RETRY_DELAYS = [2_000]
 
 /**
  * Timeout for retry attempts (waiting for response headers only).
@@ -50,6 +54,20 @@ const RETRY_DELAYS = [2_000, 3_000]
  */
 const RETRY_TIMEOUT_MS = 30_000
 
+// ---------------------------------------------------------------------------
+// Anti-correlation: jitter & frequency limiting
+// ---------------------------------------------------------------------------
+
+/** Minimum interval (ms) between requests on the same account. */
+const MIN_SAME_ACCOUNT_INTERVAL_MS = 1_000
+
+/** Random jitter range (ms) added when switching between accounts. */
+const ACCOUNT_SWITCH_JITTER_MIN_MS = 1_000
+const ACCOUNT_SWITCH_JITTER_MAX_MS = 5_000
+
+/** Track the last-used account ID to detect account switches. */
+let lastUsedAccountId: string | undefined
+
 /**
  * Wrapper around `fetch()` that aborts if the server doesn't respond within
  * `timeoutMs`.  The timeout only covers the period until the response headers
@@ -59,16 +77,29 @@ const RETRY_TIMEOUT_MS = 30_000
 async function fetchWithTimeout(
   url: string,
   init: RequestInit,
-  timeoutMs: number = FETCH_TIMEOUT_MS,
+  {
+    timeoutMs = FETCH_TIMEOUT_MS,
+    accountId,
+    accountProxy,
+  }: {
+    timeoutMs?: number
+    accountId?: string
+    accountProxy?: string
+  } = {},
 ): Promise<Response> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
 
   try {
-    const response = await fetch(url, {
+    // Use per-account connection pool when in multi-account mode
+    const fetchOptions: RequestInit & { dispatcher?: unknown } = {
       ...init,
       signal: controller.signal,
-    })
+    }
+    if (accountId) {
+      fetchOptions.dispatcher = getAccountDispatcher(accountId, accountProxy)
+    }
+    const response = await fetch(url, fetchOptions)
     return response
   } catch (error: unknown) {
     if (error instanceof DOMException && error.name === "AbortError") {
@@ -89,6 +120,10 @@ async function fetchWithTimeout(
 async function fetchWithRetry(
   url: string,
   buildInit: () => RequestInit,
+  {
+    accountId,
+    accountProxy,
+  }: { accountId?: string; accountProxy?: string } = {},
 ): Promise<Response> {
   let lastError: unknown
   const maxAttempts = RETRY_DELAYS.length + 1 // 1 initial + retries
@@ -99,15 +134,35 @@ async function fetchWithRetry(
       // Retries: short timeout — after pool reset a fresh socket should
       // connect in seconds; if it doesn't, the network is truly down.
       const timeout = attempt === 0 ? FETCH_TIMEOUT_MS : RETRY_TIMEOUT_MS
-      return await fetchWithTimeout(url, buildInit(), timeout)
+      return await fetchWithTimeout(url, buildInit(), {
+        timeoutMs: timeout,
+        accountId,
+        accountProxy,
+      })
     } catch (error: unknown) {
       lastError = error
+
+      // Timeout errors mean the request likely reached Copilot (credit
+      // already consumed) or the upstream is genuinely slow.  Retrying
+      // would burn another credit for the same result — bail out now.
+      const msg = error instanceof Error ? error.message : String(error)
+      if (msg.includes("timed out")) {
+        consola.warn(
+          `Request timed out on attempt ${attempt + 1}/${maxAttempts} — not retrying (credit likely consumed):`,
+          msg,
+        )
+        break
+      }
 
       // After the first network failure, destroy all pooled connections so
       // that retries use fresh sockets instead of hitting the same stale
       // ones (which would each wait ~60 s before timing out).
       if (attempt === 0) {
-        resetConnections()
+        if (accountId) {
+          resetAccountConnections(accountId)
+        } else {
+          resetConnections()
+        }
       }
 
       if (attempt < maxAttempts - 1) {
@@ -171,6 +226,14 @@ async function* wrapGeneratorWithRelease(
 const reasoningUnsupportedModels = new Set<string>()
 
 /**
+ * Models whose reasoning_effort must be capped at a lower level.
+ * e.g. claude-opus-4.7 rejects "high" but accepts "medium".
+ * When a model returns 400 with "is not supported by model", it is added
+ * here with its maximum supported effort level.
+ */
+const reasoningEffortCap = new Map<string, "low" | "medium">()
+
+/**
  * Compute an appropriate thinking_budget from model capabilities.
  * Returns undefined if the model does not support thinking.
  */
@@ -207,7 +270,9 @@ function isToolChoiceForced(
  *   1. If the client already set reasoning_effort or thinking_budget → keep as-is
  *   2. If tool_choice forces tool use → skip (API rejects the combination)
  *   3. If model capabilities declare max_thinking_budget → inject thinking_budget
- *   4. Otherwise → inject reasoning_effort="high" (works on claude-*-4.6)
+ *   4. Otherwise → inject reasoning_effort at the highest level the model supports:
+ *      - "high" by default (maximum thinking for most models)
+ *      - Capped to "medium"/"low" if the model previously rejected "high"
  *
  * The fallback to reasoning_effort ensures thinking works even when the
  * /models endpoint doesn't expose thinking budget fields.
@@ -233,12 +298,16 @@ function injectThinking(
     return { ...payload, thinking_budget: budget }
   }
 
-  // Fallback: inject reasoning_effort="high" (auto-detected at runtime)
-  if (!reasoningUnsupportedModels.has(resolvedModel)) {
-    return { ...payload, reasoning_effort: "high" as const }
+  // Fallback: inject reasoning_effort at the highest supported level.
+  // Default is "high"; auto-downgraded at runtime if a model rejects it.
+  if (reasoningUnsupportedModels.has(resolvedModel)) {
+    return payload
   }
-
-  return payload
+  const effort = reasoningEffortCap.get(resolvedModel) ?? "high"
+  return {
+    ...payload,
+    reasoning_effort: effort as ChatCompletionsPayload["reasoning_effort"],
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -261,9 +330,12 @@ function logThinkingInjection(
     consola.debug(
       `Thinking: injected thinking_budget=${injected.thinking_budget} for "${resolvedModel}"`,
     )
-  } else if (injected.reasoning_effort === "high") {
+  } else if (
+    injected.reasoning_effort
+    && injected.reasoning_effort !== original.reasoning_effort
+  ) {
     consola.debug(
-      `Thinking: injected reasoning_effort=high for "${resolvedModel}"`,
+      `Thinking: injected reasoning_effort=${injected.reasoning_effort} for "${resolvedModel}"`,
     )
   } else if (reasoningUnsupportedModels.has(resolvedModel)) {
     consola.debug(
@@ -315,20 +387,40 @@ export const createChatCompletions = async (
     releaseSlot()
     return result
   } catch (error) {
-    // Auto-detect models that don't support reasoning_effort:
-    // On 400 "Unrecognized request argument", strip the parameter and retry.
-    const isReasoningRejected =
-      wasInjected
-      && error instanceof HTTPError
-      && error.response.status === 400
-      && error.message.includes("Unrecognized request argument")
+    if (error instanceof HTTPError && error.response.status === 400) {
+      const errMsg = error.message
 
-    if (isReasoningRejected) {
-      reasoningUnsupportedModels.add(resolvedModel)
-      consola.info(
-        `Model "${resolvedModel}" does not support reasoning_effort — disabled for future requests`,
-      )
-      return retryWithoutReasoning(routedPayload, releaseSlot)
+      // Case 1: Model doesn't support reasoning_effort at all
+      // → strip reasoning params and retry
+      if (wasInjected && errMsg.includes("Unrecognized request argument")) {
+        reasoningUnsupportedModels.add(resolvedModel)
+        consola.info(
+          `Model "${resolvedModel}" does not support reasoning_effort — disabled for future requests`,
+        )
+        return retryWithoutReasoning(routedPayload, releaseSlot)
+      }
+
+      // Case 2: Model rejects the specific reasoning_effort value
+      // (e.g. claude-opus-4.7 rejects "high", only accepts "medium")
+      // → downgrade to "medium" and retry; remember for future requests
+      if (errMsg.includes("is not supported by model")) {
+        const currentEffort = thinkingPayload.reasoning_effort
+        if (
+          currentEffort
+          && currentEffort !== "medium"
+          && currentEffort !== "low"
+        ) {
+          reasoningEffortCap.set(resolvedModel, "medium")
+          consola.info(
+            `Model "${resolvedModel}" rejected reasoning_effort="${currentEffort}" — downgrading to "medium" for future requests`,
+          )
+          const downgraded = {
+            ...routedPayload,
+            reasoning_effort: "medium" as const,
+          }
+          return retryWithDowngradedReasoning(downgraded, releaseSlot)
+        }
+      }
     }
 
     releaseSlot()
@@ -341,6 +433,27 @@ export const createChatCompletions = async (
  * Handles slot release for both streaming and non-streaming responses.
  */
 async function retryWithoutReasoning(
+  payload: ChatCompletionsPayload,
+  releaseSlot: () => void,
+) {
+  try {
+    const result = await dispatchRequest(payload)
+    if (Symbol.asyncIterator in result) {
+      return wrapGeneratorWithRelease(result, releaseSlot)
+    }
+    releaseSlot()
+    return result
+  } catch (retryError) {
+    releaseSlot()
+    throw retryError
+  }
+}
+
+/**
+ * Retry a request with a downgraded reasoning_effort after the model
+ * rejected the higher value (e.g. "high" → "medium").
+ */
+async function retryWithDowngradedReasoning(
   payload: ChatCompletionsPayload,
   releaseSlot: () => void,
 ) {
@@ -579,10 +692,40 @@ async function createWithMultiAccount(payload: ChatCompletionsPayload) {
       accountType: account.accountType,
       githubToken: account.githubToken,
       vsCodeVersion: state.vsCodeVersion,
+      machineId: account.machineId,
+      sessionId: account.sessionId,
+      proxy: account.proxy,
     }
 
     try {
-      const result = await doFetch(payload, tokenSource)
+      // --- Anti-correlation: frequency limiting ---
+      // Enforce minimum interval between requests on the same account
+      if (account.lastRequestAt) {
+        const elapsed = Date.now() - account.lastRequestAt
+        if (elapsed < MIN_SAME_ACCOUNT_INTERVAL_MS) {
+          await new Promise((r) =>
+            setTimeout(r, MIN_SAME_ACCOUNT_INTERVAL_MS - elapsed),
+          )
+        }
+      }
+
+      // --- Anti-correlation: inter-account jitter ---
+      // Add random delay when switching between accounts
+      if (lastUsedAccountId && lastUsedAccountId !== account.id) {
+        const jitter =
+          ACCOUNT_SWITCH_JITTER_MIN_MS
+          + Math.random()
+            * (ACCOUNT_SWITCH_JITTER_MAX_MS - ACCOUNT_SWITCH_JITTER_MIN_MS)
+        consola.debug(
+          `Account switch jitter: ${Math.round(jitter)}ms (${lastUsedAccountId.slice(0, 8)} → ${account.id.slice(0, 8)})`,
+        )
+        await new Promise((r) => setTimeout(r, jitter))
+      }
+      // eslint-disable-next-line require-atomic-updates
+      lastUsedAccountId = account.id
+
+      const result = await doFetch(payload, tokenSource, account.id)
+      account.lastRequestAt = Date.now()
       accountManager.markAccountSuccess(account.id)
       return result
     } catch (error) {
@@ -631,6 +774,7 @@ async function createWithMultiAccount(payload: ChatCompletionsPayload) {
 async function doFetch(
   payload: ChatCompletionsPayload,
   source: TokenSource,
+  accountId?: string,
 ): Promise<AsyncGenerator | ChatCompletionResponse> {
   const enableVision = payload.messages.some(
     (x) =>
@@ -662,11 +806,15 @@ async function doFetch(
   const bodyString = JSON.stringify(body)
 
   // Fetch with timeout + exponential back-off retries
-  const response = await fetchWithRetry(url, () => ({
-    method: "POST",
-    headers: buildHeaders(),
-    body: bodyString,
-  }))
+  const response = await fetchWithRetry(
+    url,
+    () => ({
+      method: "POST",
+      headers: buildHeaders(),
+      body: bodyString,
+    }),
+    { accountId, accountProxy: source.proxy },
+  )
 
   if (!response.ok) {
     const errorBody = await response.text()
@@ -806,7 +954,7 @@ export interface ChatCompletionsPayload {
   user?: string | null
 
   // OpenAI reasoning_effort parameter — triggers Copilot thinking mode
-  reasoning_effort?: "low" | "medium" | "high" | null
+  reasoning_effort?: "low" | "medium" | "high" | "max" | null
 
   // Copilot thinking budget — number of tokens allocated for thinking
   thinking_budget?: number | null

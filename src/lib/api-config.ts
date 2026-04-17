@@ -24,6 +24,9 @@ export interface TokenSource {
   accountType: string
   githubToken?: string
   vsCodeVersion?: string
+  machineId?: string
+  sessionId?: string
+  proxy?: string
 }
 
 // Re-export constants used by other modules for building headers manually
@@ -55,6 +58,9 @@ export const copilotHeaders = (
     "x-github-api-version": API_VERSION,
     "x-request-id": randomUUID(),
     "x-vscode-user-agent-library-version": "electron-fetch",
+    // Anti-correlation: per-account device identifiers
+    ...(source.machineId && { "vscode-machineid": source.machineId }),
+    ...(source.sessionId && { "vscode-sessionid": source.sessionId }),
   }
 
   if (vision) headers["copilot-vision-request"] = "true"

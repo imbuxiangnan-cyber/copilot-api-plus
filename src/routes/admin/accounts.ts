@@ -61,6 +61,7 @@ accountRoutes.post("/", async (c) => {
       githubToken: string
       label: string
       accountType?: string
+      proxy?: string
     }>()
 
     if (!body.githubToken || !body.label) {
@@ -72,6 +73,12 @@ accountRoutes.post("/", async (c) => {
       body.label,
       body.accountType,
     )
+
+    // Set optional per-account proxy for IP isolation
+    if (body.proxy) {
+      account.proxy = body.proxy
+      await accountManager.saveAccounts()
+    }
 
     return c.json({ account: sanitiseAccount(account) }, 201)
   } catch (error) {

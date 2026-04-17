@@ -49,12 +49,14 @@ export function translateToOpenAI(
     user: payload.metadata?.user_id,
     tools: translateAnthropicToolsToOpenAI(payload.tools),
     tool_choice: toolChoice,
-    // Convert Anthropic thinking (enabled/adaptive) to reasoning_effort=high for Copilot
+    // Convert Anthropic thinking to Copilot thinking parameters.
+    // Always request maximum thinking: reasoning_effort="high".
+    // If a model rejects "high" (e.g. claude-opus-4.7 only accepts "medium"),
+    // the downstream error handler in createChatCompletions will auto-downgrade.
     ...(!isForced
       && payload.thinking && {
         reasoning_effort: "high" as const,
       }),
-    // Convert Anthropic thinking budget_tokens to Copilot thinking_budget
     ...(!isForced
       && payload.thinking?.budget_tokens && {
         thinking_budget: payload.thinking.budget_tokens,
