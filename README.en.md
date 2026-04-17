@@ -47,7 +47,7 @@ English | [简体中文](README.md)
 | 👥 **Multi-Account** | Multiple GitHub accounts with automatic failover on quota exhaustion/rate limiting/bans |
 | 🔀 **Model Routing** | Flexible model name mapping and per-model concurrency control |
 | 📱 **Visual Management** | Web dashboard for account management, model config, and runtime stats |
-| 🛡️ **Network Resilience** | 120s timeout + smart retry + instant stream recovery + proxy tunnel keepalive (45s heartbeat) |
+| 🛡️ **Network Resilience** | 120s timeout + instant stream recovery + proxy tunnel keepalive (30s heartbeat, per-account pools) |
 | ✂️ **Context Passthrough** | Full context passthrough to upstream API; clients (e.g. Claude Code) manage compression |
 | 🔍 **Smart Model Matching** | Handles model name format differences (date suffixes, dash/dot versions, etc.) |
 | 🧠 **Thinking Chain** | Automatically enables deep thinking for supported models, improving code quality |
@@ -641,15 +641,12 @@ Each API request outputs a log line with model name, status code, and duration:
 
 ### Network Resilience
 
-Built-in connection timeout and smart retry for upstream API requests, minimizing Copilot request credit consumption:
+Built-in connection timeout and proxy tunnel keepalive for stable SSE streaming:
 
-- **Connection timeout**: 120 seconds for the first attempt, 30 seconds for retries (headers typically arrive in 3–5s)
-- **Retry strategy**: Up to 1 retry (2 total attempts), 2-second delay. **Timeout errors are never retried** — a timeout means the request likely reached Copilot and a credit was already consumed
-- **Instant stream recovery**: On SSE stream interruption, immediately destroys the connection pool so the next request uses fresh sockets — recovery drops from ~135s to seconds
-- **Connection pool reset**: Automatically destroys all pooled connections on the first network error and creates fresh instances, preventing retries from hitting stale sockets
-- **Proxy tunnel keepalive**: Sends lightweight heartbeat requests every 45s while SSE streams are active, preventing proxy nodes from killing CONNECT tunnels due to inactivity
-- **HTTP/2 support**: Enables HTTP/2 protocol for better multiplexing performance
-- Only retries network-layer connection errors (TLS disconnect, connection reset, etc.); timeout and HTTP error codes (e.g. 400/500) are not retried
+- **Connection timeout**: 120 seconds for response headers (thinking models may take 60–120s before streaming starts)
+- **No network-layer retries**: Requests consume a Copilot credit upon reaching the server — retrying wastes credits. The caller (e.g. Claude Code) handles retry at the application level
+- **Instant stream recovery**: On SSE stream interruption, immediately destroys the connection pool so the next request uses fresh connections (recovery time drops from ~135s to seconds)
+- **Proxy tunnel keepalive**: Sends heartbeat requests every 30s through **each account's own connection pool** while SSE streams are active, preventing proxy nodes from killing CONNECT tunnels due to inactivity (each account is pinged independently in multi-account mode)
 - SSE stream interruptions gracefully send error events to the client
 
 ---
