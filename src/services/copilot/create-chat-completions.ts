@@ -367,7 +367,7 @@ export const createChatCompletions = async (
           || errMsg.includes("invalid_reasoning_effort"))
       ) {
         reasoningUnsupportedModels.add(resolvedModel)
-        consola.info(
+        consola.debug(
           `Model "${resolvedModel}" does not support reasoning_effort — disabled for future requests`,
         )
         return retryWithModifiedPayload(routedPayload, releaseSlot)
@@ -384,7 +384,7 @@ export const createChatCompletions = async (
           && currentEffort !== "low"
         ) {
           reasoningEffortCap.set(resolvedModel, "medium")
-          consola.info(
+          consola.debug(
             `Model "${resolvedModel}" rejected reasoning_effort="${currentEffort}" — downgrading to "medium" for future requests`,
           )
           const downgraded = {
@@ -638,7 +638,7 @@ async function createWithMultiAccount(payload: ChatCompletionsPayload) {
 
     if (!account.copilotToken) {
       // Token may be missing after restart — try to refresh before giving up
-      consola.info(
+      consola.debug(
         `Account ${account.label} has no copilot token, refreshing...`,
       )
       await accountManager.refreshAccountToken(account)

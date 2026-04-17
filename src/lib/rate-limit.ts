@@ -54,7 +54,7 @@ export async function checkRateLimit(state: State) {
     await sleep(waitTimeMs)
     // eslint-disable-next-line require-atomic-updates -- serialized by rateLimitLock
     state.lastRequestTimestamp = Date.now()
-    consola.info("Rate limit wait completed, proceeding with request")
+    consola.debug("Rate limit wait completed, proceeding with request")
   } finally {
     resolve()
   }

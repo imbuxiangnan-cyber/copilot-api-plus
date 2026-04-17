@@ -111,7 +111,7 @@ function startKeepalive(): void {
   }, KEEPALIVE_INTERVAL_MS)
   // Don't prevent Node from exiting because of this timer.
   keepaliveTimer.unref()
-  consola.info(
+  consola.debug(
     "Proxy keepalive started (20s interval, targeting active stream origins)",
   )
 }
@@ -185,7 +185,7 @@ export function initProxyFromEnv(): void {
     const httpsProxy = process.env.HTTPS_PROXY || process.env.https_proxy
     proxyActive = Boolean(httpProxy || httpsProxy)
     if (proxyActive) {
-      consola.info("Bun runtime: proxy detected from environment variables")
+      consola.debug("Bun runtime: proxy detected from environment variables")
     }
     return
   }

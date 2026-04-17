@@ -101,7 +101,7 @@ async function consumeStreamWithHeartbeat(
     while (true) {
       // Check if client disconnected
       if (abortSignal?.aborted) {
-        consola.info("Client disconnected, stopping SSE consumption")
+        consola.debug("Client disconnected, stopping SSE consumption")
         break
       }
 
@@ -123,7 +123,7 @@ async function consumeStreamWithHeartbeat(
 
         // Anthropic-protocol ping — keeps downstream connection alive
         await stream.writeSSE({ event: "ping", data: '{"type":"ping"}' })
-        consola.info(
+        consola.debug(
           `SSE heartbeat ping sent (silent ${Math.round(silenceMs / 1000)}s)`,
         )
         continue
@@ -211,7 +211,7 @@ export async function handleCompletion(c: Context) {
   const upstreamTimeoutMs =
     proxied ? UPSTREAM_TIMEOUT_PROXIED_MS : UPSTREAM_TIMEOUT_DIRECT_MS
 
-  consola.info(
+  consola.debug(
     `SSE stream config: proxied=${proxied}, heartbeat=${heartbeatMs / 1000}s, timeout=${upstreamTimeoutMs / 1000}s`,
   )
 

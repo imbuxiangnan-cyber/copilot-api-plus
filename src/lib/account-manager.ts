@@ -495,7 +495,7 @@ export class AccountManager {
     // Check if this token is already registered
     const existing = this.accounts.find((a) => a.githubToken === githubToken)
     if (existing) {
-      consola.info("Legacy account already migrated, skipping")
+      consola.debug("Legacy account already migrated, skipping")
       return existing
     }
 

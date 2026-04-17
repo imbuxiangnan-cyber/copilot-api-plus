@@ -281,7 +281,7 @@ export async function runServer(options: RunServerOptions): Promise<void> {
   // Initialize model routing from config
   await initModelRouting()
 
-  consola.info(
+  consola.debug(
     `Available models: \n${state.models?.data.map((model) => `- ${model.id}`).join("\n")}`,
   )
 

@@ -165,7 +165,11 @@ export class ModelRouter {
    */
   updateMapping(mapping: Record<string, string>): void {
     this.config.mapping = { ...mapping }
-    consola.info("Model mapping updated:", Object.keys(mapping).length, "rules")
+    consola.debug(
+      "Model mapping updated:",
+      Object.keys(mapping).length,
+      "rules",
+    )
   }
 
   /**
@@ -173,7 +177,7 @@ export class ModelRouter {
    */
   updateConcurrency(concurrency: Record<string, number>): void {
     this.config.concurrency = { ...concurrency }
-    consola.info(
+    consola.debug(
       "Model concurrency updated:",
       Object.keys(concurrency).length,
       "rules",
