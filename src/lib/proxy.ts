@@ -210,8 +210,26 @@ export function initProxyFromEnv(): void {
     }
 
     setGlobalDispatcher(dispatcher as unknown as Dispatcher)
-    proxyActive = true
-    consola.debug("HTTP proxy configured from environment (per-URL)")
+    // Only activate proxy keepalive if a proxy is actually configured
+    // for at least one relevant URL.
+    const get = getProxyForUrl as unknown as (u: string) => string | undefined
+    const testUrls = [
+      "https://api.individual.githubcopilot.com/",
+      "https://api.business.githubcopilot.com/",
+      "https://api.github.com/",
+    ]
+    proxyActive = testUrls.some((u) => {
+      const raw = get(u)
+      return raw !== undefined && raw.length > 0
+    })
+
+    if (proxyActive) {
+      consola.debug("HTTP proxy configured from environment (per-URL)")
+    } else {
+      consola.debug(
+        "HTTP proxy dispatcher installed but no proxy URLs detected",
+      )
+    }
   } catch (err) {
     consola.debug("Proxy setup skipped:", err)
   }

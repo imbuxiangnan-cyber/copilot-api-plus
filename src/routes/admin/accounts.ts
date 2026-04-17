@@ -76,6 +76,19 @@ accountRoutes.post("/", async (c) => {
 
     // Set optional per-account proxy for IP isolation
     if (body.proxy) {
+      try {
+        const proxyUrl = new URL(body.proxy)
+        if (!["http:", "https:", "socks5:"].includes(proxyUrl.protocol)) {
+          return c.json(
+            {
+              error: "proxy must use http://, https://, or socks5:// protocol",
+            },
+            400,
+          )
+        }
+      } catch {
+        return c.json({ error: "proxy must be a valid URL" }, 400)
+      }
       account.proxy = body.proxy
       await accountManager.saveAccounts()
     }
@@ -143,6 +156,48 @@ accountRoutes.put("/:id/status", async (c) => {
     consola.warn(`Error updating account status: ${rootCause(error)}`)
     consola.debug("Error updating account status:", error)
     return c.json({ error: "Failed to update account status" }, 500)
+  }
+})
+
+// ---------------------------------------------------------------------------
+// PUT /:id/proxy — Update account proxy
+// ---------------------------------------------------------------------------
+
+accountRoutes.put("/:id/proxy", async (c) => {
+  try {
+    const id = c.req.param("id")
+    const body = await c.req.json<{ proxy: string | null }>()
+
+    const account = accountManager.getAccountById(id)
+    if (!account) {
+      return c.json({ error: "Account not found" }, 404)
+    }
+
+    if (body.proxy) {
+      try {
+        const proxyUrl = new URL(body.proxy)
+        if (!["http:", "https:", "socks5:"].includes(proxyUrl.protocol)) {
+          return c.json(
+            {
+              error: "proxy must use http://, https://, or socks5:// protocol",
+            },
+            400,
+          )
+        }
+      } catch {
+        return c.json({ error: "proxy must be a valid URL" }, 400)
+      }
+      account.proxy = body.proxy
+    } else {
+      account.proxy = undefined
+    }
+
+    await accountManager.saveAccounts()
+    return c.json({ account: sanitiseAccount(account) })
+  } catch (error) {
+    consola.warn(`Error updating account proxy: ${rootCause(error)}`)
+    consola.debug("Error updating account proxy:", error)
+    return c.json({ error: "Failed to update account proxy" }, 500)
   }
 })
 

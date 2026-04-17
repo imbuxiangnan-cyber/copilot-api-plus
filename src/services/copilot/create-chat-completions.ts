@@ -31,16 +31,6 @@ import { findModel, rootCause } from "~/lib/utils"
  */
 const FETCH_TIMEOUT_MS = 120_000
 
-/**
- * Retry delays in ms.  Empty = no retries.
- *
- * IMPORTANT: Retries are DISABLED because each attempt to Copilot consumes
- * a credit, and the caller (e.g. Claude Code) already retries at the
- * application level.  Our retry + Claude Code's retry created a request
- * cascade that caused account bans (367 requests in 52 minutes).
- */
-const RETRY_DELAYS: Array<number> = []
-
 // ---------------------------------------------------------------------------
 // Anti-correlation: jitter & frequency limiting
 // ---------------------------------------------------------------------------
@@ -99,10 +89,15 @@ async function fetchWithTimeout(
 }
 
 /**
- * Retry loop for fetch: retries on network errors with exponential back-off.
+ * Single-attempt fetch with connection pool reset on network errors.
  *
- * Returns `{ response }` on success.
- * Throws the last network error if all retries are exhausted.
+ * Retries are intentionally disabled — each Copilot request consumes a
+ * credit, and the caller (e.g. Claude Code) already retries at the
+ * application level.  Our retry + caller retry created a request cascade
+ * that caused account bans (367 requests in 52 minutes).
+ *
+ * On network failure (NOT timeout), the pooled connections are destroyed
+ * so that the caller's next attempt gets a fresh socket instantly.
  */
 async function fetchWithRetry(
   url: string,
@@ -112,60 +107,28 @@ async function fetchWithRetry(
     accountProxy,
   }: { accountId?: string; accountProxy?: string } = {},
 ): Promise<Response> {
-  let lastError: unknown
-  const maxAttempts = RETRY_DELAYS.length + 1 // 1 initial + retries
-
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    try {
-      // First attempt: full timeout (slow models may need up to 120 s).
-      // Retries: short timeout — after pool reset a fresh socket should
-      // connect in seconds; if it doesn't, the network is truly down.
-      const timeout = FETCH_TIMEOUT_MS
-      return await fetchWithTimeout(url, buildInit(), {
-        timeoutMs: timeout,
-        accountId,
-        accountProxy,
-      })
-    } catch (error: unknown) {
-      lastError = error
-
-      // Timeout errors mean the request likely reached Copilot (credit
-      // already consumed) or the upstream is genuinely slow.  Retrying
-      // would burn another credit for the same result — bail out now.
-      const msg = error instanceof Error ? error.message : String(error)
-      if (msg.includes("timed out")) {
-        consola.warn(
-          `Request timed out on attempt ${attempt + 1}/${maxAttempts} — not retrying (credit likely consumed):`,
-          msg,
-        )
-        break
-      }
-
-      // After the first network failure, destroy all pooled connections so
-      // that retries use fresh sockets instead of hitting the same stale
-      // ones (which would each wait ~60 s before timing out).
-      if (attempt === 0) {
-        if (accountId) {
-          resetAccountConnections(accountId)
-        } else {
-          resetConnections()
-        }
-      }
-
-      if (attempt < maxAttempts - 1) {
-        const delay = RETRY_DELAYS[attempt]
-        consola.warn(
-          `Network error on attempt ${attempt + 1}/${maxAttempts}, retrying in ${delay}ms:`,
-          error instanceof Error ? error.message : error,
-        )
-        await new Promise((r) => setTimeout(r, delay))
+  try {
+    return await fetchWithTimeout(url, buildInit(), {
+      timeoutMs: FETCH_TIMEOUT_MS,
+      accountId,
+      accountProxy,
+    })
+  } catch (error: unknown) {
+    // Timeout errors mean the request likely reached Copilot (credit
+    // already consumed) or the upstream is genuinely slow — don't reset
+    // the pool, just propagate.
+    const msg = error instanceof Error ? error.message : String(error)
+    if (!msg.includes("timed out")) {
+      // Network error: destroy pooled connections so the caller's next
+      // attempt uses fresh sockets instead of stale ones.
+      if (accountId) {
+        resetAccountConnections(accountId)
+      } else {
+        resetConnections()
       }
     }
+    throw error
   }
-
-  throw lastError instanceof Error ? lastError : (
-      new Error("Network request failed")
-    )
 }
 
 // ---------------------------------------------------------------------------
@@ -394,7 +357,7 @@ export const createChatCompletions = async (
         consola.info(
           `Model "${resolvedModel}" does not support reasoning_effort — disabled for future requests`,
         )
-        return retryWithoutReasoning(routedPayload, releaseSlot)
+        return retryWithModifiedPayload(routedPayload, releaseSlot)
       }
 
       // Case 2: Model rejects the specific reasoning_effort value
@@ -415,7 +378,7 @@ export const createChatCompletions = async (
             ...routedPayload,
             reasoning_effort: "medium" as const,
           }
-          return retryWithDowngradedReasoning(downgraded, releaseSlot)
+          return retryWithModifiedPayload(downgraded, releaseSlot)
         }
       }
     }
@@ -426,36 +389,11 @@ export const createChatCompletions = async (
 }
 
 /**
- * Retry a request without reasoning_effort after the model rejected it.
+ * Retry a request after modifying the payload (e.g. stripping or
+ * downgrading reasoning_effort).
  * Handles slot release for both streaming and non-streaming responses.
  */
-async function retryWithoutReasoning(
-  payload: ChatCompletionsPayload,
-  releaseSlot: () => void,
-) {
-  try {
-    const result = await dispatchRequest(payload)
-    if (Symbol.asyncIterator in result) {
-      const accountInfo = (
-        result as AsyncGenerator & {
-          __accountInfo?: { accountId: string; accountProxy?: string }
-        }
-      ).__accountInfo
-      return wrapGeneratorWithRelease(result, releaseSlot, accountInfo)
-    }
-    releaseSlot()
-    return result
-  } catch (retryError) {
-    releaseSlot()
-    throw retryError
-  }
-}
-
-/**
- * Retry a request with a downgraded reasoning_effort after the model
- * rejected the higher value (e.g. "high" → "medium").
- */
-async function retryWithDowngradedReasoning(
+async function retryWithModifiedPayload(
   payload: ChatCompletionsPayload,
   releaseSlot: () => void,
 ) {
@@ -494,9 +432,9 @@ async function createWithSingleAccount(payload: ChatCompletionsPayload) {
   if (!state.copilotToken) throw new Error("Copilot token not found")
 
   const enableVision = payload.messages.some(
-    (x) =>
-      typeof x.content !== "string"
-      && x.content?.some((x) => x.type === "image_url"),
+    (msg) =>
+      typeof msg.content !== "string"
+      && msg.content?.some((part) => part.type === "image_url"),
   )
 
   // Agent/user check for X-Initiator header
@@ -593,7 +531,7 @@ async function tryRefreshAndRetry(
     await accountManager.refreshAccountToken(account)
     // Update tokenSource with the refreshed token
     tokenSource.copilotToken = account.copilotToken
-    const result = await doFetch(payload, tokenSource)
+    const result = await doFetch(payload, tokenSource, account.id)
     accountManager.markAccountSuccess(account.id)
     return result
   } catch {
@@ -795,9 +733,9 @@ async function doFetch(
   accountId?: string,
 ): Promise<AsyncGenerator | ChatCompletionResponse> {
   const enableVision = payload.messages.some(
-    (x) =>
-      typeof x.content !== "string"
-      && x.content?.some((x) => x.type === "image_url"),
+    (msg) =>
+      typeof msg.content !== "string"
+      && msg.content?.some((part) => part.type === "image_url"),
   )
 
   const isAgentCall = payload.messages.some((msg) =>

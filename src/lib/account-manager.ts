@@ -123,7 +123,7 @@ export class AccountManager {
    */
   async saveAccounts(): Promise<void> {
     const data: Array<PersistedAccount> = this.accounts.map(
-      ({ copilotToken: _dropped, ...rest }) => rest,
+      ({ copilotToken: _dropped, sessionId: _session, ...rest }) => rest,
     )
     try {
       await fs.writeFile(ACCOUNTS_PATH, JSON.stringify(data, null, 2), {
