@@ -66,6 +66,14 @@ const KEEPALIVE_URL = "https://api.individual.githubcopilot.com/"
 interface ActiveStreamInfo {
   count: number
   accountProxy?: string
+  apiBaseUrl?: string
+}
+
+/** Account info attached to streaming responses for keepalive targeting. */
+export interface StreamAccountInfo {
+  accountId?: string
+  accountProxy?: string
+  apiBaseUrl?: string
 }
 
 /** Track active streams: global (key = "__global__") and per-account. */
@@ -77,25 +85,35 @@ function startKeepalive(): void {
     // Ping each connection pool that has active streams
     for (const [key, info] of activeStreams) {
       if (info.count <= 0) continue
+      // Use the tracked API base URL so the keepalive request goes through
+      // the SAME origin (and thus the same HTTP/2 session / CONNECT tunnel)
+      // as the active SSE stream.
+      const pingUrl = info.apiBaseUrl || KEEPALIVE_URL
 
       if (key === "__global__") {
         // Global connection — use standard fetch (goes through global dispatcher)
-        fetch(KEEPALIVE_URL, { method: "HEAD" }).catch(() => {})
-        consola.debug("Proxy keepalive ping sent (global)")
+        fetch(pingUrl, { method: "HEAD" }).catch(() => {})
+        consola.debug(
+          `Proxy keepalive ping sent (global → ${new URL(pingUrl).hostname})`,
+        )
       } else {
         // Per-account connection — ping through the account's own dispatcher
         const dispatcher = getAccountDispatcher(key, info.accountProxy)
-        fetch(KEEPALIVE_URL, {
+        fetch(pingUrl, {
           method: "HEAD",
           dispatcher: dispatcher as unknown as undefined,
         } as RequestInit).catch(() => {})
-        consola.debug(`Proxy keepalive ping sent (account ${key.slice(0, 8)})`)
+        consola.debug(
+          `Proxy keepalive ping sent (account ${key.slice(0, 8)} → ${new URL(pingUrl).hostname})`,
+        )
       }
     }
   }, KEEPALIVE_INTERVAL_MS)
   // Don't prevent Node from exiting because of this timer.
   keepaliveTimer.unref()
-  consola.info("Proxy keepalive started (20s interval)")
+  consola.info(
+    "Proxy keepalive started (20s interval, targeting active stream origins)",
+  )
 }
 
 function stopKeepalive(): void {
@@ -121,20 +139,20 @@ function getTotalStreamCount(): number {
  * @param accountInfo  If provided, keepalive pings go through this
  *                     account's own connection pool (not the global one).
  */
-export function notifyStreamStart(accountInfo?: {
-  accountId: string
-  accountProxy?: string
-}): void {
+export function notifyStreamStart(accountInfo?: StreamAccountInfo): void {
   if (!proxyActive) return
 
   const key = accountInfo?.accountId ?? "__global__"
   const existing = activeStreams.get(key)
   if (existing) {
     existing.count++
+    // Update apiBaseUrl if provided (may differ across streams)
+    if (accountInfo?.apiBaseUrl) existing.apiBaseUrl = accountInfo.apiBaseUrl
   } else {
     activeStreams.set(key, {
       count: 1,
       accountProxy: accountInfo?.accountProxy,
+      apiBaseUrl: accountInfo?.apiBaseUrl,
     })
   }
 
@@ -145,10 +163,7 @@ export function notifyStreamStart(accountInfo?: {
  * Call when an SSE stream ends (success or error).  Stops the keepalive
  * once no streams are active.
  */
-export function notifyStreamEnd(accountInfo?: {
-  accountId: string
-  accountProxy?: string
-}): void {
+export function notifyStreamEnd(accountInfo?: StreamAccountInfo): void {
   if (!proxyActive) return
 
   const key = accountInfo?.accountId ?? "__global__"

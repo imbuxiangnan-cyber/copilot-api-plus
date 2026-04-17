@@ -15,6 +15,7 @@ import {
   notifyStreamStart,
   resetAccountConnections,
   resetConnections,
+  type StreamAccountInfo,
 } from "~/lib/proxy"
 import { state } from "~/lib/state"
 import { refreshCopilotToken } from "~/lib/token"
@@ -143,7 +144,7 @@ async function fetchWithRetry(
 async function* wrapGeneratorWithRelease(
   gen: AsyncGenerator,
   releaseSlot: () => void,
-  accountInfo?: { accountId: string; accountProxy?: string },
+  accountInfo?: StreamAccountInfo,
 ): AsyncGenerator {
   notifyStreamStart(accountInfo)
   let streamError = false
@@ -337,14 +338,14 @@ export const createChatCompletions = async (
     if (Symbol.asyncIterator in result) {
       const accountInfo = (
         result as AsyncGenerator & {
-          __accountInfo?: { accountId: string; accountProxy?: string }
+          __accountInfo?: StreamAccountInfo
         }
       ).__accountInfo
       const wrapped = wrapGeneratorWithRelease(result, releaseSlot, accountInfo)
       // Propagate accountInfo so handler.ts can determine proxy status
       ;(
         wrapped as AsyncGenerator & {
-          __accountInfo?: { accountId: string; accountProxy?: string }
+          __accountInfo?: StreamAccountInfo
         }
       ).__accountInfo = accountInfo
       return wrapped
@@ -414,14 +415,14 @@ async function retryWithModifiedPayload(
     if (Symbol.asyncIterator in result) {
       const accountInfo = (
         result as AsyncGenerator & {
-          __accountInfo?: { accountId: string; accountProxy?: string }
+          __accountInfo?: StreamAccountInfo
         }
       ).__accountInfo
       const wrapped = wrapGeneratorWithRelease(result, releaseSlot, accountInfo)
       // Propagate accountInfo so handler.ts can determine proxy status
       ;(
         wrapped as AsyncGenerator & {
-          __accountInfo?: { accountId: string; accountProxy?: string }
+          __accountInfo?: StreamAccountInfo
         }
       ).__accountInfo = accountInfo
       return wrapped
@@ -527,7 +528,11 @@ async function createWithSingleAccount(payload: ChatCompletionsPayload) {
   }
 
   if (payload.stream) {
-    return events(response)
+    const gen = events(response) as AsyncGenerator & {
+      __accountInfo?: StreamAccountInfo
+    }
+    gen.__accountInfo = { apiBaseUrl: copilotBaseUrl(state) }
+    return gen
   }
 
   return (await response.json()) as ChatCompletionResponse
@@ -695,11 +700,12 @@ async function createWithMultiAccount(payload: ChatCompletionsPayload) {
       if (Symbol.asyncIterator in result) {
         ;(
           result as AsyncGenerator & {
-            __accountInfo?: { accountId: string; accountProxy?: string }
+            __accountInfo?: StreamAccountInfo
           }
         ).__accountInfo = {
           accountId: account.id,
           accountProxy: account.proxy,
+          apiBaseUrl: copilotBaseUrl(tokenSource),
         }
       }
       return result

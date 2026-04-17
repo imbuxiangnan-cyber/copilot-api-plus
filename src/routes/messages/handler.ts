@@ -5,7 +5,12 @@ import consola from "consola"
 import { streamSSE } from "hono/streaming"
 
 import { awaitApproval } from "~/lib/approval"
-import { isAccountProxied, isProxyActive, resetConnections } from "~/lib/proxy"
+import {
+  isAccountProxied,
+  isProxyActive,
+  resetConnections,
+  type StreamAccountInfo,
+} from "~/lib/proxy"
 import { checkRateLimit } from "~/lib/rate-limit"
 import { state } from "~/lib/state"
 import {
@@ -84,63 +89,79 @@ async function consumeStreamWithHeartbeat(
     streamState: AnthropicStreamState
     heartbeatMs: number
     upstreamTimeoutMs: number
+    abortSignal?: AbortSignal
   },
 ): Promise<void> {
-  const { streamState, heartbeatMs, upstreamTimeoutMs } = opts
+  const { streamState, heartbeatMs, upstreamTimeoutMs, abortSignal } = opts
   const iter = response[Symbol.asyncIterator]()
   let pendingNext = iter.next()
   let lastDataAt = Date.now()
 
-  while (true) {
-    const raceResult = await Promise.race([
-      pendingNext.then((r) => ({ kind: "data" as const, result: r })),
-      heartbeatDelay(heartbeatMs),
-    ])
-
-    if (raceResult === HEARTBEAT) {
-      const silenceMs = Date.now() - lastDataAt
-      if (silenceMs >= upstreamTimeoutMs) {
-        consola.warn(
-          `Upstream silent for ${Math.round(silenceMs / 1000)}s (limit ${upstreamTimeoutMs / 1000}s), closing stream`,
-        )
-        resetConnections()
-        await sendErrorEvent(stream)
+  try {
+    while (true) {
+      // Check if client disconnected
+      if (abortSignal?.aborted) {
+        consola.info("Client disconnected, stopping SSE consumption")
         break
       }
 
-      // Anthropic-protocol ping — keeps downstream connection alive
-      await stream.writeSSE({ event: "ping", data: '{"type":"ping"}' })
-      consola.info(
-        `SSE heartbeat ping sent (silent ${Math.round(silenceMs / 1000)}s)`,
-      )
-      continue
+      const raceResult = await Promise.race([
+        pendingNext.then((r) => ({ kind: "data" as const, result: r })),
+        heartbeatDelay(heartbeatMs),
+      ])
+
+      if (raceResult === HEARTBEAT) {
+        const silenceMs = Date.now() - lastDataAt
+        if (silenceMs >= upstreamTimeoutMs) {
+          consola.warn(
+            `Upstream silent for ${Math.round(silenceMs / 1000)}s (limit ${upstreamTimeoutMs / 1000}s), closing stream`,
+          )
+          resetConnections()
+          await sendErrorEvent(stream)
+          break
+        }
+
+        // Anthropic-protocol ping — keeps downstream connection alive
+        await stream.writeSSE({ event: "ping", data: '{"type":"ping"}' })
+        consola.info(
+          `SSE heartbeat ping sent (silent ${Math.round(silenceMs / 1000)}s)`,
+        )
+        continue
+      }
+
+      // Data arrived from upstream
+      const { result: iterResult } = raceResult
+      if (iterResult.done) break
+
+      lastDataAt = Date.now()
+      // Create next promise AFTER consuming current value
+      pendingNext = iter.next()
+
+      const rawEvent = iterResult.value as { data?: string }
+      if (rawEvent.data === "[DONE]") break
+      if (!rawEvent.data) continue
+
+      let chunk: ChatCompletionChunk
+      try {
+        chunk = JSON.parse(rawEvent.data) as ChatCompletionChunk
+      } catch {
+        consola.debug("Skipping malformed SSE chunk")
+        continue
+      }
+
+      for (const event of translateChunkToAnthropicEvents(chunk, streamState)) {
+        await stream.writeSSE({
+          event: event.type,
+          data: JSON.stringify(event),
+        })
+      }
     }
-
-    // Data arrived from upstream
-    const { result: iterResult } = raceResult
-    if (iterResult.done) break
-
-    lastDataAt = Date.now()
-    // Create next promise AFTER consuming current value
-    pendingNext = iter.next()
-
-    const rawEvent = iterResult.value as { data?: string }
-    if (rawEvent.data === "[DONE]") break
-    if (!rawEvent.data) continue
-
-    let chunk: ChatCompletionChunk
+  } finally {
+    // Explicitly close the upstream generator to release resources
     try {
-      chunk = JSON.parse(rawEvent.data) as ChatCompletionChunk
+      await iter.return(undefined)
     } catch {
-      consola.debug("Skipping malformed SSE chunk")
-      continue
-    }
-
-    for (const event of translateChunkToAnthropicEvents(chunk, streamState)) {
-      await stream.writeSSE({
-        event: event.type,
-        data: JSON.stringify(event),
-      })
+      // Generator already closed or errored
     }
   }
 }
@@ -180,7 +201,7 @@ export async function handleCompletion(c: Context) {
   // heartbeat interval and upstream timeout aggressiveness.
   const accountInfo = (
     response as AsyncGenerator & {
-      __accountInfo?: { accountId: string; accountProxy?: string }
+      __accountInfo?: StreamAccountInfo
     }
   ).__accountInfo
   const proxied =
@@ -195,6 +216,12 @@ export async function handleCompletion(c: Context) {
   )
 
   return streamSSE(c, async (stream) => {
+    // Detect client disconnect via AbortController
+    const abortController = new AbortController()
+    stream.onAbort(() => {
+      abortController.abort()
+    })
+
     const streamState: AnthropicStreamState = {
       messageStartSent: false,
       contentBlockIndex: 0,
@@ -209,12 +236,16 @@ export async function handleCompletion(c: Context) {
         streamState,
         heartbeatMs,
         upstreamTimeoutMs,
+        abortSignal: abortController.signal,
       })
     } catch (error) {
-      const message = (error as Error).message || String(error)
-      consola.warn(`SSE stream interrupted: ${message}`)
-      resetConnections()
-      await sendErrorEvent(stream)
+      // Only log and send error if client is still connected
+      if (!abortController.signal.aborted) {
+        const message = (error as Error).message || String(error)
+        consola.warn(`SSE stream interrupted: ${message}`)
+        resetConnections()
+        await sendErrorEvent(stream)
+      }
     }
   })
 }
