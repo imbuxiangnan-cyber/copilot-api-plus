@@ -359,7 +359,12 @@ export const createChatCompletions = async (
 
       // Case 1: Model doesn't support reasoning_effort at all
       // → strip reasoning params and retry
-      if (wasInjected && errMsg.includes("Unrecognized request argument")) {
+      if (
+        wasInjected
+        && (errMsg.includes("Unrecognized request argument")
+          || errMsg.includes("does not support reasoning")
+          || errMsg.includes("invalid_reasoning_effort"))
+      ) {
         reasoningUnsupportedModels.add(resolvedModel)
         consola.info(
           `Model "${resolvedModel}" does not support reasoning_effort — disabled for future requests`,
