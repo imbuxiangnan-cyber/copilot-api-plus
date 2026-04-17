@@ -267,11 +267,13 @@ export function initProxyFromEnv(): void {
     })
 
     if (proxyActive) {
-      consola.info(
+      consola.debug(
         "Proxy active: undici dispatcher configured with bodyTimeout=0, allowH2=true",
       )
     } else {
-      consola.info("HTTP proxy dispatcher installed but no proxy URLs detected")
+      consola.debug(
+        "HTTP proxy dispatcher installed but no proxy URLs detected",
+      )
     }
   } catch (err) {
     consola.debug("Proxy setup skipped:", err)
@@ -447,7 +449,7 @@ export function startConnectionRecycling(
 
   // Don't prevent Node from exiting
   connectionRecycleTimer.unref()
-  consola.info(
+  consola.debug(
     `Connection pool recycling started (interval: ~${Math.round(baseIntervalMs / 3_600_000)}h)`,
   )
 }

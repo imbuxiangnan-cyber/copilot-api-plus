@@ -105,7 +105,7 @@ export class AccountManager {
         sessionId: randomUUID(),
         machineId: a.machineId || randomBytes(32).toString("hex"),
       }))
-      consola.info(`Loaded ${this.accounts.length} account(s) from disk`)
+      consola.debug(`Loaded ${this.accounts.length} account(s) from disk`)
     } catch (err: unknown) {
       if ((err as NodeJS.ErrnoException).code === "ENOENT") {
         this.accounts = []
@@ -445,7 +445,7 @@ export class AccountManager {
       void this.refreshAllUsage()
     }, usageIntervalMs)
 
-    consola.info(
+    consola.debug(
       `Background refresh started (tokens: ${tokenIntervalMs / 60_000}m, usage: ${usageIntervalMs / 60_000}m)`,
     )
 
