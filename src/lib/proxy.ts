@@ -60,7 +60,7 @@ export function isAccountProxied(accountProxy?: string): boolean {
  * (tracked per-account via `activeStreams`).
  */
 let keepaliveTimer: ReturnType<typeof setInterval> | undefined
-const KEEPALIVE_INTERVAL_MS = 30_000
+const KEEPALIVE_INTERVAL_MS = 20_000
 const KEEPALIVE_URL = "https://api.individual.githubcopilot.com/"
 
 interface ActiveStreamInfo {
@@ -162,7 +162,18 @@ export function notifyStreamEnd(accountInfo?: {
 }
 
 export function initProxyFromEnv(): void {
-  if (typeof Bun !== "undefined") return
+  if (typeof Bun !== "undefined") {
+    // Bun's native fetch automatically respects HTTP_PROXY/HTTPS_PROXY.
+    // We still need to detect proxy presence so that keepalive and heartbeat
+    // logic activates correctly.
+    const httpProxy = process.env.HTTP_PROXY || process.env.http_proxy
+    const httpsProxy = process.env.HTTPS_PROXY || process.env.https_proxy
+    proxyActive = Boolean(httpProxy || httpsProxy)
+    if (proxyActive) {
+      consola.debug("Bun runtime: proxy detected from environment variables")
+    }
+    return
+  }
 
   try {
     direct = new Agent(agentOptions)

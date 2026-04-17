@@ -32,7 +32,7 @@ import {
 // ---------------------------------------------------------------------------
 
 /** Heartbeat interval — keeps the downstream connection alive. */
-const HEARTBEAT_PROXIED_MS = 15_000
+const HEARTBEAT_PROXIED_MS = 10_000
 const HEARTBEAT_DIRECT_MS = 30_000
 
 /**
