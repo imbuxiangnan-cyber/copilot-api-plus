@@ -252,11 +252,11 @@ export function initProxyFromEnv(): void {
     })
 
     if (proxyActive) {
-      consola.debug("HTTP proxy configured from environment (per-URL)")
-    } else {
-      consola.debug(
-        "HTTP proxy dispatcher installed but no proxy URLs detected",
+      consola.info(
+        "Proxy active: undici dispatcher configured with bodyTimeout=0, allowH2=true",
       )
+    } else {
+      consola.info("HTTP proxy dispatcher installed but no proxy URLs detected")
     }
   } catch (err) {
     consola.debug("Proxy setup skipped:", err)
