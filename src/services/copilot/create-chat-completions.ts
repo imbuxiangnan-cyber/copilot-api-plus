@@ -340,7 +340,14 @@ export const createChatCompletions = async (
           __accountInfo?: { accountId: string; accountProxy?: string }
         }
       ).__accountInfo
-      return wrapGeneratorWithRelease(result, releaseSlot, accountInfo)
+      const wrapped = wrapGeneratorWithRelease(result, releaseSlot, accountInfo)
+      // Propagate accountInfo so handler.ts can determine proxy status
+      ;(
+        wrapped as AsyncGenerator & {
+          __accountInfo?: { accountId: string; accountProxy?: string }
+        }
+      ).__accountInfo = accountInfo
+      return wrapped
     }
 
     // Non-streaming: release immediately
@@ -405,7 +412,14 @@ async function retryWithModifiedPayload(
           __accountInfo?: { accountId: string; accountProxy?: string }
         }
       ).__accountInfo
-      return wrapGeneratorWithRelease(result, releaseSlot, accountInfo)
+      const wrapped = wrapGeneratorWithRelease(result, releaseSlot, accountInfo)
+      // Propagate accountInfo so handler.ts can determine proxy status
+      ;(
+        wrapped as AsyncGenerator & {
+          __accountInfo?: { accountId: string; accountProxy?: string }
+        }
+      ).__accountInfo = accountInfo
+      return wrapped
     }
     releaseSlot()
     return result

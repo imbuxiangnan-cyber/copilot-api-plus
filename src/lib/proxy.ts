@@ -13,16 +13,33 @@ const agentOptions = {
   // nodes see it as "data flowing" and won't kill the connection for
   // being idle.
   allowH2: true,
+  // Disable body timeout for SSE: undici's default 300s body timeout kills
+  // long-running SSE streams during model thinking phases with no data.
+  bodyTimeout: 0,
   connect: {
     timeout: 15_000,
     keepAlive: true,
-    keepAliveInitialDelay: 15_000,
+    keepAliveInitialDelay: 10_000,
   },
 }
 let direct: Agent | undefined
 let proxies = new Map<string, ProxyAgent>()
 /** Whether a proxy is actually configured and in use. */
 let proxyActive = false
+
+/** Whether an environment-level proxy is configured for Copilot URLs. */
+export function isProxyActive(): boolean {
+  return proxyActive
+}
+
+/**
+ * Check whether a specific request will be proxied.
+ * Account-level proxy takes precedence; falls back to environment proxy.
+ */
+export function isAccountProxied(accountProxy?: string): boolean {
+  if (accountProxy) return true
+  return proxyActive
+}
 
 // ---------------------------------------------------------------------------
 // Proxy-tunnel keepalive: periodic lightweight requests through the proxy
