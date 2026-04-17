@@ -32,27 +32,14 @@ import { findModel, rootCause } from "~/lib/utils"
 const FETCH_TIMEOUT_MS = 120_000
 
 /**
- * Retry delays in ms.  After the first failure the connection pool is reset
- * (see `resetConnections`), so retries use fresh sockets.
+ * Retry delays in ms.  Empty = no retries.
  *
- * We only allow 1 retry (2 total attempts) to minimize credit waste.
- * Timeout errors are NOT retried at all — they indicate the request likely
- * reached Copilot (consuming a credit) and the upstream is slow or the
- * proxy killed the connection mid-flight.
+ * IMPORTANT: Retries are DISABLED because each attempt to Copilot consumes
+ * a credit, and the caller (e.g. Claude Code) already retries at the
+ * application level.  Our retry + Claude Code's retry created a request
+ * cascade that caused account bans (367 requests in 52 minutes).
  */
-const RETRY_DELAYS = [2_000]
-
-/**
- * Timeout for retry attempts (waiting for response headers only).
- * Response headers typically arrive within 3–5 s, even on slow models.
- * 30 s is generous enough for a fresh socket to connect and receive
- * headers, while still failing fast when the upstream is truly down.
- *
- * NOTE: This does NOT affect the SSE streaming phase — once headers
- * arrive, the timeout is cleared and the stream runs until completion
- * or interruption.
- */
-const RETRY_TIMEOUT_MS = 30_000
+const RETRY_DELAYS: Array<number> = []
 
 // ---------------------------------------------------------------------------
 // Anti-correlation: jitter & frequency limiting
@@ -133,7 +120,7 @@ async function fetchWithRetry(
       // First attempt: full timeout (slow models may need up to 120 s).
       // Retries: short timeout — after pool reset a fresh socket should
       // connect in seconds; if it doesn't, the network is truly down.
-      const timeout = attempt === 0 ? FETCH_TIMEOUT_MS : RETRY_TIMEOUT_MS
+      const timeout = FETCH_TIMEOUT_MS
       return await fetchWithTimeout(url, buildInit(), {
         timeoutMs: timeout,
         accountId,
@@ -193,8 +180,9 @@ async function fetchWithRetry(
 async function* wrapGeneratorWithRelease(
   gen: AsyncGenerator,
   releaseSlot: () => void,
+  accountInfo?: { accountId: string; accountProxy?: string },
 ): AsyncGenerator {
-  notifyStreamStart()
+  notifyStreamStart(accountInfo)
   let streamError = false
   try {
     yield* gen
@@ -202,13 +190,17 @@ async function* wrapGeneratorWithRelease(
     streamError = true
     throw error
   } finally {
-    notifyStreamEnd()
+    notifyStreamEnd(accountInfo)
     releaseSlot()
     // After a stream error, destroy all pooled connections so the next
     // request from the client gets a fresh socket instantly instead of
     // waiting ~60s on a stale one.
     if (streamError) {
-      resetConnections()
+      if (accountInfo?.accountId) {
+        resetAccountConnections(accountInfo.accountId)
+      } else {
+        resetConnections()
+      }
     }
   }
 }
@@ -380,7 +372,12 @@ export const createChatCompletions = async (
     // For streaming responses, wrap the generator so the slot is released
     // when the stream ends (not when this function returns).
     if (Symbol.asyncIterator in result) {
-      return wrapGeneratorWithRelease(result, releaseSlot)
+      const accountInfo = (
+        result as AsyncGenerator & {
+          __accountInfo?: { accountId: string; accountProxy?: string }
+        }
+      ).__accountInfo
+      return wrapGeneratorWithRelease(result, releaseSlot, accountInfo)
     }
 
     // Non-streaming: release immediately
@@ -439,7 +436,12 @@ async function retryWithoutReasoning(
   try {
     const result = await dispatchRequest(payload)
     if (Symbol.asyncIterator in result) {
-      return wrapGeneratorWithRelease(result, releaseSlot)
+      const accountInfo = (
+        result as AsyncGenerator & {
+          __accountInfo?: { accountId: string; accountProxy?: string }
+        }
+      ).__accountInfo
+      return wrapGeneratorWithRelease(result, releaseSlot, accountInfo)
     }
     releaseSlot()
     return result
@@ -460,7 +462,12 @@ async function retryWithDowngradedReasoning(
   try {
     const result = await dispatchRequest(payload)
     if (Symbol.asyncIterator in result) {
-      return wrapGeneratorWithRelease(result, releaseSlot)
+      const accountInfo = (
+        result as AsyncGenerator & {
+          __accountInfo?: { accountId: string; accountProxy?: string }
+        }
+      ).__accountInfo
+      return wrapGeneratorWithRelease(result, releaseSlot, accountInfo)
     }
     releaseSlot()
     return result
@@ -727,6 +734,17 @@ async function createWithMultiAccount(payload: ChatCompletionsPayload) {
       const result = await doFetch(payload, tokenSource, account.id)
       account.lastRequestAt = Date.now()
       accountManager.markAccountSuccess(account.id)
+      // Tag streaming results with account info for keepalive targeting
+      if (Symbol.asyncIterator in result) {
+        ;(
+          result as AsyncGenerator & {
+            __accountInfo?: { accountId: string; accountProxy?: string }
+          }
+        ).__accountInfo = {
+          accountId: account.id,
+          accountProxy: account.proxy,
+        }
+      }
       return result
     } catch (error) {
       lastError = error

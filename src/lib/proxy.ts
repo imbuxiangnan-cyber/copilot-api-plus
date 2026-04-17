@@ -33,29 +33,52 @@ let proxyActive = false
  * CONNECT tunnels that are idle for ~60 s.  During long model thinking
  * phases the SSE stream carries no data, which looks "idle" to the proxy.
  *
- * This keepalive sends a tiny HEAD request to the Copilot API every 45 s
- * through the same proxy.  The encrypted packets flowing through the
- * CONNECT tunnel reset the proxy's idle timer, keeping the tunnel alive.
+ * This keepalive sends a tiny HEAD request to the Copilot API every 30 s
+ * through the SAME connection pool that the SSE stream uses.  For
+ * per-account connections, this means pinging through each account's own
+ * dispatcher, not the global one — so the correct proxy tunnel is kept
+ * alive.
  *
  * The keepalive is active ONLY while there are SSE streams in flight
- * (tracked via `streamCount`).  When no streams are active it stops to
- * avoid unnecessary traffic.
+ * (tracked per-account via `activeStreams`).
  */
 let keepaliveTimer: ReturnType<typeof setInterval> | undefined
-let streamCount = 0
-const KEEPALIVE_INTERVAL_MS = 45_000
+const KEEPALIVE_INTERVAL_MS = 30_000
 const KEEPALIVE_URL = "https://api.individual.githubcopilot.com/"
+
+interface ActiveStreamInfo {
+  count: number
+  accountProxy?: string
+}
+
+/** Track active streams: global (key = "__global__") and per-account. */
+const activeStreams = new Map<string, ActiveStreamInfo>()
 
 function startKeepalive(): void {
   if (keepaliveTimer) return
   keepaliveTimer = setInterval(() => {
-    // Fire-and-forget: we don't care about the response.
-    fetch(KEEPALIVE_URL, { method: "HEAD" }).catch(() => {})
-    consola.debug("Proxy keepalive ping sent")
+    // Ping each connection pool that has active streams
+    for (const [key, info] of activeStreams) {
+      if (info.count <= 0) continue
+
+      if (key === "__global__") {
+        // Global connection — use standard fetch (goes through global dispatcher)
+        fetch(KEEPALIVE_URL, { method: "HEAD" }).catch(() => {})
+        consola.debug("Proxy keepalive ping sent (global)")
+      } else {
+        // Per-account connection — ping through the account's own dispatcher
+        const dispatcher = getAccountDispatcher(key, info.accountProxy)
+        fetch(KEEPALIVE_URL, {
+          method: "HEAD",
+          dispatcher: dispatcher as unknown as undefined,
+        } as RequestInit).catch(() => {})
+        consola.debug(`Proxy keepalive ping sent (account ${key.slice(0, 8)})`)
+      }
+    }
   }, KEEPALIVE_INTERVAL_MS)
   // Don't prevent Node from exiting because of this timer.
   keepaliveTimer.unref()
-  consola.debug("Proxy keepalive started (45 s interval)")
+  consola.debug("Proxy keepalive started (30 s interval)")
 }
 
 function stopKeepalive(): void {
@@ -66,24 +89,59 @@ function stopKeepalive(): void {
   }
 }
 
+function getTotalStreamCount(): number {
+  let total = 0
+  for (const info of activeStreams.values()) {
+    total += info.count
+  }
+  return total
+}
+
 /**
  * Call when an SSE stream starts.  Activates the proxy-tunnel keepalive
  * if this is the first active stream and a proxy is configured.
+ *
+ * @param accountInfo  If provided, keepalive pings go through this
+ *                     account's own connection pool (not the global one).
  */
-export function notifyStreamStart(): void {
+export function notifyStreamStart(accountInfo?: {
+  accountId: string
+  accountProxy?: string
+}): void {
   if (!proxyActive) return
-  streamCount++
-  if (streamCount === 1) startKeepalive()
+
+  const key = accountInfo?.accountId ?? "__global__"
+  const existing = activeStreams.get(key)
+  if (existing) {
+    existing.count++
+  } else {
+    activeStreams.set(key, {
+      count: 1,
+      accountProxy: accountInfo?.accountProxy,
+    })
+  }
+
+  if (getTotalStreamCount() === 1) startKeepalive()
 }
 
 /**
  * Call when an SSE stream ends (success or error).  Stops the keepalive
  * once no streams are active.
  */
-export function notifyStreamEnd(): void {
+export function notifyStreamEnd(accountInfo?: {
+  accountId: string
+  accountProxy?: string
+}): void {
   if (!proxyActive) return
-  streamCount = Math.max(0, streamCount - 1)
-  if (streamCount === 0) stopKeepalive()
+
+  const key = accountInfo?.accountId ?? "__global__"
+  const existing = activeStreams.get(key)
+  if (existing) {
+    existing.count = Math.max(0, existing.count - 1)
+    if (existing.count === 0) activeStreams.delete(key)
+  }
+
+  if (getTotalStreamCount() === 0) stopKeepalive()
 }
 
 export function initProxyFromEnv(): void {
