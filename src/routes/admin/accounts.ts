@@ -300,9 +300,16 @@ accountRoutes.post("/auth/poll", async (c) => {
       return c.json({ status: "pending" })
     }
 
-    const json = (await response.json()) as
-      | { access_token: string; token_type: string; scope: string }
-      | { error: string; error_description?: string }
+    const rawText = await response.text()
+    consola.debug(`Device code poll raw response: ${rawText}`)
+
+    let json: Record<string, unknown>
+    try {
+      json = JSON.parse(rawText) as Record<string, unknown>
+    } catch {
+      consola.warn(`Device code poll: GitHub returned non-JSON: ${rawText}`)
+      return c.json({ status: "pending" })
+    }
 
     // Handle error responses from GitHub
     if ("error" in json) {
