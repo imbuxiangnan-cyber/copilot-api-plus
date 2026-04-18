@@ -24,6 +24,12 @@ export const accountRoutes = new Hono()
 let cachedDeviceCode: DeviceCodeResponse | undefined
 let cachedDeviceCodeExpiresAt = 0
 
+// Rate-limit guard — refuse to hit GitHub before the required interval elapses.
+// When GitHub returns "slow_down", it tells us how long to wait.  The frontend
+// ignores this and keeps polling every ~4 s, which locks us into permanent
+// slow_down.  The server enforces the interval instead.
+let pollNotBefore = 0
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -254,6 +260,9 @@ accountRoutes.post("/auth/start", async (c) => {
     cachedDeviceCode = deviceCode
     // eslint-disable-next-line require-atomic-updates
     cachedDeviceCodeExpiresAt = Date.now() + deviceCode.expires_in * 1000
+    // Reset rate-limit for the new flow
+
+    pollNotBefore = 0
     return c.json(deviceCode)
   } catch (error) {
     consola.warn(`Error starting device code flow: ${rootCause(error)}`)
@@ -266,6 +275,55 @@ accountRoutes.post("/auth/start", async (c) => {
 // POST /auth/poll — Poll for Device Code authorization completion
 // ---------------------------------------------------------------------------
 
+/** Reset all auth flow state (device code cache + rate limit). */
+function clearAuthFlowState(): void {
+  cachedDeviceCode = undefined
+  cachedDeviceCodeExpiresAt = 0
+  pollNotBefore = 0
+}
+
+/** Handle GitHub error responses during device code polling. */
+function handlePollError(json: Record<string, unknown>):
+  | {
+      status: string
+      interval?: number
+      message?: string
+    }
+  | undefined {
+  if (!("error" in json)) return undefined
+
+  switch (json.error) {
+    case "authorization_pending": {
+      pollNotBefore = Date.now() + 5_000
+      return { status: "pending" }
+    }
+    case "slow_down": {
+      const interval = typeof json.interval === "number" ? json.interval : 10
+      pollNotBefore = Date.now() + interval * 1000
+      consola.info(
+        `Device code poll: GitHub says slow down, waiting ${interval}s`,
+      )
+      return { status: "pending", interval }
+    }
+    case "expired_token": {
+      clearAuthFlowState()
+      return { status: "expired" }
+    }
+    case "access_denied": {
+      clearAuthFlowState()
+      return { status: "denied" }
+    }
+    default: {
+      return {
+        status: "error",
+        message:
+          (json.error_description as string | undefined)
+          || (json.error as string),
+      }
+    }
+  }
+}
+
 accountRoutes.post("/auth/poll", async (c) => {
   try {
     const { device_code, label, account_type } = await c.req.json<{
@@ -276,6 +334,16 @@ accountRoutes.post("/auth/poll", async (c) => {
 
     if (!device_code) {
       return c.json({ error: "device_code is required" }, 400)
+    }
+
+    // Server-side rate-limit: if GitHub told us to slow down, don't hit
+    // their endpoint again until the required interval has elapsed.
+    // Return the cached result so the frontend sees "pending".
+    const now = Date.now()
+    if (now < pollNotBefore) {
+      const waitSec = Math.ceil((pollNotBefore - now) / 1000)
+      consola.debug(`Device code poll: throttled, ${waitSec}s remaining`)
+      return c.json({ status: "pending", interval: waitSec })
     }
 
     // Single poll attempt to GitHub's token endpoint
@@ -312,42 +380,18 @@ accountRoutes.post("/auth/poll", async (c) => {
     }
 
     // Handle error responses from GitHub
-    if ("error" in json) {
-      switch (json.error) {
-        case "authorization_pending": {
-          return c.json({ status: "pending" })
-        }
-        case "slow_down": {
-          return c.json({ status: "pending", interval: 10 })
-        }
-        case "expired_token": {
-          cachedDeviceCode = undefined
-          cachedDeviceCodeExpiresAt = 0
-          return c.json({ status: "expired" })
-        }
-        case "access_denied": {
-          cachedDeviceCode = undefined
-          cachedDeviceCodeExpiresAt = 0
-          return c.json({ status: "denied" })
-        }
-        default: {
-          return c.json({
-            status: "error",
-            message: json.error_description || json.error,
-          })
-        }
-      }
+    const errorResult = handlePollError(json)
+    if (errorResult) {
+      return c.json(errorResult)
     }
 
     // Success — we have an access token
-    if ("access_token" in json && json.access_token) {
-      // Clear device code cache — this flow is done
-      cachedDeviceCode = undefined
-      cachedDeviceCodeExpiresAt = 0
+    if ("access_token" in json && (json.access_token as string)) {
+      clearAuthFlowState()
 
       const accountLabel = label || `Account ${accountManager.accountCount + 1}`
       const account = await accountManager.addAccount(
-        json.access_token,
+        json.access_token as string,
         accountLabel,
         account_type || "individual",
       )
