@@ -10,9 +10,19 @@ import {
   standardHeaders,
 } from "~/lib/api-config"
 import { rootCause } from "~/lib/utils"
-import { getDeviceCode } from "~/services/github/get-device-code"
+import {
+  getDeviceCode,
+  type DeviceCodeResponse,
+} from "~/services/github/get-device-code"
 
 export const accountRoutes = new Hono()
+
+// ---------------------------------------------------------------------------
+// Device code cache — prevent frontend retries from generating new codes
+// while the user is still authorizing the previous one on GitHub.
+// ---------------------------------------------------------------------------
+let cachedDeviceCode: DeviceCodeResponse | undefined
+let cachedDeviceCodeExpiresAt = 0
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -231,7 +241,19 @@ accountRoutes.post("/:id/refresh", async (c) => {
 
 accountRoutes.post("/auth/start", async (c) => {
   try {
+    // Reuse cached device code if it hasn't expired yet.
+    // This prevents frontend retries from generating a new code while the
+    // user is still authorizing the previous one on GitHub.
+    if (cachedDeviceCode && Date.now() < cachedDeviceCodeExpiresAt) {
+      consola.debug("Reusing cached device code (not yet expired)")
+      return c.json(cachedDeviceCode)
+    }
+
     const deviceCode = await getDeviceCode()
+    // eslint-disable-next-line require-atomic-updates
+    cachedDeviceCode = deviceCode
+    // eslint-disable-next-line require-atomic-updates
+    cachedDeviceCodeExpiresAt = Date.now() + deviceCode.expires_in * 1000
     return c.json(deviceCode)
   } catch (error) {
     consola.warn(`Error starting device code flow: ${rootCause(error)}`)
@@ -271,6 +293,10 @@ accountRoutes.post("/auth/poll", async (c) => {
     )
 
     if (!response.ok) {
+      const errorText = await response.text().catch(() => "")
+      consola.warn(
+        `Device code poll: GitHub returned ${response.status}: ${errorText}`,
+      )
       return c.json({ status: "pending" })
     }
 
@@ -288,9 +314,13 @@ accountRoutes.post("/auth/poll", async (c) => {
           return c.json({ status: "pending", interval: 10 })
         }
         case "expired_token": {
+          cachedDeviceCode = undefined
+          cachedDeviceCodeExpiresAt = 0
           return c.json({ status: "expired" })
         }
         case "access_denied": {
+          cachedDeviceCode = undefined
+          cachedDeviceCodeExpiresAt = 0
           return c.json({ status: "denied" })
         }
         default: {
@@ -304,6 +334,10 @@ accountRoutes.post("/auth/poll", async (c) => {
 
     // Success — we have an access token
     if ("access_token" in json && json.access_token) {
+      // Clear device code cache — this flow is done
+      cachedDeviceCode = undefined
+      cachedDeviceCodeExpiresAt = 0
+
       const accountLabel = label || `Account ${accountManager.accountCount + 1}`
       const account = await accountManager.addAccount(
         json.access_token,

@@ -49,7 +49,7 @@ async function initMultiAccount(): Promise<void> {
     if (accountManager.hasAccounts()) {
       // Multi-account mode: accounts.json exists with accounts
       state.multiAccountEnabled = true
-      consola.debug(
+      consola.info(
         `Multi-account mode enabled with ${accountManager.accountCount} account(s)`,
       )
 

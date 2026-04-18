@@ -105,7 +105,7 @@ export class AccountManager {
         sessionId: randomUUID(),
         machineId: a.machineId || randomBytes(32).toString("hex"),
       }))
-      consola.debug(`Loaded ${this.accounts.length} account(s) from disk`)
+      consola.info(`Loaded ${this.accounts.length} account(s) from disk`)
     } catch (err: unknown) {
       if ((err as NodeJS.ErrnoException).code === "ENOENT") {
         this.accounts = []
