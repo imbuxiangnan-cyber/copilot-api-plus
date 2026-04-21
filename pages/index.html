@@ -1195,6 +1195,10 @@
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
                   <span id="modal-gh-link-text"></span>
                 </a>
+                <button type="button" id="modal-copy-link-btn" class="btn btn-secondary w-full" style="display:inline-flex;align-items:center;justify-content:center;gap:0.5rem;">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                  <span id="modal-copy-link-text"></span>
+                </button>
                 <div style="display:flex;align-items:center;justify-content:center;gap:0.5rem;padding:0.75rem 0;" id="modal-waiting-indicator">
                   <span class="loading-spinner"></span>
                   <span class="text-sm text-[var(--muted)]" id="modal-waiting-text"></span>
@@ -1467,6 +1471,8 @@
             modalDeviceCodeInstr3: "3. 粘贴授权码并确认授权",
             modalDeviceCodeCopy: "复制授权码",
             modalDeviceCodeCopied: "已复制!",
+            modalDeviceCodeCopyLink: "复制授权链接",
+            modalDeviceCodeLinkCopied: "链接已复制!",
             modalDeviceCodeOpenGH: "打开 GitHub 授权页面",
             modalDeviceCodeWaiting: "等待授权中...",
             modalDeviceCodeSuccess: "授权成功!",
@@ -1668,6 +1674,8 @@
             modalDeviceCodeInstr3: "3. Paste the code and authorize",
             modalDeviceCodeCopy: "Copy Code",
             modalDeviceCodeCopied: "Copied!",
+            modalDeviceCodeCopyLink: "Copy Link",
+            modalDeviceCodeLinkCopied: "Link Copied!",
             modalDeviceCodeOpenGH: "Open GitHub Authorization",
             modalDeviceCodeWaiting: "Waiting for authorization...",
             modalDeviceCodeSuccess: "Authorization successful!",
@@ -2292,6 +2300,8 @@
           if (modalInstr3) modalInstr3.textContent = text("modalDeviceCodeInstr3");
           const modalCopyCodeText = document.getElementById("modal-copy-code-text");
           if (modalCopyCodeText) modalCopyCodeText.textContent = text("modalDeviceCodeCopy");
+          const modalCopyLinkText = document.getElementById("modal-copy-link-text");
+          if (modalCopyLinkText) modalCopyLinkText.textContent = text("modalDeviceCodeCopyLink");
           const modalGhLinkText = document.getElementById("modal-gh-link-text");
           if (modalGhLinkText) modalGhLinkText.textContent = text("modalDeviceCodeOpenGH");
           const modalWaitingText = document.getElementById("modal-waiting-text");
@@ -3053,12 +3063,21 @@
             const copyText = document.getElementById("modal-copy-code-text");
             if (copyText) {
               copyText.textContent = text("modalDeviceCodeCopied");
-              setTimeout(() => {
-                copyText.textContent = text("modalDeviceCodeCopy");
-              }, 2000);
+              setTimeout(() => { copyText.textContent = text("modalDeviceCodeCopy"); }, 2000);
             }
           } else {
             showToast(text("exportManualCopy"), "error");
+          }
+        }
+
+        async function handleCopyLink() {
+          const ghLink = document.getElementById("modal-gh-link");
+          if (!ghLink) return;
+          const copied = await copyTextToClipboard(ghLink.href);
+          const linkText = document.getElementById("modal-copy-link-text");
+          if (linkText) {
+            linkText.textContent = copied ? text("modalDeviceCodeLinkCopied") : text("modalDeviceCodeCopyLink");
+            if (copied) setTimeout(() => { linkText.textContent = text("modalDeviceCodeCopyLink"); }, 2000);
           }
         }
 
@@ -3680,6 +3699,8 @@
           if (modalStartAuthBtn) modalStartAuthBtn.addEventListener("click", startDeviceCodeAuth);
           const modalCopyCodeBtn = document.getElementById("modal-copy-code-btn");
           if (modalCopyCodeBtn) modalCopyCodeBtn.addEventListener("click", handleCopyCode);
+          const modalCopyLinkBtn = document.getElementById("modal-copy-link-btn");
+          if (modalCopyLinkBtn) modalCopyLinkBtn.addEventListener("click", handleCopyLink);
           const modalCancelAuthBtn = document.getElementById("modal-cancel-auth-btn");
           if (modalCancelAuthBtn) modalCancelAuthBtn.addEventListener("click", closeModal);
           const modalDoneBtn = document.getElementById("modal-done-btn");
