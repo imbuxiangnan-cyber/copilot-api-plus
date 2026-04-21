@@ -603,14 +603,17 @@ async function handleMultiAccountHttpError(
     }
     default: {
       // 5xx: upstream error — don't retry to avoid wasting request credits.
-      // doFetch already retried once via fetchWithRetry; a second round
-      // is unlikely to help and doubles the credit cost.
       if (error.response.status >= 500) {
         accountManager.markAccountStatus(
           account.id,
           "error",
           `HTTP ${error.response.status}`,
         )
+        return null
+      }
+      // 400: model/parameter incompatibility — don't penalise the account,
+      // just skip it for this request so it remains available for others.
+      if (error.response.status === 400) {
         return null
       }
       accountManager.markAccountStatus(
