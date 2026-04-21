@@ -2334,7 +2334,7 @@
               value: escapeHtml(getModeLabel(mode)),
               helper: text("modeCardHelp"),
               accent: "pill-brand",
-              extra: `<span class="pill pill-brand">${icon("chart")}${escapeHtml(text("viewMode"))}</span>`,
+              extra: `<button type="button" class="pill pill-brand" style="cursor:pointer;border:none;background:none;padding:0;" onclick="switchMainTab('models')">${icon("chart")}${escapeHtml(text("viewMode"))}</button>`,
             },
             {
               icon: "clock",
@@ -3536,6 +3536,11 @@
           }
         }
 
+        async function clearStats() {
+          await adminFetch("/api/stats", { method: "DELETE" });
+          loadStats();
+        }
+
         async function loadStats() {
           const uptimeCard = document.getElementById("stats-uptime-card");
           const reqContent = document.getElementById("stats-requests-content");
@@ -3572,13 +3577,13 @@
             if (modelEntries.length === 0) {
               reqContent.innerHTML = `<p class="text-sm text-[var(--muted)]">${escapeHtml(text("statsNoData"))}</p>`;
             } else {
-              const maxVal = Math.max(1, ...modelEntries.map(([, v]) => (v.active || 0) + (v.queued || 0)));
+              const maxVal = Math.max(1, ...modelEntries.map(([, v]) => v.totalRequests || (v.active || 0) + (v.queued || 0)));
               reqContent.innerHTML = `
                 <div class="stat-bar-group">
                   ${modelEntries.map(([model, v]) => {
+                    const total = v.totalRequests || 0;
                     const active = v.active || 0;
                     const queued = v.queued || 0;
-                    const total = active + queued;
                     const pct = Math.min((total / maxVal) * 100, 100);
                     return `
                       <div class="stat-bar-row">
@@ -3586,14 +3591,16 @@
                         <div class="stat-bar-track">
                           <div class="stat-bar-fill progress-fill-brand" style="width:${pct}%"></div>
                         </div>
-                        <span class="stat-bar-value">${active}<span class="text-[var(--muted)] text-xs">/${queued}q</span></span>
+                        <span class="stat-bar-value">${total}<span class="text-[var(--muted)] text-xs"> (${active}活跃/${queued}排队)</span></span>
                       </div>
                     `;
                   }).join("")}
                 </div>
-                <div class="mt-3 flex gap-4 text-xs text-[var(--muted)]">
-                  <span>${icon("activity")} ${escapeHtml(text("statsActiveRequests"))}</span>
-                  <span>${icon("clock")} ${escapeHtml(text("statsQueuedRequests"))} (q)</span>
+                <div class="mt-3 flex items-center justify-between">
+                  <div class="flex gap-4 text-xs text-[var(--muted)]">
+                    <span>${icon("activity")} 累计请求数 (活跃/排队)</span>
+                  </div>
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="clearStats()">${icon("trash")} 清空统计</button>
                 </div>
               `;
             }

@@ -27,6 +27,7 @@ export class ModelRouter {
   private config: ModelMappingConfig
   private queues: Map<string, { active: number; waiters: Array<() => void> }> =
     new Map()
+  private requestCounts: Map<string, number> = new Map()
 
   constructor(config?: ModelMappingConfig) {
     this.config =
@@ -92,6 +93,10 @@ export class ModelRouter {
 
     if (queue.active < maxConcurrency) {
       queue.active++
+      this.requestCounts.set(
+        resolvedModel,
+        (this.requestCounts.get(resolvedModel) ?? 0) + 1,
+      )
       consola.debug(
         `Slot acquired for "${resolvedModel}": ${queue.active}/${maxConcurrency} active`,
       )
@@ -106,6 +111,10 @@ export class ModelRouter {
     return new Promise<() => void>((resolve) => {
       currentQueue.waiters.push(() => {
         currentQueue.active++
+        this.requestCounts.set(
+          resolvedModel,
+          (this.requestCounts.get(resolvedModel) ?? 0) + 1,
+        )
         consola.debug(
           `Queued slot acquired for "${resolvedModel}": ${currentQueue.active}/${maxConcurrency} active`,
         )
@@ -135,14 +144,29 @@ export class ModelRouter {
    */
   getStats(): Record<
     string,
-    { active: number; queued: number; maxConcurrency: number }
+    {
+      active: number
+      queued: number
+      maxConcurrency: number
+      totalRequests: number
+    }
   > {
     const stats: Record<
       string,
-      { active: number; queued: number; maxConcurrency: number }
+      {
+        active: number
+        queued: number
+        maxConcurrency: number
+        totalRequests: number
+      }
     > = {}
 
-    for (const [model, queue] of this.queues) {
+    const allModels = new Set([
+      ...this.queues.keys(),
+      ...this.requestCounts.keys(),
+    ])
+    for (const model of allModels) {
+      const queue = this.queues.get(model)
       const maxConcurrency =
         (this.config.concurrency as Partial<Record<string, number>>)[model]
         ?? (this.config.concurrency as Partial<Record<string, number>>)[
@@ -151,13 +175,18 @@ export class ModelRouter {
         ?? DEFAULT_MAX_CONCURRENCY
 
       stats[model] = {
-        active: queue.active,
-        queued: queue.waiters.length,
+        active: queue?.active ?? 0,
+        queued: queue?.waiters.length ?? 0,
         maxConcurrency,
+        totalRequests: this.requestCounts.get(model) ?? 0,
       }
     }
 
     return stats
+  }
+
+  resetStats(): void {
+    this.requestCounts.clear()
   }
 
   /**

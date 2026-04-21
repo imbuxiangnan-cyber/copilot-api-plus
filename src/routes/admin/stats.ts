@@ -15,3 +15,8 @@ statsRoute.get("/", (c) => {
     uptime: process.uptime(),
   })
 })
+
+statsRoute.delete("/", (c) => {
+  modelRouter.resetStats()
+  return c.json({ success: true })
+})
