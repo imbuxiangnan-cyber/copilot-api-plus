@@ -2890,6 +2890,7 @@
 
         function switchMainTab(tabKey) {
           state.activeMainTab = tabKey;
+          location.hash = tabKey;
           renderTabBar();
           // Load data for tab on switch
           if (tabKey === "accounts") loadAccounts();
@@ -3657,6 +3658,15 @@
               const tabKey = btn.getAttribute("data-main-tab");
               if (tabKey) switchMainTab(tabKey);
             });
+          });
+
+          // ── Restore tab from URL hash on load / back-forward ──
+          const validTabs = ["overview", "accounts", "models", "statistics"];
+          const hashTab = location.hash.replace("#", "");
+          if (validTabs.includes(hashTab)) switchMainTab(hashTab);
+          window.addEventListener("hashchange", () => {
+            const t = location.hash.replace("#", "");
+            if (validTabs.includes(t)) switchMainTab(t);
           });
 
           // ── Add Account modal (Device Code flow) ──
