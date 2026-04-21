@@ -58,8 +58,9 @@ async function initMultiAccount(): Promise<void> {
 
       // Start background token/usage refresh
       await accountManager.startBackgroundRefresh()
-    } else if (state.githubToken) {
-      // No accounts in file — migrate current single account if we have a token
+    } else if (state.githubToken && !accountManager.accountsFileExisted) {
+      // accounts.json didn't exist at all — first run, migrate legacy single account.
+      // If the file existed but was empty, the user intentionally removed all accounts.
       try {
         const account = await accountManager.migrateFromLegacy(
           state.githubToken,

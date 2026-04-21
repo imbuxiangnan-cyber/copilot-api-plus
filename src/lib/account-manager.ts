@@ -88,6 +88,9 @@ export class AccountManager {
   private saveTimer?: ReturnType<typeof setTimeout>
   private savePending = false
 
+  /** True if accounts.json existed on disk when loadAccounts() was called. */
+  accountsFileExisted = false
+
   // ---------- Persistence ------------------------------------------------
 
   /**
@@ -98,6 +101,7 @@ export class AccountManager {
     try {
       // eslint-disable-next-line unicorn/prefer-json-parse-buffer
       const raw = await fs.readFile(ACCOUNTS_PATH, "utf8")
+      this.accountsFileExisted = true
       const parsed = JSON.parse(raw) as Array<PersistedAccount>
       this.accounts = parsed.map((a) => ({
         ...a,
@@ -108,6 +112,7 @@ export class AccountManager {
       consola.info(`Loaded ${this.accounts.length} account(s) from disk`)
     } catch (err: unknown) {
       if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        this.accountsFileExisted = false
         this.accounts = []
         return
       }
