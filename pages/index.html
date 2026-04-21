@@ -2334,7 +2334,7 @@
               value: escapeHtml(getModeLabel(mode)),
               helper: text("modeCardHelp"),
               accent: "pill-brand",
-              extra: `<button type="button" class="pill pill-brand" style="cursor:pointer;border:none;background:none;padding:0;" onclick="switchMainTab('models')">${icon("chart")}${escapeHtml(text("viewMode"))}</button>`,
+              extra: `<button type="button" class="pill pill-brand" style="cursor:pointer;border:none;background:none;padding:0;" data-switch-tab="models">${icon("chart")}${escapeHtml(text("viewMode"))}</button>`,
             },
             {
               icon: "clock",
@@ -3600,7 +3600,7 @@
                   <div class="flex gap-4 text-xs text-[var(--muted)]">
                     <span>${icon("activity")} 累计请求数 (活跃/排队)</span>
                   </div>
-                  <button type="button" class="btn btn-secondary btn-sm" onclick="clearStats()">${icon("trash")} 清空统计</button>
+                  <button type="button" class="btn btn-secondary btn-sm" data-action="clear-stats">${icon("trash")} 清空统计</button>
                 </div>
               `;
             }
@@ -3684,6 +3684,14 @@
               const tabKey = btn.getAttribute("data-main-tab");
               if (tabKey) switchMainTab(tabKey);
             });
+          });
+
+          // Delegate clicks on data-switch-tab buttons (rendered inside cards)
+          document.addEventListener("click", (e) => {
+            const btn = (e.target as Element).closest("[data-switch-tab]");
+            if (btn) switchMainTab(btn.getAttribute("data-switch-tab")!);
+            const actionBtn = (e.target as Element).closest("[data-action]");
+            if (actionBtn?.getAttribute("data-action") === "clear-stats") clearStats();
           });
 
           // ── Restore tab from URL hash on load / back-forward ──
