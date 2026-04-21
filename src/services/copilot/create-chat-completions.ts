@@ -355,50 +355,74 @@ export const createChatCompletions = async (
     releaseSlot()
     return result
   } catch (error) {
-    if (error instanceof HTTPError && error.response.status === 400) {
-      const errMsg = error.message
-
-      // Case 1: Model doesn't support reasoning_effort at all
-      // → strip reasoning params and retry
-      if (
-        wasInjected
-        && (errMsg.includes("Unrecognized request argument")
-          || errMsg.includes("does not support reasoning")
-          || errMsg.includes("invalid_reasoning_effort"))
-      ) {
-        reasoningUnsupportedModels.add(resolvedModel)
-        consola.debug(
-          `Model "${resolvedModel}" does not support reasoning_effort — disabled for future requests`,
-        )
-        return retryWithModifiedPayload(routedPayload, releaseSlot)
-      }
-
-      // Case 2: Model rejects the specific reasoning_effort value
-      // (e.g. claude-opus-4.7 rejects "high", only accepts "medium")
-      // → downgrade to "medium" and retry; remember for future requests
-      if (errMsg.includes("is not supported by model")) {
-        const currentEffort = thinkingPayload.reasoning_effort
-        if (
-          currentEffort
-          && currentEffort !== "medium"
-          && currentEffort !== "low"
-        ) {
-          reasoningEffortCap.set(resolvedModel, "medium")
-          consola.debug(
-            `Model "${resolvedModel}" rejected reasoning_effort="${currentEffort}" — downgrading to "medium" for future requests`,
-          )
-          const downgraded = {
-            ...routedPayload,
-            reasoning_effort: "medium" as const,
-          }
-          return retryWithModifiedPayload(downgraded, releaseSlot)
-        }
-      }
-    }
+    const retryResult = handle400ReasoningError(
+      error,
+      { resolvedModel, thinkingPayload, routedPayload, wasInjected },
+      releaseSlot,
+    )
+    if (retryResult !== undefined) return retryResult
 
     releaseSlot()
     throw error
   }
+}
+
+/**
+ * Handle 400 reasoning_effort errors in the outer createChatCompletions catch.
+ * Returns a Promise (retry result) if handled, or undefined to re-throw.
+ */
+function handle400ReasoningError(
+  error: unknown,
+  ctx: {
+    resolvedModel: string
+    thinkingPayload: ChatCompletionsPayload
+    routedPayload: ChatCompletionsPayload
+    wasInjected: boolean
+  },
+  releaseSlot: () => void,
+): Promise<AsyncGenerator | ChatCompletionResponse> | undefined {
+  if (!(error instanceof HTTPError) || error.response.status !== 400)
+    return undefined
+  const errMsg = error.message
+
+  // Case 2: Model rejects the specific value (e.g. "high" not supported, only "medium")
+  if (
+    errMsg.includes("supported values")
+    || (errMsg.includes("is not supported by model")
+      && errMsg.includes("reasoning_effort"))
+  ) {
+    const currentEffort = ctx.thinkingPayload.reasoning_effort
+    if (
+      currentEffort
+      && currentEffort !== "medium"
+      && currentEffort !== "low"
+    ) {
+      reasoningEffortCap.set(ctx.resolvedModel, "medium")
+      consola.debug(
+        `Model "${ctx.resolvedModel}" rejected reasoning_effort="${currentEffort}" — downgrading to "medium"`,
+      )
+      return retryWithModifiedPayload(
+        { ...ctx.routedPayload, reasoning_effort: "medium" as const },
+        releaseSlot,
+      )
+    }
+  }
+
+  // Case 1: Model doesn't support reasoning_effort at all
+  if (
+    ctx.wasInjected
+    && (errMsg.includes("Unrecognized request argument")
+      || errMsg.includes("does not support reasoning")
+      || errMsg.includes("invalid_reasoning_effort"))
+  ) {
+    reasoningUnsupportedModels.add(ctx.resolvedModel)
+    consola.debug(
+      `Model "${ctx.resolvedModel}" does not support reasoning_effort — disabled for future requests`,
+    )
+    return retryWithModifiedPayload(ctx.routedPayload, releaseSlot)
+  }
+
+  return undefined
 }
 
 /**
@@ -568,6 +592,34 @@ async function tryRefreshAndRetry(
   }
 }
 
+/** Try to retry a 400 with downgraded reasoning_effort on the same account. */
+async function tryDowngradeReasoningEffort(
+  errMsg: string,
+  retryContext: { payload: ChatCompletionsPayload; tokenSource: TokenSource },
+  accountId: string,
+): Promise<AsyncGenerator | ChatCompletionResponse | null> {
+  const isEffortRejection =
+    errMsg.includes("supported values")
+    || (errMsg.includes("is not supported by model")
+      && errMsg.includes("reasoning_effort"))
+  if (!isEffortRejection) return null
+
+  const currentEffort = retryContext.payload.reasoning_effort
+  if (!currentEffort || currentEffort === "medium" || currentEffort === "low")
+    return null
+
+  reasoningEffortCap.set(retryContext.payload.model, "medium")
+  const downgraded = {
+    ...retryContext.payload,
+    reasoning_effort: "medium" as const,
+  }
+  try {
+    return await doFetch(downgraded, retryContext.tokenSource, accountId)
+  } catch {
+    return null
+  }
+}
+
 /**
  * Handle an HTTP error from a multi-account request attempt.
  *
@@ -611,10 +663,15 @@ async function handleMultiAccountHttpError(
         )
         return null
       }
-      // 400: model/parameter incompatibility — don't penalise the account,
-      // just skip it for this request so it remains available for others.
+      // 400: check if it's a reasoning_effort value rejection first.
+      // If so, downgrade to "medium" and retry on the SAME account before
+      // falling through to account rotation.
       if (error.response.status === 400) {
-        return null
+        return tryDowngradeReasoningEffort(
+          error.message,
+          retryContext,
+          account.id,
+        )
       }
       accountManager.markAccountStatus(
         account.id,
