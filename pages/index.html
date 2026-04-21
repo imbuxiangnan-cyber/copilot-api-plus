@@ -3688,9 +3688,9 @@
 
           // Delegate clicks on data-switch-tab buttons (rendered inside cards)
           document.addEventListener("click", (e) => {
-            const btn = (e.target as Element).closest("[data-switch-tab]");
-            if (btn) switchMainTab(btn.getAttribute("data-switch-tab")!);
-            const actionBtn = (e.target as Element).closest("[data-action]");
+            const btn = e.target.closest("[data-switch-tab]");
+            if (btn) switchMainTab(btn.getAttribute("data-switch-tab"));
+            const actionBtn = e.target.closest("[data-action]");
             if (actionBtn?.getAttribute("data-action") === "clear-stats") clearStats();
           });
 
