@@ -744,7 +744,7 @@ async function handleMultiAccountHttpError(
   }
 }
 
-// eslint-disable-next-line max-lines-per-function, complexity
+// eslint-disable-next-line complexity
 async function createWithMultiAccount(payload: ChatCompletionsPayload) {
   const triedAccountIds = new Set<string>()
   let lastError: unknown
@@ -848,12 +848,15 @@ async function createWithMultiAccount(payload: ChatCompletionsPayload) {
           throw error
         }
       } else {
-        // Network error or other
-        accountManager.markAccountStatus(
-          account.id,
-          "error",
-          (error as Error).message,
+        // Network error (ECONNRESET, TLS disconnect, fetch failed, etc.):
+        // these are transient — DON'T disable the account. Just move on
+        // to the next account for this attempt. The account stays active
+        // for future requests.
+        const errMsg = (error as Error).message || String(error)
+        consola.warn(
+          `Account ${account.label}: transient network error: ${errMsg}`,
         )
+        // No markAccountStatus — account remains usable
       }
 
       consola.warn(
