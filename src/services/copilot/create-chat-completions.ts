@@ -1,3 +1,4 @@
+/* eslint-disable max-lines */
 import consola from "consola"
 import { events } from "fetch-event-stream"
 
@@ -651,6 +652,24 @@ async function tryDowngradeReasoningEffort(
 }
 
 /**
+ * Whether a 400 error is caused by the request itself (model unavailable,
+ * invalid params, etc.) rather than the account. These should NOT trigger
+ * account disabling or rotation — rotating to another account would just
+ * waste credits hitting the same error.
+ */
+function isNonAccountError(errMsg: string): boolean {
+  return (
+    errMsg.includes("model_not_supported")
+    || errMsg.includes("The requested model is not supported")
+    || errMsg.includes("invalid_request_body")
+    || errMsg.includes("invalid_request_error")
+    || errMsg.includes("invalid_reasoning_effort")
+    || errMsg.includes("reasoning_effort")
+    || errMsg.includes("tool_choice")
+  )
+}
+
+/**
  * Handle an HTTP error from a multi-account request attempt.
  *
  * For 401 errors, attempts token refresh and retry.
@@ -697,11 +716,23 @@ async function handleMultiAccountHttpError(
       // If so, downgrade to "medium" and retry on the SAME account before
       // falling through to account rotation.
       if (error.response.status === 400) {
-        return tryDowngradeReasoningEffort(
+        const downgraded = await tryDowngradeReasoningEffort(
           error.message,
           retryContext,
           account.id,
         )
+        if (downgraded !== null) return downgraded
+
+        // Non-account 400 errors (model not supported, invalid request body,
+        // tool_choice + thinking conflict, etc.) — these are NOT account
+        // problems. Return null WITHOUT marking the account as failed,
+        // and tag the error so the outer loop knows to stop rotating.
+        if (isNonAccountError(error.message)) {
+          ;(
+            error as HTTPError & { __nonAccountError?: boolean }
+          ).__nonAccountError = true
+          return null
+        }
       }
       accountManager.markAccountStatus(
         account.id,
@@ -713,6 +744,7 @@ async function handleMultiAccountHttpError(
   }
 }
 
+// eslint-disable-next-line max-lines-per-function, complexity
 async function createWithMultiAccount(payload: ChatCompletionsPayload) {
   const triedAccountIds = new Set<string>()
   let lastError: unknown
@@ -808,6 +840,13 @@ async function createWithMultiAccount(payload: ChatCompletionsPayload) {
           tokenSource,
         })
         if (retryResult) return retryResult
+        // Non-account error — stop rotating, propagate to client.
+        if (
+          (error as HTTPError & { __nonAccountError?: boolean })
+            .__nonAccountError
+        ) {
+          throw error
+        }
       } else {
         // Network error or other
         accountManager.markAccountStatus(
