@@ -237,8 +237,17 @@ function injectThinking(
   payload: ChatCompletionsPayload,
   resolvedModel: string,
 ): ChatCompletionsPayload {
-  // Client already specified thinking params — respect them
+  // Client already specified thinking params — respect them, but still
+  // apply the runtime-learned cap if the model rejected "high" previously.
   if (payload.reasoning_effort || payload.thinking_budget) {
+    if (
+      payload.reasoning_effort
+      && payload.reasoning_effort !== "medium"
+      && payload.reasoning_effort !== "low"
+    ) {
+      const cap = reasoningEffortCap.get(resolvedModel)
+      if (cap) return { ...payload, reasoning_effort: cap }
+    }
     return payload
   }
 
