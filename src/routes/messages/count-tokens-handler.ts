@@ -7,6 +7,7 @@ import { findModel, rootCause } from "~/lib/utils"
 
 import { type AnthropicMessagesPayload } from "./anthropic-types"
 import { translateModelName, translateToOpenAI } from "./non-stream-translation"
+import { stripSystemReminders } from "./strip-reminders"
 
 /**
  * Handles token counting for Anthropic messages.
@@ -21,7 +22,9 @@ export async function handleCountTokens(c: Context) {
 
     const anthropicPayload = await c.req.json<AnthropicMessagesPayload>()
 
-    const openAIPayload = translateToOpenAI(anthropicPayload)
+    const openAIPayload = translateToOpenAI(
+      stripSystemReminders(anthropicPayload),
+    )
 
     // Multi-strategy model matching:
     // Try translated name first (most likely to match Copilot model IDs),

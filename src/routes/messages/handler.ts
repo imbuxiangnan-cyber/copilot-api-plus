@@ -31,6 +31,7 @@ import {
   translateChunkToAnthropicEvents,
   translateErrorToAnthropicErrorEvent,
 } from "./stream-translation"
+import { stripSystemReminders } from "./strip-reminders"
 
 // ---------------------------------------------------------------------------
 // SSE heartbeat / upstream-timeout configuration
@@ -185,7 +186,9 @@ export async function handleCompletion(c: Context) {
     max_tokens: anthropicPayload.max_tokens,
   })
 
-  const openAIPayload = translateToOpenAI(anthropicPayload)
+  const openAIPayload = translateToOpenAI(
+    stripSystemReminders(anthropicPayload),
+  )
 
   if (state.manualApprove) {
     await awaitApproval()
