@@ -722,6 +722,7 @@ async function handleMultiAccountHttpError(
           "error",
           `HTTP ${error.response.status}`,
         )
+        recordBreakerFailure(`HTTP ${error.response.status}`)
         return null
       }
       // 400: check if it's a reasoning_effort value rejection first.
@@ -756,8 +757,78 @@ async function handleMultiAccountHttpError(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Circuit breaker for upstream/network failures.
+//
+// When the upstream (or our path to it via Clash) is broken, we used to keep
+// retrying every request, each one waiting ~5–30s before the inevitable
+// timeout — a self-inflicted DoS. Instead, after CB_THRESHOLD consecutive
+// network/5xx failures we OPEN the circuit: every new request fails fast
+// with a 503 for CB_OPEN_MS. After that window we go HALF-OPEN: the next
+// request is a probe; success closes the circuit, failure re-opens it.
+//
+// Tuning: 3 failures / 30s. Standard Hystrix-ish default. Real Clash
+// hiccups self-heal in 1–2 retries; 3 means it's actually broken.
+// ---------------------------------------------------------------------------
+const CB_THRESHOLD = 3
+const CB_OPEN_MS = 30_000
+
+const breaker = {
+  failures: 0,
+  openedAt: 0, // 0 = closed
+}
+
+function breakerOpenRemainingMs(): number {
+  if (breaker.openedAt === 0) return 0
+  const elapsed = Date.now() - breaker.openedAt
+  return elapsed >= CB_OPEN_MS ? 0 : CB_OPEN_MS - elapsed
+}
+
+function recordBreakerSuccess(): void {
+  if (breaker.failures !== 0 || breaker.openedAt !== 0) {
+    consola.info("Circuit breaker: closing (request succeeded)")
+  }
+  breaker.failures = 0
+  breaker.openedAt = 0
+}
+
+function recordBreakerFailure(reason: string): void {
+  breaker.failures += 1
+  if (breaker.failures >= CB_THRESHOLD && breaker.openedAt === 0) {
+    breaker.openedAt = Date.now()
+    consola.warn(
+      `Circuit breaker OPEN for ${CB_OPEN_MS / 1000}s after ${breaker.failures} consecutive failures (last: ${reason})`,
+    )
+  }
+}
+
 // eslint-disable-next-line max-lines-per-function, complexity
 async function createWithMultiAccount(payload: ChatCompletionsPayload) {
+  // Fast-fail if the breaker is open. Half-open: let one probe through.
+  const remaining = breakerOpenRemainingMs()
+  if (remaining > 0) {
+    const err = new HTTPError(
+      "Upstream temporarily unavailable",
+      new Response(
+        JSON.stringify({
+          error: {
+            type: "service_unavailable",
+            message: `Upstream (or proxy) is failing repeatedly. Circuit breaker open; will retry probe in ${Math.ceil(remaining / 1000)}s.`,
+          },
+        }),
+        {
+          status: 503,
+          statusText: "Service Unavailable",
+          headers: {
+            "content-type": "application/json",
+            "retry-after": String(Math.ceil(remaining / 1000)),
+          },
+        },
+      ),
+    )
+    throw err
+  }
+
   const triedAccountIds = new Set<string>()
   let lastError: unknown
   // Per-call flag: allow ONE same-account retry after a network error.
@@ -833,6 +904,7 @@ async function createWithMultiAccount(payload: ChatCompletionsPayload) {
       const result = await doFetch(payload, tokenSource, account.id)
       account.lastRequestAt = Date.now()
       accountManager.markAccountSuccess(account.id)
+      recordBreakerSuccess()
       // Tag streaming results with account info for keepalive targeting
       if (Symbol.asyncIterator in result) {
         ;(
@@ -881,6 +953,7 @@ async function createWithMultiAccount(payload: ChatCompletionsPayload) {
         consola.warn(
           `Account ${account.label}: network error after retry (giving up): ${errMsg}`,
         )
+        recordBreakerFailure(`network: ${errMsg.slice(0, 80)}`)
         throw error
       }
 
