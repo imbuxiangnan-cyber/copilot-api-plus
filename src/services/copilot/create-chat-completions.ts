@@ -563,7 +563,8 @@ async function createWithSingleAccount(payload: ChatCompletionsPayload) {
         errorBody.includes("reasoning_effort")
         || errorBody.includes("invalid_reasoning_effort")
         || errorBody.includes("does not support reasoning")
-      if (isExpectedReasoningError) {
+      const isModelNotSupported = errorBody.includes("model_not_supported")
+      if (isExpectedReasoningError || isModelNotSupported) {
         consola.debug(`400 (auto-handled): ${errorBody}`)
       } else {
         consola.warn(`400: ${errorBody}`)
@@ -1037,7 +1038,8 @@ async function doFetch(
         errorBody.includes("reasoning_effort")
         || errorBody.includes("invalid_reasoning_effort")
         || errorBody.includes("does not support reasoning")
-      if (isExpectedReasoningError) {
+      const isModelNotSupported = errorBody.includes("model_not_supported")
+      if (isExpectedReasoningError || isModelNotSupported) {
         consola.debug(`400 (auto-handled): ${errorBody}`)
       } else {
         consola.warn(`400: ${errorBody}`)

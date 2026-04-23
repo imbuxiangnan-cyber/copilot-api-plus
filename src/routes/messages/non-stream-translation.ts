@@ -1,3 +1,5 @@
+import consola from "consola"
+
 import { state } from "~/lib/state"
 import {
   type ChatCompletionResponse,
@@ -78,18 +80,23 @@ export function translateModelName(model: string): string {
   // 2. 移除日期后缀后匹配 (claude-opus-4-5-20251101 -> claude-opus-4-5)
   const modelBase = model.replace(/-\d{8}$/, "")
   if (supportedModels.includes(modelBase)) {
+    consola.debug(
+      `Model name: "${model}" → "${modelBase}" (stripped date suffix)`,
+    )
     return modelBase
   }
 
   // 3. 尝试 4-5 -> 4.5 格式转换 (claude-opus-4-5 -> claude-opus-4.5)
   const modelWithDot = modelBase.replace(/-(\d+)-(\d+)$/, "-$1.$2")
   if (supportedModels.includes(modelWithDot)) {
+    consola.debug(`Model name: "${model}" → "${modelWithDot}" (dash→dot)`)
     return modelWithDot
   }
 
   // 4. 尝试 4.5 -> 4-5 格式转换 (claude-opus-4.5 -> claude-opus-4-5)
   const modelWithDash = model.replace(/(\d+)\.(\d+)/, "$1-$2")
   if (supportedModels.includes(modelWithDash)) {
+    consola.debug(`Model name: "${model}" → "${modelWithDash}" (dot→dash)`)
     return modelWithDash
   }
 
@@ -111,11 +118,15 @@ export function translateModelName(model: string): string {
       modelBase.startsWith(oldFormat)
       && supportedModels.includes(newFormat)
     ) {
+      consola.debug(`Model name: "${model}" → "${newFormat}" (legacy mapping)`)
       return newFormat
     }
   }
 
-  // 6. 如果都找不到，返回原始模型名
+  // 6. 如果都找不到，返回原始模型名（会被 Copilot 拒绝，让上层处理）
+  consola.warn(
+    `Model name: "${model}" not found in supported models list, passing as-is`,
+  )
   return model
 }
 
