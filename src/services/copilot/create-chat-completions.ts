@@ -237,6 +237,22 @@ function injectThinking(
   payload: ChatCompletionsPayload,
   resolvedModel: string,
 ): ChatCompletionsPayload {
+  // Thinking cannot be enabled when tool_choice forces tool use.
+  // This check must come FIRST — even if the client explicitly set
+  // reasoning_effort / thinking_budget, the API will reject the combination.
+  if (isToolChoiceForced(payload.tool_choice)) {
+    if (payload.reasoning_effort || payload.thinking_budget) {
+      const stripped = { ...payload }
+      delete stripped.reasoning_effort
+      delete stripped.thinking_budget
+      consola.debug(
+        `Thinking: stripped reasoning params for "${resolvedModel}" because tool_choice forces tool use`,
+      )
+      return stripped
+    }
+    return payload
+  }
+
   // Client already specified thinking params — respect them, but still
   // apply the runtime-learned cap if the model rejected "high" previously.
   if (payload.reasoning_effort || payload.thinking_budget) {
@@ -248,11 +264,6 @@ function injectThinking(
       const cap = reasoningEffortCap.get(resolvedModel)
       if (cap) return { ...payload, reasoning_effort: cap }
     }
-    return payload
-  }
-
-  // Thinking cannot be enabled when tool_choice forces tool use
-  if (isToolChoiceForced(payload.tool_choice)) {
     return payload
   }
 
@@ -545,7 +556,17 @@ async function createWithSingleAccount(payload: ChatCompletionsPayload) {
     const errorBody = await response.text()
 
     if (response.status === 400) {
-      consola.warn(`400: ${errorBody}`)
+      // reasoning_effort / thinking 相关的 400 是预期内的(会被自动降级重试),
+      // 静默到 debug 避免误导用户。其他 400 保留 warn。
+      const isExpectedReasoningError =
+        errorBody.includes("reasoning_effort")
+        || errorBody.includes("invalid_reasoning_effort")
+        || errorBody.includes("does not support reasoning")
+      if (isExpectedReasoningError) {
+        consola.debug(`400 (auto-handled): ${errorBody}`)
+      } else {
+        consola.warn(`400: ${errorBody}`)
+      }
     } else {
       consola.error("Failed to create chat completions", {
         status: response.status,
@@ -870,7 +891,17 @@ async function doFetch(
     const errorBody = await response.text()
 
     if (response.status === 400) {
-      consola.warn(`400: ${errorBody}`)
+      // reasoning_effort / thinking 相关的 400 是预期内的(会被自动降级重试),
+      // 静默到 debug 避免误导用户。其他 400 保留 warn。
+      const isExpectedReasoningError =
+        errorBody.includes("reasoning_effort")
+        || errorBody.includes("invalid_reasoning_effort")
+        || errorBody.includes("does not support reasoning")
+      if (isExpectedReasoningError) {
+        consola.debug(`400 (auto-handled): ${errorBody}`)
+      } else {
+        consola.warn(`400: ${errorBody}`)
+      }
     } else {
       consola.error("Failed to create chat completions", {
         status: response.status,
