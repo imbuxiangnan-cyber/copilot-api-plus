@@ -1,6 +1,6 @@
 {
   "name": "copilot-api-plus",
-  "version": "1.2.47",
+  "version": "1.2.48",
   "description": "Turn GitHub Copilot into OpenAI/Anthropic API compatible server. Features: smart model matching, API key auth, and more.",
   "keywords": [
     "proxy",
