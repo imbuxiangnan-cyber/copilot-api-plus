@@ -702,6 +702,18 @@ async function handleMultiAccountHttpError(
       )
       return null
     }
+    case 408: {
+      // 408 Request Timeout: the upstream timed out reading our request body.
+      // This is a network/proxy issue (slow uplink, Clash hiccup), NOT an
+      // account problem. Don't mark the account, don't rotate.
+      consola.warn(
+        `Account ${account.label}: 408 request timeout (network issue, not rotating)`,
+      )
+      ;(
+        error as HTTPError & { __nonAccountError?: boolean }
+      ).__nonAccountError = true
+      return null
+    }
     default: {
       // 5xx: upstream error — don't retry to avoid wasting request credits.
       if (error.response.status >= 500) {
@@ -748,6 +760,9 @@ async function handleMultiAccountHttpError(
 async function createWithMultiAccount(payload: ChatCompletionsPayload) {
   const triedAccountIds = new Set<string>()
   let lastError: unknown
+  // Per-call flag: allow ONE same-account retry after a network error.
+  // Reset connection pool first so we don't reuse a dead socket.
+  let networkRetried = false
 
   // Try up to 3 different accounts
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -850,12 +865,21 @@ async function createWithMultiAccount(payload: ChatCompletionsPayload) {
       } else {
         // Network error (ECONNRESET, TLS disconnect, fetch failed, etc.):
         // these are local/proxy/route problems, NOT account problems.
-        // Rotating to another account would just hit the same network
-        // issue and waste a request. Throw immediately and let the
-        // client (Claude Code) decide whether to retry.
+        // Strategy: reset THIS account's connection pool (kill stale
+        // sockets) and retry the same account ONCE. If it fails again,
+        // throw — let the client (Claude Code) decide whether to retry.
         const errMsg = (error as Error).message || String(error)
+        if (!networkRetried) {
+          networkRetried = true
+          consola.warn(
+            `Account ${account.label}: network error, resetting pool and retrying once: ${errMsg}`,
+          )
+          resetAccountConnections(account.id)
+          triedAccountIds.delete(account.id) // allow same account to be picked again
+          continue
+        }
         consola.warn(
-          `Account ${account.label}: network error (not rotating): ${errMsg}`,
+          `Account ${account.label}: network error after retry (giving up): ${errMsg}`,
         )
         throw error
       }
