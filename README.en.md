@@ -51,7 +51,6 @@ English | [简体中文](README.md)
 | ✂️ **Context Passthrough** | Full context passthrough to upstream API; clients (e.g. Claude Code) manage compression |
 | 🔍 **Smart Model Matching** | Handles model name format differences (date suffixes, dash/dot versions, etc.) |
 | 🧠 **Thinking Chain** | Automatically enables deep thinking for supported models, improving code quality |
-| 🧹 **Reminder Stripping** | Strips client-injected reminder blocks before forwarding, avoiding upstream false-positive rejections |
 
 ---
 
