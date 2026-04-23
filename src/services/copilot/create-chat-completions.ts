@@ -744,7 +744,7 @@ async function handleMultiAccountHttpError(
   }
 }
 
-// eslint-disable-next-line complexity
+// eslint-disable-next-line max-lines-per-function, complexity
 async function createWithMultiAccount(payload: ChatCompletionsPayload) {
   const triedAccountIds = new Set<string>()
   let lastError: unknown
@@ -849,14 +849,15 @@ async function createWithMultiAccount(payload: ChatCompletionsPayload) {
         }
       } else {
         // Network error (ECONNRESET, TLS disconnect, fetch failed, etc.):
-        // these are transient — DON'T disable the account. Just move on
-        // to the next account for this attempt. The account stays active
-        // for future requests.
+        // these are local/proxy/route problems, NOT account problems.
+        // Rotating to another account would just hit the same network
+        // issue and waste a request. Throw immediately and let the
+        // client (Claude Code) decide whether to retry.
         const errMsg = (error as Error).message || String(error)
         consola.warn(
-          `Account ${account.label}: transient network error: ${errMsg}`,
+          `Account ${account.label}: network error (not rotating): ${errMsg}`,
         )
-        // No markAccountStatus — account remains usable
+        throw error
       }
 
       consola.warn(
