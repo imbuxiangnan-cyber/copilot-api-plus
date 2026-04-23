@@ -8,6 +8,7 @@ import { resetConnections } from "~/lib/proxy"
 import { checkRateLimit } from "~/lib/rate-limit"
 import { state } from "~/lib/state"
 import { findModel, isNullish } from "~/lib/utils"
+import { stripOpenAIReminders } from "~/routes/messages/strip-reminders"
 import {
   createChatCompletions,
   type ChatCompletionResponse,
@@ -44,7 +45,11 @@ export async function handleCompletion(c: Context) {
   const rawPayload = await c.req.json<ChatCompletionsPayload>()
   consola.debug("Request payload:", JSON.stringify(rawPayload).slice(-400))
 
-  const payload = applyMaxTokens(rawPayload)
+  const payload = applyMaxTokens(
+    stripOpenAIReminders(
+      rawPayload as unknown as Parameters<typeof stripOpenAIReminders>[0],
+    ) as unknown as ChatCompletionsPayload,
+  )
 
   if (state.manualApprove) await awaitApproval()
 

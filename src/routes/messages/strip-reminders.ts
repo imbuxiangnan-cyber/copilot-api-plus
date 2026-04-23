@@ -32,6 +32,18 @@ import type {
   AnthropicUserContentBlock,
 } from "./anthropic-types"
 
+/** Minimal structural type for OpenAI Chat Completions payload — only the
+ *  fields we need to walk for reminder stripping. */
+interface OpenAILikeMessage {
+  role: string
+  content: string | Array<{ type: string; text?: string }> | null
+  [k: string]: unknown
+}
+interface OpenAILikePayload {
+  messages: Array<OpenAILikeMessage>
+  [k: string]: unknown
+}
+
 /** Matches `<system-reminder>…</system-reminder>` non-greedy, across lines. */
 const REMINDER_RE = /<system-reminder>[\s\S]*?<\/system-reminder>/g
 
@@ -65,14 +77,31 @@ type AnyContentBlock =
 export function stripBlocks<B extends AnyContentBlock>(
   content: ReadonlyArray<B>,
 ): ReadonlyArray<B> {
-  // Fast path: no text block contains a reminder → return as-is.
+  // Fast path: no block contains a reminder → return as-is.
   const hasReminder = content.some(
-    (b) => b.type === "text" && b.text.includes(REMINDER_OPEN_TAG),
+    (b) =>
+      (b.type === "text" && b.text.includes(REMINDER_OPEN_TAG))
+      || (b.type === "tool_result" && b.content.includes(REMINDER_OPEN_TAG)),
   )
   if (!hasReminder) return content
 
   const out: Array<B> = []
   for (const b of content) {
+    if (b.type === "tool_result") {
+      // tool_result.content may also contain reminders (rare but possible)
+      const orig = b.content
+      const stripped = stripText(orig)
+      if (stripped === orig) {
+        out.push(b)
+      } else if (stripped.length === 0) {
+        // Keep the block (tool_result must exist for the tool_use_id), but
+        // replace empty content with a single space placeholder.
+        out.push({ ...b, content: " " } as B)
+      } else {
+        out.push({ ...b, content: stripped } as B)
+      }
+      continue
+    }
     if (b.type !== "text") {
       out.push(b)
       continue
@@ -111,19 +140,91 @@ export function stripMessage(message: AnthropicMessage): AnthropicMessage {
 }
 
 /**
+ * Strip reminders from the `system` field (string OR text-block array).
+ * Returns the same reference if nothing changed.
+ */
+export function stripSystem(
+  system: AnthropicMessagesPayload["system"],
+): AnthropicMessagesPayload["system"] {
+  if (system === undefined) return system
+  if (typeof system === "string") {
+    const next = stripText(system)
+    return next === system ? system : next
+  }
+  // Array of AnthropicTextBlock
+  const hasReminder = system.some((b) => b.text.includes(REMINDER_OPEN_TAG))
+  if (!hasReminder) return system
+  const out: Array<{ type: "text"; text: string }> = []
+  for (const b of system) {
+    const t = stripText(b.text)
+    if (t.length === 0) continue
+    out.push(t === b.text ? b : { ...b, text: t })
+  }
+  return out
+}
+
+/**
  * Return a shallow-cloned payload with `<system-reminder>` blocks
- * removed from every message's text content. The input payload is
- * NOT mutated; if no reminders are present anywhere, the original
- * payload reference is returned unchanged (no allocation).
+ * removed from every message's text content AND the system field.
+ * The input payload is NOT mutated; if no reminders are present
+ * anywhere, the original payload reference is returned unchanged.
  */
 export function stripSystemReminders(
   payload: AnthropicMessagesPayload,
 ): AnthropicMessagesPayload {
   let changed = false
+
+  const newSystem = stripSystem(payload.system)
+  if (newSystem !== payload.system) changed = true
+
   const newMessages = payload.messages.map((m) => {
     const next = stripMessage(m)
     if (next !== m) changed = true
     return next
+  })
+
+  if (!changed) return payload
+  return { ...payload, system: newSystem, messages: newMessages }
+}
+
+/**
+ * Strip reminders from an OpenAI-style chat completions payload.
+ * Walks every message's content (string OR ContentPart[]). Filters
+ * out text parts that become empty. Returns the same reference if
+ * nothing changed.
+ */
+export function stripOpenAIReminders<P extends OpenAILikePayload>(
+  payload: P,
+): P {
+  let changed = false
+  const newMessages = payload.messages.map((m) => {
+    if (m.content === null) return m
+    if (typeof m.content === "string") {
+      const next = stripText(m.content)
+      if (next === m.content) return m
+      changed = true
+      return { ...m, content: next }
+    }
+    // ContentPart[]
+    const hasReminder = m.content.some(
+      (p) =>
+        p.type === "text"
+        && typeof p.text === "string"
+        && p.text.includes(REMINDER_OPEN_TAG),
+    )
+    if (!hasReminder) return m
+    const out: Array<{ type: string; text?: string }> = []
+    for (const p of m.content) {
+      if (p.type !== "text" || typeof p.text !== "string") {
+        out.push(p)
+        continue
+      }
+      const t = stripText(p.text)
+      if (t.length === 0) continue
+      out.push(t === p.text ? p : { ...p, text: t })
+    }
+    changed = true
+    return { ...m, content: out }
   })
   // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   if (!changed) return payload
