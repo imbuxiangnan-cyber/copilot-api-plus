@@ -216,6 +216,14 @@ const reasoningUnsupportedModels = new Set<string>()
 const reasoningEffortCap = new Map<string, "low" | "medium">()
 
 /**
+ * Models that reject `reasoning_effort` when function tools are present.
+ * e.g. gpt-5.4 returns "Function tools with reasoning_effort are not
+ * supported ... Please use /v1/responses instead."
+ * Populated at runtime on first 400.
+ */
+const reasoningWithToolsUnsupported = new Set<string>()
+
+/**
  * Compute an appropriate thinking_budget from model capabilities.
  * Returns undefined if the model does not support thinking.
  */
@@ -263,16 +271,22 @@ function injectThinking(
   payload: ChatCompletionsPayload,
   resolvedModel: string,
 ): ChatCompletionsPayload {
-  // Thinking cannot be enabled when tool_choice forces tool use.
-  // This check must come FIRST — even if the client explicitly set
-  // reasoning_effort / thinking_budget, the API will reject the combination.
-  if (isToolChoiceForced(payload.tool_choice)) {
+  // Thinking must be stripped when:
+  // 1. tool_choice forces tool use (API rejects the combination), or
+  // 2. the model is known to reject reasoning_effort when ANY tools are
+  //    present (e.g. gpt-5.4 — learned at runtime).
+  const hasTools = payload.tools && payload.tools.length > 0
+  const mustStripThinking =
+    isToolChoiceForced(payload.tool_choice)
+    || (hasTools && reasoningWithToolsUnsupported.has(resolvedModel))
+
+  if (mustStripThinking) {
     if (payload.reasoning_effort || payload.thinking_budget) {
       const stripped = { ...payload }
       delete stripped.reasoning_effort
       delete stripped.thinking_budget
       consola.debug(
-        `Thinking: stripped reasoning params for "${resolvedModel}" because tool_choice forces tool use`,
+        `Thinking: stripped reasoning params for "${resolvedModel}" (tool conflict)`,
       )
       return stripped
     }
@@ -515,6 +529,22 @@ function handle400ReasoningError(
       `Model "${ctx.resolvedModel}" does not support reasoning_effort — disabled for future requests`,
     )
     return retryWithModifiedPayload(ctx.routedPayload, releaseSlot)
+  }
+
+  // Case 3: Model rejects reasoning_effort when tools are present
+  // e.g. gpt-5.4: "Function tools with reasoning_effort are not supported"
+  if (
+    errMsg.includes("Function tools")
+    && errMsg.includes("reasoning_effort")
+  ) {
+    reasoningWithToolsUnsupported.add(ctx.resolvedModel)
+    consola.debug(
+      `Model "${ctx.resolvedModel}" does not support tools + reasoning_effort — stripped for future requests`,
+    )
+    const stripped = { ...ctx.routedPayload }
+    delete stripped.reasoning_effort
+    delete stripped.thinking_budget
+    return retryWithModifiedPayload(stripped, releaseSlot)
   }
 
   return undefined
