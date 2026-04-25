@@ -175,6 +175,31 @@ async function* wrapGeneratorWithRelease(
 // ---------------------------------------------------------------------------
 
 /**
+ * Models known to require `max_completion_tokens` instead of `max_tokens`.
+ * Populated at runtime: when a model returns 400 with a message containing
+ * "max_completion_tokens", that model is added here and all subsequent
+ * requests use the correct field name automatically.
+ */
+const maxCompletionTokensModels = new Set<string>()
+
+/**
+ * Normalize the payload for models that use `max_completion_tokens`
+ * instead of `max_tokens`.  Only applied when the model has been seen
+ * to reject `max_tokens` at runtime.
+ */
+function normalizeMaxTokens(
+  payload: ChatCompletionsPayload,
+): ChatCompletionsPayload {
+  if (!maxCompletionTokensModels.has(payload.model)) return payload
+  if (!payload.max_tokens) return payload
+  const { max_tokens, ...rest } = payload
+  return {
+    ...rest,
+    max_completion_tokens: max_tokens,
+  } as ChatCompletionsPayload
+}
+
+/**
  * Models that are known NOT to support the `reasoning_effort` parameter.
  * Populated at runtime: the first time a model returns 400 with
  * "Unrecognized request argument", it is added here and all future
@@ -376,6 +401,13 @@ export const createChatCompletions = async (
     releaseSlot()
     return result
   } catch (error) {
+    const maxTokensRetry = handle400MaxTokensError(
+      error,
+      { resolvedModel, routedPayload: thinkingPayload },
+      releaseSlot,
+    )
+    if (maxTokensRetry !== undefined) return maxTokensRetry
+
     const retryResult = handle400ReasoningError(
       error,
       { resolvedModel, thinkingPayload, routedPayload, wasInjected },
@@ -386,6 +418,48 @@ export const createChatCompletions = async (
     releaseSlot()
     throw error
   }
+}
+
+/**
+ * Handle 400 errors caused by `max_tokens` being rejected — o-series and
+ * GPT-5.x require `max_completion_tokens` instead.  Learns at runtime:
+ * adds the model to `maxCompletionTokensModels` and retries once with the
+ * field renamed so all future requests skip the 400 entirely.
+ */
+function handle400MaxTokensError(
+  error: unknown,
+  ctx: {
+    resolvedModel: string
+    routedPayload: ChatCompletionsPayload
+  },
+  releaseSlot: () => void,
+): Promise<AsyncGenerator | ChatCompletionResponse> | undefined {
+  if (!(error instanceof HTTPError) || error.response.status !== 400)
+    return undefined
+  // Copilot error message contains both field names when rejecting max_tokens
+  const errMsg = error.message
+  if (
+    !errMsg.includes("max_tokens")
+    || !errMsg.includes("max_completion_tokens")
+  )
+    return undefined
+
+  maxCompletionTokensModels.add(ctx.resolvedModel)
+  consola.debug(
+    `Model "${ctx.resolvedModel}" requires max_completion_tokens — switching for future requests`,
+  )
+
+  if (
+    ctx.routedPayload.max_tokens === null
+    || ctx.routedPayload.max_tokens === undefined
+  )
+    return retryWithModifiedPayload(ctx.routedPayload, releaseSlot)
+
+  const { max_tokens, ...rest } = ctx.routedPayload
+  return retryWithModifiedPayload(
+    { ...rest, max_completion_tokens: max_tokens } as ChatCompletionsPayload,
+    releaseSlot,
+  )
 }
 
 /**
@@ -524,8 +598,11 @@ async function createWithSingleAccount(payload: ChatCompletionsPayload) {
   // Request usage stats in the final stream chunk
   const body =
     payload.stream ?
-      { ...payload, stream_options: { include_usage: true } }
-    : payload
+      {
+        ...normalizeMaxTokens(payload),
+        stream_options: { include_usage: true },
+      }
+    : normalizeMaxTokens(payload)
 
   const bodyString = JSON.stringify(body)
 
@@ -564,7 +641,10 @@ async function createWithSingleAccount(payload: ChatCompletionsPayload) {
         || errorBody.includes("invalid_reasoning_effort")
         || errorBody.includes("does not support reasoning")
       const isModelNotSupported = errorBody.includes("model_not_supported")
-      if (isExpectedReasoningError || isModelNotSupported) {
+      const isMaxTokensError =
+        errorBody.includes("max_tokens")
+        && errorBody.includes("max_completion_tokens")
+      if (isExpectedReasoningError || isModelNotSupported || isMaxTokensError) {
         consola.debug(`400 (auto-handled): ${errorBody}`)
       } else {
         consola.warn(`400: ${errorBody}`)
@@ -1012,8 +1092,11 @@ async function doFetch(
 
   const body =
     payload.stream ?
-      { ...payload, stream_options: { include_usage: true } }
-    : payload
+      {
+        ...normalizeMaxTokens(payload),
+        stream_options: { include_usage: true },
+      }
+    : normalizeMaxTokens(payload)
 
   const bodyString = JSON.stringify(body)
 
@@ -1039,7 +1122,10 @@ async function doFetch(
         || errorBody.includes("invalid_reasoning_effort")
         || errorBody.includes("does not support reasoning")
       const isModelNotSupported = errorBody.includes("model_not_supported")
-      if (isExpectedReasoningError || isModelNotSupported) {
+      const isMaxTokensError =
+        errorBody.includes("max_tokens")
+        && errorBody.includes("max_completion_tokens")
+      if (isExpectedReasoningError || isModelNotSupported || isMaxTokensError) {
         consola.debug(`400 (auto-handled): ${errorBody}`)
       } else {
         consola.warn(`400: ${errorBody}`)
@@ -1157,6 +1243,7 @@ export interface ChatCompletionsPayload {
   temperature?: number | null
   top_p?: number | null
   max_tokens?: number | null
+  max_completion_tokens?: number | null // required by o-series and GPT-5.x instead of max_tokens
   stop?: string | Array<string> | null
   n?: number | null
   stream?: boolean | null
