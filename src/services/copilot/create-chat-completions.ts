@@ -762,6 +762,32 @@ async function tryDowngradeReasoningEffort(
   }
 }
 
+/** Strip reasoning params and retry when tools + reasoning_effort conflict. */
+async function tryStripReasoningForTools(
+  errMsg: string,
+  retryContext: { payload: ChatCompletionsPayload; tokenSource: TokenSource },
+  accountId: string,
+): Promise<AsyncGenerator | ChatCompletionResponse | null> {
+  if (
+    !errMsg.includes("Function tools")
+    || !errMsg.includes("reasoning_effort")
+  )
+    return null
+
+  reasoningWithToolsUnsupported.add(retryContext.payload.model)
+  consola.debug(
+    `Model "${retryContext.payload.model}" does not support tools + reasoning_effort — stripped for future requests`,
+  )
+  const stripped = { ...retryContext.payload }
+  delete stripped.reasoning_effort
+  delete stripped.thinking_budget
+  try {
+    return await doFetch(stripped, retryContext.tokenSource, accountId)
+  } catch {
+    return null
+  }
+}
+
 /**
  * Whether a 400 error is caused by the request itself (model unavailable,
  * invalid params, etc.) rather than the account. These should NOT trigger
@@ -846,6 +872,15 @@ async function handleMultiAccountHttpError(
           account.id,
         )
         if (downgraded !== null) return downgraded
+
+        // Tools + reasoning_effort conflict (e.g. gpt-5.4):
+        // strip reasoning params and retry on the same account.
+        const toolsConflict = await tryStripReasoningForTools(
+          error.message,
+          retryContext,
+          account.id,
+        )
+        if (toolsConflict !== null) return toolsConflict
 
         // Non-account 400 errors (model not supported, invalid request body,
         // tool_choice + thinking conflict, etc.) — these are NOT account
