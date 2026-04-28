@@ -14,4 +14,14 @@ node_modules/
 .eslintcache
 
 # build output
-dist/*.tgz
+dist/
+
+# package archives
+*.tgz
+
+# local artifacts
+*.log
+models_raw.json
+admin_models.json
+%TEMP%*.json
+.git-rewrite/
