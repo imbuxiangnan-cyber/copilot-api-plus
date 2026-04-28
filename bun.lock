@@ -3,7 +3,7 @@
   "configVersion": 0,
   "workspaces": {
     "": {
-      "name": "copilot-api",
+      "name": "copilot-api-plus",
       "dependencies": {
         "@clack/prompts": "^0.11.0",
         "citty": "^0.1.6",
