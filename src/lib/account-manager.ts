@@ -45,6 +45,8 @@ export interface Account {
     premium_total: number
     chat_remaining: number
     chat_total: number
+    /** Whether the upstream account is allowed to exceed its monthly quota. */
+    premium_overage_permitted?: boolean
     quotaResetDate: string
     lastCheckedAt: number
   }
@@ -381,20 +383,32 @@ export class AccountManager {
         premium_total: snap.premium_interactions.entitlement,
         chat_remaining: snap.chat.remaining,
         chat_total: snap.chat.entitlement,
+        premium_overage_permitted: snap.premium_interactions.overage_permitted,
         quotaResetDate: data.quota_reset_date,
         lastCheckedAt: Date.now(),
       }
 
-      // Transition between active ↔ exhausted
-      if (account.usage.premium_remaining <= 0 && account.status === "active") {
+      const overagePermitted = snap.premium_interactions.overage_permitted
+
+      // Transition between active ↔ exhausted.
+      // If the upstream account allows overage (paid extra), do NOT mark it
+      // exhausted just because remaining went negative — the user can keep
+      // making requests and pay per-use. We only flip back from "exhausted"
+      // to "active" automatically; we never auto-flip into "exhausted" when
+      // overage is permitted.
+      if (
+        account.usage.premium_remaining <= 0
+        && account.status === "active"
+        && !overagePermitted
+      ) {
         this.markAccountStatus(
           account.id,
           "exhausted",
           "Premium quota exhausted",
         )
       } else if (
-        account.usage.premium_remaining > 0
-        && account.status === "exhausted"
+        account.status === "exhausted"
+        && (account.usage.premium_remaining > 0 || overagePermitted)
       ) {
         account.status = "active"
         account.statusMessage = undefined
