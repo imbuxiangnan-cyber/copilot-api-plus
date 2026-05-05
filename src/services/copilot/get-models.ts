@@ -85,4 +85,11 @@ export interface Model {
     multiplier: number
     restricted_to?: Array<string>
   }
+  /**
+   * Optional list of native upstream endpoints this model supports.
+   * GitHub Copilot's `/models` response advertises this for some models
+   * (e.g. Claude family typically includes "anthropic-messages") so we
+   * can route directly to the native API instead of translating.
+   */
+  supported_endpoints?: Array<string>
 }

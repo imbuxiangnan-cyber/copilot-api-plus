@@ -4,6 +4,10 @@ import type { SSEStreamingApi } from "hono/streaming"
 import consola from "consola"
 import { streamSSE } from "hono/streaming"
 
+import {
+  overrideAnthropicResponseModel,
+  overrideMessageStartEventModel,
+} from "~/lib/anthropic-sanitizer"
 import { awaitApproval } from "~/lib/approval"
 import {
   isAccountProxied,
@@ -12,12 +16,19 @@ import {
   type StreamAccountInfo,
 } from "~/lib/proxy"
 import { checkRateLimit } from "~/lib/rate-limit"
+import { resolveAnthropicRoute } from "~/lib/route-resolver"
 import { state } from "~/lib/state"
+import {
+  createAnthropicMessages,
+  type AnthropicMessagesResult,
+} from "~/services/copilot/create-anthropic-messages"
 import {
   createChatCompletions,
   type ChatCompletionChunk,
   type ChatCompletionResponse,
 } from "~/services/copilot/create-chat-completions"
+
+import type { AnthropicResponse } from "./anthropic-types"
 
 import {
   type AnthropicMessagesPayload,
@@ -186,13 +197,236 @@ export async function handleCompletion(c: Context) {
     max_tokens: anthropicPayload.max_tokens,
   })
 
-  const openAIPayload = translateToOpenAI(
-    stripSystemReminders(anthropicPayload),
-  )
-
   if (state.manualApprove) {
     await awaitApproval()
   }
+
+  const route = resolveAnthropicRoute(anthropicPayload.model)
+  consola.debug(`Anthropic route resolved: ${route}`)
+
+  if (route === "native-anthropic") {
+    return handleNativePassthrough(c, anthropicPayload)
+  }
+  return handleTranslatedCompletion(c, anthropicPayload)
+}
+
+// ---------------------------------------------------------------------------
+// Native passthrough — forward Anthropic events directly
+// ---------------------------------------------------------------------------
+
+async function handleNativePassthrough(
+  c: Context,
+  anthropicPayload: AnthropicMessagesPayload,
+): Promise<Response> {
+  const anthropicBeta = c.req.header("anthropic-beta")
+
+  let result: AnthropicMessagesResult
+  try {
+    result = await createAnthropicMessages(
+      stripSystemReminders(anthropicPayload),
+      { anthropicBeta },
+    )
+  } catch (error) {
+    consola.warn(
+      `Native /v1/messages failed: ${(error as Error).message || String(error)}`,
+    )
+    throw error
+  }
+
+  if (!anthropicPayload.stream) {
+    return c.json(
+      overrideAnthropicResponseModel(
+        result as AnthropicResponse,
+        anthropicPayload.model,
+      ),
+    )
+  }
+
+  const stream = result as AsyncGenerator & {
+    __accountInfo?: StreamAccountInfo
+  }
+  const accountInfo = stream.__accountInfo
+  const proxied =
+    accountInfo ? isAccountProxied(accountInfo.accountProxy) : isProxyActive()
+
+  const heartbeatMs = proxied ? HEARTBEAT_PROXIED_MS : HEARTBEAT_DIRECT_MS
+  const upstreamTimeoutMs =
+    proxied ? UPSTREAM_TIMEOUT_PROXIED_MS : UPSTREAM_TIMEOUT_DIRECT_MS
+
+  consola.debug(
+    `Native SSE config: proxied=${proxied}, heartbeat=${heartbeatMs / 1000}s, timeout=${upstreamTimeoutMs / 1000}s`,
+  )
+
+  return streamSSE(c, async (sse) => {
+    const abortController = new AbortController()
+    sse.onAbort(() => abortController.abort())
+
+    try {
+      await consumeNativeStreamWithHeartbeat(stream, sse, {
+        heartbeatMs,
+        upstreamTimeoutMs,
+        abortSignal: abortController.signal,
+        requestedModel: anthropicPayload.model,
+      })
+    } catch (error) {
+      if (!abortController.signal.aborted) {
+        const message = (error as Error).message || String(error)
+        consola.warn(`Native SSE stream interrupted: ${message}`)
+        resetConnections()
+        await sendErrorEvent(sse)
+      }
+    }
+  })
+}
+
+/** Resolve the Anthropic event type for a raw SSE frame. */
+function resolveAnthropicEventType(rawEvent: {
+  event?: string
+  data?: string
+}): string | undefined {
+  if (rawEvent.event) return rawEvent.event
+  if (!rawEvent.data) return undefined
+  try {
+    return (JSON.parse(rawEvent.data) as { type?: string }).type
+  } catch {
+    return undefined
+  }
+}
+
+/** Result of processing a single tick of the native stream loop. */
+type NativeTickResult =
+  | { action: "continue" }
+  | { action: "break" }
+  | { action: "data"; iterResult: IteratorResult<unknown> }
+
+async function handleNativeHeartbeatTick(
+  stream: SSEStreamingApi,
+  silenceMs: number,
+  upstreamTimeoutMs: number,
+): Promise<NativeTickResult> {
+  if (silenceMs >= upstreamTimeoutMs) {
+    consola.warn(
+      `Upstream silent for ${Math.round(silenceMs / 1000)}s (limit ${upstreamTimeoutMs / 1000}s), closing native stream`,
+    )
+    resetConnections()
+    await sendErrorEvent(stream)
+    return { action: "break" }
+  }
+  await stream.writeSSE({ event: "ping", data: '{"type":"ping"}' })
+  return { action: "continue" }
+}
+
+/** Forward one native event; returns true if it was `message_stop`. */
+async function forwardNativeEvent(
+  stream: SSEStreamingApi,
+  rawEvent: { event?: string; data?: string },
+  requestedModel?: string,
+): Promise<{ forwarded: boolean; isMessageStop: boolean }> {
+  if (rawEvent.data === "[DONE]")
+    return { forwarded: false, isMessageStop: false }
+  if (!rawEvent.data) return { forwarded: true, isMessageStop: false }
+
+  const eventType = resolveAnthropicEventType(rawEvent)
+  if (!eventType) {
+    consola.debug("Skipping native SSE chunk with no resolvable type")
+    return { forwarded: true, isMessageStop: false }
+  }
+
+  const dataToSend =
+    eventType === "message_start" && requestedModel ?
+      overrideMessageStartEventModel(rawEvent.data, requestedModel)
+    : rawEvent.data
+
+  await stream.writeSSE({ event: eventType, data: dataToSend })
+  return { forwarded: true, isMessageStop: eventType === "message_stop" }
+}
+
+/**
+ * Consume an upstream Anthropic SSE generator and forward events untouched.
+ * Heartbeat and upstream-timeout logic mirrors the translated path.
+ */
+async function consumeNativeStreamWithHeartbeat(
+  response: AsyncGenerator,
+  stream: SSEStreamingApi,
+  opts: {
+    heartbeatMs: number
+    upstreamTimeoutMs: number
+    abortSignal?: AbortSignal
+    requestedModel?: string
+  },
+): Promise<void> {
+  const { heartbeatMs, upstreamTimeoutMs, abortSignal, requestedModel } = opts
+  const iter = response[Symbol.asyncIterator]()
+  let pendingNext = iter.next()
+  let lastDataAt = Date.now()
+  let sawMessageStop = false
+
+  try {
+    while (true) {
+      if (abortSignal?.aborted) {
+        consola.debug("Client disconnected, stopping native SSE consumption")
+        break
+      }
+
+      const raceResult = await Promise.race([
+        pendingNext.then((r) => ({ kind: "data" as const, result: r })),
+        heartbeatDelay(heartbeatMs),
+      ])
+
+      if (raceResult === HEARTBEAT) {
+        const tick = await handleNativeHeartbeatTick(
+          stream,
+          Date.now() - lastDataAt,
+          upstreamTimeoutMs,
+        )
+        if (tick.action === "break") break
+        continue
+      }
+
+      const { result: iterResult } = raceResult
+      if (iterResult.done) break
+
+      lastDataAt = Date.now()
+      pendingNext = iter.next()
+
+      const rawEvent = iterResult.value as { event?: string; data?: string }
+      const result = await forwardNativeEvent(stream, rawEvent, requestedModel)
+      if (!result.forwarded) break
+      if (result.isMessageStop) sawMessageStop = true
+    }
+
+    // Synthesize message_stop if upstream closed without one — many
+    // Anthropic clients hang waiting for it.
+    if (!sawMessageStop && !abortSignal?.aborted) {
+      try {
+        await stream.writeSSE({
+          event: "message_stop",
+          data: '{"type":"message_stop"}',
+        })
+      } catch {
+        // client gone
+      }
+    }
+  } finally {
+    try {
+      await iter.return(undefined)
+    } catch {
+      // already closed
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Translated path (existing OpenAI chat-completions translation)
+// ---------------------------------------------------------------------------
+
+async function handleTranslatedCompletion(
+  c: Context,
+  anthropicPayload: AnthropicMessagesPayload,
+): Promise<Response> {
+  const openAIPayload = translateToOpenAI(
+    stripSystemReminders(anthropicPayload),
+  )
 
   const response = await createChatCompletions(openAIPayload)
 

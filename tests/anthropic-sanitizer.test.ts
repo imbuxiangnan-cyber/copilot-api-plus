@@ -1,0 +1,246 @@
+import { describe, test, expect } from "bun:test"
+
+import type { AnthropicMessagesPayload } from "~/routes/messages/anthropic-types"
+
+import {
+  isInvalidThinkingSignatureError,
+  normalizeAdaptiveThinkingForCopilot,
+  overrideAnthropicResponseModel,
+  overrideMessageStartEventModel,
+  sanitizeForCopilotBackend,
+  stripAssistantThinkingBlocks,
+} from "~/lib/anthropic-sanitizer"
+import { HTTPError } from "~/lib/error"
+
+function basePayload(
+  overrides: Partial<AnthropicMessagesPayload> = {},
+): AnthropicMessagesPayload {
+  return {
+    model: "claude-opus-4-5",
+    max_tokens: 100,
+    messages: [{ role: "user", content: "hi" }],
+    ...overrides,
+  }
+}
+
+function buildHTTPError(status: number, body: string): HTTPError {
+  return new HTTPError(
+    `boom`,
+    new Response(body, {
+      status,
+      headers: { "content-type": "application/json" },
+    }),
+  )
+}
+
+describe("sanitizeForCopilotBackend", () => {
+  test("strips context_management", () => {
+    const payload = basePayload() as AnthropicMessagesPayload & {
+      context_management?: unknown
+    }
+    payload.context_management = { foo: "bar" }
+    sanitizeForCopilotBackend(payload)
+    expect("context_management" in payload).toBe(false)
+  })
+
+  test("flattens nested json_schema → schema", () => {
+    const payload = basePayload() as AnthropicMessagesPayload & {
+      output_config?: { format?: Record<string, unknown> }
+    }
+    payload.output_config = {
+      format: {
+        type: "json_schema",
+        json_schema: { schema: { type: "object" } },
+        name: "x",
+        strict: true,
+      },
+    }
+    sanitizeForCopilotBackend(payload)
+    const fmt = (payload.output_config as { format: Record<string, unknown> })
+      .format
+    expect(fmt.schema).toEqual({ type: "object" })
+    expect("json_schema" in fmt).toBe(false)
+    expect("name" in fmt).toBe(false)
+    expect("strict" in fmt).toBe(false)
+  })
+
+  test("ignores non-json_schema format", () => {
+    const payload = basePayload() as AnthropicMessagesPayload & {
+      output_config?: { format?: Record<string, unknown> }
+    }
+    payload.output_config = { format: { type: "text" } }
+    sanitizeForCopilotBackend(payload)
+    expect(payload.output_config.format).toEqual({ type: "text" })
+  })
+})
+
+describe("normalizeAdaptiveThinkingForCopilot", () => {
+  test("strips budget_tokens_max from adaptive thinking", () => {
+    const payload = basePayload() as AnthropicMessagesPayload & {
+      thinking?: Record<string, unknown>
+    }
+    payload.thinking = { type: "adaptive", budget_tokens_max: 5000 }
+    normalizeAdaptiveThinkingForCopilot(payload)
+    expect("budget_tokens_max" in payload.thinking).toBe(false)
+    expect(payload.thinking.type).toBe("adaptive")
+  })
+
+  test("leaves enabled thinking untouched", () => {
+    const payload = basePayload() as AnthropicMessagesPayload & {
+      thinking?: Record<string, unknown>
+    }
+    payload.thinking = { type: "enabled", budget_tokens: 1024 }
+    normalizeAdaptiveThinkingForCopilot(payload)
+    expect(payload.thinking).toEqual({ type: "enabled", budget_tokens: 1024 })
+  })
+})
+
+describe("stripAssistantThinkingBlocks", () => {
+  test("returns stripped=false when nothing to strip", () => {
+    const payload = basePayload()
+    const result = stripAssistantThinkingBlocks(payload)
+    expect(result.stripped).toBe(false)
+    expect(result.payload).toBe(payload)
+  })
+
+  test("removes thinking and redacted_thinking blocks", () => {
+    const payload = basePayload({
+      messages: [
+        { role: "user", content: "hi" },
+        {
+          role: "assistant",
+          content: [
+            { type: "thinking", thinking: "..." },
+            { type: "text", text: "hello" },
+            { type: "redacted_thinking", data: "..." },
+          ],
+        } as never,
+      ],
+    })
+    const result = stripAssistantThinkingBlocks(payload)
+    expect(result.stripped).toBe(true)
+    expect(result.strippedBlocks).toBe(2)
+    expect(result.droppedAssistantMessages).toBe(0)
+    const assistantMsg = result.payload.messages[1] as {
+      content: Array<{ type: string }>
+    }
+    expect(assistantMsg.content).toHaveLength(1)
+    expect(assistantMsg.content[0].type).toBe("text")
+  })
+
+  test("drops assistant turns left empty after strip", () => {
+    const payload = basePayload({
+      messages: [
+        { role: "user", content: "hi" },
+        {
+          role: "assistant",
+          content: [{ type: "thinking", thinking: "..." }],
+        } as never,
+        { role: "user", content: "ok" },
+      ],
+    })
+    const result = stripAssistantThinkingBlocks(payload)
+    expect(result.stripped).toBe(true)
+    expect(result.strippedBlocks).toBe(1)
+    expect(result.droppedAssistantMessages).toBe(1)
+    expect(result.payload.messages).toHaveLength(2)
+  })
+
+  test("does not mutate input payload", () => {
+    const payload = basePayload({
+      messages: [
+        {
+          role: "assistant",
+          content: [
+            { type: "thinking", thinking: "..." },
+            { type: "text", text: "hi" },
+          ],
+        } as never,
+      ],
+    })
+    const originalContent = (payload.messages[0] as { content: unknown })
+      .content
+    stripAssistantThinkingBlocks(payload)
+    expect((payload.messages[0] as { content: unknown }).content).toBe(
+      originalContent,
+    )
+  })
+})
+
+describe("isInvalidThinkingSignatureError", () => {
+  test("matches the upstream phrasing on a 400", async () => {
+    const err = buildHTTPError(
+      400,
+      JSON.stringify({
+        error: { message: "Invalid `signature` in `thinking` block" },
+      }),
+    )
+    expect(await isInvalidThinkingSignatureError(err)).toBe(true)
+  })
+
+  test("returns false for unrelated 400", async () => {
+    const err = buildHTTPError(
+      400,
+      JSON.stringify({ error: { message: "bad request" } }),
+    )
+    expect(await isInvalidThinkingSignatureError(err)).toBe(false)
+  })
+
+  test("returns false for non-HTTPError", async () => {
+    expect(await isInvalidThinkingSignatureError(new Error("nope"))).toBe(false)
+  })
+
+  test("returns false on non-400 status", async () => {
+    const err = buildHTTPError(
+      500,
+      JSON.stringify({
+        error: { message: "Invalid signature in thinking block" },
+      }),
+    )
+    expect(await isInvalidThinkingSignatureError(err)).toBe(false)
+  })
+})
+
+describe("overrideAnthropicResponseModel", () => {
+  test("rewrites model name", () => {
+    const result = overrideAnthropicResponseModel(
+      {
+        id: "msg_1",
+        type: "message",
+        role: "assistant",
+        model: "claude-opus-4-5-20251101",
+        content: [],
+        stop_reason: "end_turn",
+        stop_sequence: null,
+        usage: { input_tokens: 1, output_tokens: 1 },
+      } as never,
+      "claude-opus-4-5",
+    )
+    expect(result.model).toBe("claude-opus-4-5")
+  })
+})
+
+describe("overrideMessageStartEventModel", () => {
+  test("rewrites model in message_start", () => {
+    const data = JSON.stringify({
+      type: "message_start",
+      message: { id: "x", model: "claude-opus-4-5-20251101" },
+    })
+    const result = overrideMessageStartEventModel(data, "claude-opus-4-5")
+    expect(JSON.parse(result)).toEqual({
+      type: "message_start",
+      message: { id: "x", model: "claude-opus-4-5" },
+    })
+  })
+
+  test("leaves non-message_start events untouched", () => {
+    const data = JSON.stringify({ type: "ping" })
+    expect(overrideMessageStartEventModel(data, "claude-x")).toBe(data)
+  })
+
+  test("returns original on parse error", () => {
+    expect(overrideMessageStartEventModel("not-json", "claude-x")).toBe(
+      "not-json",
+    )
+  })
+})

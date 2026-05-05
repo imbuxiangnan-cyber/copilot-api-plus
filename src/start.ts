@@ -36,6 +36,7 @@ interface RunServerOptions {
   showToken: boolean
   proxyEnv: boolean
   apiKeys?: Array<string>
+  disableAnthropicPassthrough: boolean
 }
 
 /**
@@ -233,6 +234,13 @@ export async function runServer(options: RunServerOptions): Promise<void> {
   state.rateLimitWait = options.rateLimitWait
   state.showToken = options.showToken
   state.apiKeys = options.apiKeys
+  state.disableAnthropicPassthrough = options.disableAnthropicPassthrough
+
+  if (options.disableAnthropicPassthrough) {
+    consola.info(
+      "Native Anthropic passthrough DISABLED — all /v1/messages requests will translate via /chat/completions",
+    )
+  }
 
   if (state.apiKeys && state.apiKeys.length > 0) {
     consola.info(
@@ -375,6 +383,12 @@ export const start = defineCommand({
       type: "string",
       description: "API keys for authentication",
     },
+    "disable-anthropic-passthrough": {
+      type: "boolean",
+      default: false,
+      description:
+        "Force translate all /v1/messages requests via /chat/completions (disable native Copilot Anthropic endpoint)",
+    },
   },
   run({ args }) {
     const rateLimitRaw = args["rate-limit"]
@@ -401,6 +415,7 @@ export const start = defineCommand({
       showToken: args["show-token"],
       proxyEnv: args["proxy-env"],
       apiKeys,
+      disableAnthropicPassthrough: args["disable-anthropic-passthrough"],
     })
   },
 })
