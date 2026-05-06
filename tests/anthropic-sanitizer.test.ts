@@ -193,6 +193,32 @@ describe("isInvalidThinkingSignatureError", () => {
     expect(await isInvalidThinkingSignatureError(new Error("nope"))).toBe(false)
   })
 
+  test("matches when body is consumed but message contains the body (real-world case)", async () => {
+    // This mirrors what `throwUpstreamError` produces: it pre-reads the
+    // body via `await response.text()`, embeds it in the HTTPError
+    // message, and the body stream is then drained. The detection must
+    // still fire from the message.
+    const body = JSON.stringify({
+      type: "error",
+      error: {
+        type: "invalid_request_error",
+        message: "messages.1.content.0: Invalid signature in thinking block",
+      },
+      request_id: "req_vrtx_xxx",
+    })
+    const response = new Response(body, {
+      status: 400,
+      headers: { "content-type": "application/json" },
+    })
+    // Drain the body to simulate `throwUpstreamError` having read it.
+    await response.text()
+    const err = new HTTPError(
+      `Failed to call /v1/messages: 400 ${body}`,
+      response,
+    )
+    expect(await isInvalidThinkingSignatureError(err)).toBe(true)
+  })
+
   test("returns false on non-400 status", async () => {
     const err = buildHTTPError(
       500,

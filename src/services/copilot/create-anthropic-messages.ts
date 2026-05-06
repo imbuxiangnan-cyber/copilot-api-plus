@@ -175,18 +175,36 @@ export async function createAnthropicMessages(
   // model's max_thinking_budget. Existing client preference is respected.
   injectMaxThinkingBudget(payload)
 
+  // Proactively strip assistant thinking/redacted_thinking blocks from
+  // history. Copilot's Vertex backend (req_vrtx_*) rejects replayed
+  // thinking signatures across requests, so any multi-turn conversation
+  // would otherwise hit a 400 + signature-retry on every request. We
+  // strip up-front to skip that round trip.
+  //
+  // The `try/catch` block below still keeps the retry as a safety net for
+  // any future / non-Vertex backend that might surface the same error
+  // through a different code path.
+  const preStripped = stripAssistantThinkingBlocks(payload)
+  let workingPayload = payload
+  if (preStripped.stripped) {
+    consola.debug(
+      `Pre-stripped ${preStripped.strippedBlocks} assistant thinking block(s) from history (Copilot/Vertex does not accept replay)`,
+    )
+    workingPayload = preStripped.payload
+  }
+
   // Surgical strip of fields the Copilot backend rejects.
   // Mutates the payload in place — safe because the handler clones via
   // stripSystemReminders before passing it down.
-  sanitizeForCopilotBackend(payload)
-  normalizeAdaptiveThinkingForCopilot(payload)
+  sanitizeForCopilotBackend(workingPayload)
+  normalizeAdaptiveThinkingForCopilot(workingPayload)
 
   try {
-    return await dispatchAnthropicRequest(payload, options)
+    return await dispatchAnthropicRequest(workingPayload, options)
   } catch (error) {
     if (!(await isInvalidThinkingSignatureError(error))) throw error
 
-    const stripped = stripAssistantThinkingBlocks(payload)
+    const stripped = stripAssistantThinkingBlocks(workingPayload)
     if (!stripped.stripped) throw error
 
     const droppedSuffix =

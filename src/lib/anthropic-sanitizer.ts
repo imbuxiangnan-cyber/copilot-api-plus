@@ -207,6 +207,17 @@ export async function isInvalidThinkingSignatureError(
   if (!(error instanceof HTTPError) || error.response.status !== 400) {
     return false
   }
+
+  // First try the error message itself — `throwUpstreamError` embeds the
+  // upstream body string into the HTTPError message, and it is the only
+  // reliable source because the response body has typically already been
+  // consumed by the time we get here (`await response.text()`).
+  if (INVALID_THINKING_SIGNATURE_PATTERN.test(error.message)) {
+    return true
+  }
+
+  // Fallback: try the response body, in case a future code path throws
+  // an HTTPError without inlining the body into the message.
   const message = await readUpstreamErrorMessage(error.response)
   return (
     typeof message === "string"
