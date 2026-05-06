@@ -1,8 +1,10 @@
-import { describe, test, expect } from "bun:test"
+import { describe, test, expect, beforeEach } from "bun:test"
 
 import type { AnthropicMessagesPayload } from "~/routes/messages/anthropic-types"
+import type { Model } from "~/services/copilot/get-models"
 
 import {
+  injectMaxThinkingBudget,
   isInvalidThinkingSignatureError,
   normalizeAdaptiveThinkingForCopilot,
   overrideAnthropicResponseModel,
@@ -11,6 +13,7 @@ import {
   stripAssistantThinkingBlocks,
 } from "~/lib/anthropic-sanitizer"
 import { HTTPError } from "~/lib/error"
+import { state } from "~/lib/state"
 
 function basePayload(
   overrides: Partial<AnthropicMessagesPayload> = {},
@@ -242,5 +245,102 @@ describe("overrideMessageStartEventModel", () => {
     expect(overrideMessageStartEventModel("not-json", "claude-x")).toBe(
       "not-json",
     )
+  })
+})
+
+function setModelCapability(
+  id: string,
+  supports: {
+    max_thinking_budget?: number
+    adaptive_thinking?: boolean
+  },
+): void {
+  state.models = {
+    object: "list",
+    data: [
+      {
+        id,
+        name: id,
+        object: "model",
+        model_picker_enabled: true,
+        preview: false,
+        vendor: "anthropic",
+        version: "1",
+        capabilities: {
+          family: "claude",
+          limits: {},
+          object: "model_capabilities",
+          supports,
+          tokenizer: "cl100k_base",
+          type: "chat",
+        },
+      },
+    ] as Array<Model>,
+  }
+}
+
+describe("injectMaxThinkingBudget", () => {
+  beforeEach(() => {
+    state.models = undefined
+  })
+
+  test("injects adaptive thinking for adaptive-capable model", () => {
+    setModelCapability("claude-opus-4.7", {
+      max_thinking_budget: 32000,
+      adaptive_thinking: true,
+    })
+    const payload = basePayload({ model: "claude-opus-4.7" })
+    injectMaxThinkingBudget(payload)
+    expect(payload.thinking).toEqual({ type: "adaptive" })
+  })
+
+  test("injects enabled thinking with max budget for non-adaptive model", () => {
+    setModelCapability("claude-opus-4.5", {
+      max_thinking_budget: 32000,
+      adaptive_thinking: false,
+    })
+    const payload = basePayload({ model: "claude-opus-4.5" })
+    injectMaxThinkingBudget(payload)
+    expect(payload.thinking).toEqual({
+      type: "enabled",
+      budget_tokens: 32000,
+    })
+  })
+
+  test("respects existing client thinking field", () => {
+    setModelCapability("claude-opus-4.7", {
+      max_thinking_budget: 32000,
+      adaptive_thinking: true,
+    })
+    const payload = basePayload({
+      model: "claude-opus-4.7",
+      thinking: { type: "enabled", budget_tokens: 1024 },
+    })
+    injectMaxThinkingBudget(payload)
+    expect(payload.thinking).toEqual({
+      type: "enabled",
+      budget_tokens: 1024,
+    })
+  })
+
+  test("does nothing when model has no thinking capability", () => {
+    setModelCapability("gpt-4o", {})
+    const payload = basePayload({ model: "gpt-4o" })
+    injectMaxThinkingBudget(payload)
+    expect(payload.thinking).toBeUndefined()
+  })
+
+  test("does nothing when model is unknown", () => {
+    state.models = undefined
+    const payload = basePayload({ model: "unknown-model" })
+    injectMaxThinkingBudget(payload)
+    expect(payload.thinking).toBeUndefined()
+  })
+
+  test("does nothing when max_thinking_budget is 0", () => {
+    setModelCapability("weird-model", { max_thinking_budget: 0 })
+    const payload = basePayload({ model: "weird-model" })
+    injectMaxThinkingBudget(payload)
+    expect(payload.thinking).toBeUndefined()
   })
 })

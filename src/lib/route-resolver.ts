@@ -39,12 +39,25 @@ export function clearRouteCache(): void {
 }
 
 /**
+ * Endpoint identifiers that mean "native Anthropic /v1/messages".
+ *
+ * Copilot's `/models` response uses the literal `/v1/messages` path,
+ * but jer-y/copilot-proxy and earlier Copilot betas used the symbolic
+ * name `anthropic-messages`. Accept both so we are forward- and
+ * backward-compatible with whichever wire format Copilot returns.
+ */
+const NATIVE_ANTHROPIC_ENDPOINT_IDS = new Set<string>([
+  "/v1/messages",
+  "anthropic-messages",
+])
+
+/**
  * Resolve the upstream route for an Anthropic /v1/messages payload.
  *
  * Order of precedence:
  *   1. User force-disabled native passthrough — always translate.
- *   2. Model advertises `anthropic-messages` in supported_endpoints → native.
- *   3. Model advertises supported_endpoints WITHOUT anthropic-messages → translate.
+ *   2. Model advertises a native Anthropic endpoint → native.
+ *   3. Model advertises supported_endpoints WITHOUT a native one → translate.
  *   4. Capability missing → fall back to name heuristic (claude-* → native).
  */
 export function resolveAnthropicRoute(model: string): AnthropicRoute {
@@ -63,9 +76,10 @@ function decideRoute(model: string): AnthropicRoute {
 
   const endpoints = modelInfo?.supported_endpoints
   if (Array.isArray(endpoints) && endpoints.length > 0) {
-    return endpoints.includes("anthropic-messages") ? "native-anthropic" : (
-        "translate-openai"
-      )
+    const hasNative = endpoints.some((ep) =>
+      NATIVE_ANTHROPIC_ENDPOINT_IDS.has(ep),
+    )
+    return hasNative ? "native-anthropic" : "translate-openai"
   }
 
   // Capability missing — fall back to model-name heuristic.

@@ -24,6 +24,7 @@ import type {
 
 import { accountManager } from "~/lib/account-manager"
 import {
+  injectMaxThinkingBudget,
   isInvalidThinkingSignatureError,
   normalizeAdaptiveThinkingForCopilot,
   sanitizeForCopilotBackend,
@@ -169,6 +170,11 @@ export async function createAnthropicMessages(
   payload: AnthropicMessagesPayload,
   options?: CreateOptions,
 ): Promise<AnthropicMessagesResult> {
+  // Default to maximum thinking budget when the client did not specify one.
+  // Adaptive-thinking models get { type: "adaptive" }; others get the
+  // model's max_thinking_budget. Existing client preference is respected.
+  injectMaxThinkingBudget(payload)
+
   // Surgical strip of fields the Copilot backend rejects.
   // Mutates the payload in place — safe because the handler clones via
   // stripSystemReminders before passing it down.

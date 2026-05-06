@@ -16,6 +16,7 @@ import type {
 } from "~/routes/messages/anthropic-types"
 
 import { HTTPError } from "~/lib/error"
+import { findModel } from "~/lib/utils"
 
 /** Upstream message that triggers the assistant-thinking-strip retry. */
 const INVALID_THINKING_SIGNATURE_PATTERN =
@@ -91,6 +92,52 @@ export function normalizeAdaptiveThinkingForCopilot(
     )
     delete thinking.budget_tokens_max
   }
+}
+
+// ---------------------------------------------------------------------------
+// Maximum thinking budget injection
+// ---------------------------------------------------------------------------
+
+/**
+ * If the client did not specify a `thinking` field, inject the maximum
+ * thinking budget the model supports — pulled from Copilot's `/models`
+ * capabilities. Mutates in place.
+ *
+ *   - Models with `adaptive_thinking: true` (claude-opus-4.7,
+ *     claude-sonnet-4.6) get `{ type: "adaptive" }` so the model
+ *     decides depth dynamically — recommended by Anthropic for
+ *     these models.
+ *   - Other thinking-capable models get
+ *     `{ type: "enabled", budget_tokens: max_thinking_budget }`.
+ *   - Models without thinking capability are left untouched.
+ *
+ * Skipped if the client already specified `thinking` (any value) — we
+ * always defer to explicit client intent.
+ */
+export function injectMaxThinkingBudget(
+  payload: AnthropicMessagesPayload,
+): void {
+  if (payload.thinking !== undefined) return
+
+  const modelInfo = findModel(payload.model)
+  const supports = modelInfo?.capabilities.supports
+  if (!supports) return
+
+  const maxBudget = supports.max_thinking_budget
+  if (!maxBudget || maxBudget <= 0) return
+
+  if (supports.adaptive_thinking === true) {
+    payload.thinking = { type: "adaptive" }
+    consola.debug(
+      `Injected adaptive thinking for ${payload.model} (no client preference)`,
+    )
+    return
+  }
+
+  payload.thinking = { type: "enabled", budget_tokens: maxBudget }
+  consola.debug(
+    `Injected enabled thinking budget=${maxBudget} for ${payload.model} (no client preference)`,
+  )
 }
 
 // ---------------------------------------------------------------------------

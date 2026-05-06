@@ -43,6 +43,29 @@ describe("resolveAnthropicRoute", () => {
     expect(resolveAnthropicRoute("gpt-4o")).toBe("translate-openai")
   })
 
+  test("recognizes upstream literal /v1/messages endpoint id", () => {
+    // Real Copilot wire format as of v1.3.x: returns the literal path,
+    // not the symbolic "anthropic-messages".
+    setModels([
+      {
+        id: "claude-opus-4.7",
+        supported_endpoints: ["/v1/messages", "/chat/completions"],
+      },
+    ])
+    expect(resolveAnthropicRoute("claude-opus-4.7")).toBe("native-anthropic")
+  })
+
+  test("recognizes both /v1/messages and anthropic-messages aliases", () => {
+    setModels([
+      { id: "model-a", supported_endpoints: ["/v1/messages"] },
+      { id: "model-b", supported_endpoints: ["anthropic-messages"] },
+      { id: "model-c", supported_endpoints: ["/chat/completions"] },
+    ])
+    expect(resolveAnthropicRoute("model-a")).toBe("native-anthropic")
+    expect(resolveAnthropicRoute("model-b")).toBe("native-anthropic")
+    expect(resolveAnthropicRoute("model-c")).toBe("translate-openai")
+  })
+
   test("heuristic also fires for unknown claude-* models", () => {
     setModels([])
     expect(resolveAnthropicRoute("claude-unknown")).toBe("native-anthropic")
