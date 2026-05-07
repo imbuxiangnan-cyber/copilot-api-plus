@@ -37,6 +37,7 @@ interface RunServerOptions {
   proxyEnv: boolean
   apiKeys?: Array<string>
   disableAnthropicPassthrough: boolean
+  maxThinking: boolean
 }
 
 /**
@@ -192,6 +193,19 @@ async function validateGitHubToken(token: string): Promise<void> {
 }
 
 /**
+ * Apply the --max-thinking CLI flag to runtime state and log when disabled.
+ * Extracted to keep `runServer` under the eslint complexity ceiling.
+ */
+function applyMaxThinkingOption(enabled: boolean): void {
+  state.maxThinking = enabled
+  if (!enabled) {
+    consola.info(
+      "Max thinking auto-injection DISABLED — clients must specify `thinking` explicitly to enable extended thinking",
+    )
+  }
+}
+
+/**
  * Start and configure the Copilot API server according to the provided options.
  *
  * @param options - Server startup options:
@@ -241,6 +255,8 @@ export async function runServer(options: RunServerOptions): Promise<void> {
       "Native Anthropic passthrough DISABLED — all /v1/messages requests will translate via /chat/completions",
     )
   }
+
+  applyMaxThinkingOption(options.maxThinking)
 
   if (state.apiKeys && state.apiKeys.length > 0) {
     consola.info(
@@ -389,6 +405,12 @@ export const start = defineCommand({
       description:
         "Force translate all /v1/messages requests via /chat/completions (disable native Copilot Anthropic endpoint)",
     },
+    "max-thinking": {
+      type: "boolean",
+      default: true,
+      description:
+        "Auto-inject the model's maximum thinking budget when the client doesn't specify one. Default: true. Disable with --no-max-thinking to save tokens (recommended once Copilot switches to per-token billing).",
+    },
   },
   run({ args }) {
     const rateLimitRaw = args["rate-limit"]
@@ -416,6 +438,7 @@ export const start = defineCommand({
       proxyEnv: args["proxy-env"],
       apiKeys,
       disableAnthropicPassthrough: args["disable-anthropic-passthrough"],
+      maxThinking: args["max-thinking"],
     })
   },
 })

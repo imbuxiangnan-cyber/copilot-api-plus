@@ -308,6 +308,7 @@ function setModelCapability(
 describe("injectMaxThinkingBudget", () => {
   beforeEach(() => {
     state.models = undefined
+    state.maxThinking = true
   })
 
   test("injects adaptive thinking for adaptive-capable model", () => {
@@ -368,5 +369,36 @@ describe("injectMaxThinkingBudget", () => {
     const payload = basePayload({ model: "weird-model" })
     injectMaxThinkingBudget(payload)
     expect(payload.thinking).toBeUndefined()
+  })
+
+  test("does nothing when state.maxThinking is false (kill switch)", () => {
+    state.maxThinking = false
+    setModelCapability("claude-opus-4.7", {
+      max_thinking_budget: 32000,
+      adaptive_thinking: true,
+    })
+    const payload = basePayload({ model: "claude-opus-4.7" })
+    injectMaxThinkingBudget(payload)
+    expect(payload.thinking).toBeUndefined()
+  })
+
+  test("kill switch does NOT override explicit client thinking", () => {
+    // When the user disables auto-injection, an explicit client-supplied
+    // `thinking` field must still flow through untouched. The kill switch
+    // only suppresses the proxy's own injection, not user intent.
+    state.maxThinking = false
+    setModelCapability("claude-opus-4.7", {
+      max_thinking_budget: 32000,
+      adaptive_thinking: true,
+    })
+    const payload = basePayload({
+      model: "claude-opus-4.7",
+      thinking: { type: "enabled", budget_tokens: 5000 },
+    })
+    injectMaxThinkingBudget(payload)
+    expect(payload.thinking).toEqual({
+      type: "enabled",
+      budget_tokens: 5000,
+    })
   })
 })

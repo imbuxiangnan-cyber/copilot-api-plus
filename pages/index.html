@@ -1366,6 +1366,13 @@
             autoRefreshPresetCustom: "自定义",
             autoRefreshCustomLabel: "自定义秒数",
             autoRefreshCustomPlaceholder: "至少 {min} 秒",
+            maxThinkingTitle: "最大思考预算",
+            maxThinkingHelp: "默认开启。客户端未指定 thinking 时，自动注入模型支持的最大思考预算（adaptive 或 max budget）。Copilot 6 月 1 日切换到按 token 计费后建议关闭以节省额度。",
+            maxThinkingOn: "已开启",
+            maxThinkingOff: "已关闭",
+            maxThinkingSummaryOn: "自动注入最大思考预算",
+            maxThinkingSummaryOff: "保留客户端原始 thinking 设置",
+            maxThinkingUpdateFailed: "更新失败：服务未响应或拒绝请求",
             loadingBannerTitle: "正在刷新数据",
             loadingBannerBody: "如果已有旧数据，会保留当前视图，刷新完成后再更新。",
             errorBannerTitle: "连接失败",
@@ -1569,6 +1576,13 @@
             autoRefreshPresetCustom: "Custom",
             autoRefreshCustomLabel: "Custom seconds",
             autoRefreshCustomPlaceholder: "Min {min}s",
+            maxThinkingTitle: "Max Thinking Budget",
+            maxThinkingHelp: "Enabled by default. When the client does not specify a `thinking` field, auto-inject the model's maximum thinking budget (adaptive or max). Recommend turning off after Copilot switches to per-token billing on June 1st to save quota.",
+            maxThinkingOn: "Enabled",
+            maxThinkingOff: "Disabled",
+            maxThinkingSummaryOn: "Auto-injecting max thinking budget",
+            maxThinkingSummaryOff: "Preserving client's original thinking setting",
+            maxThinkingUpdateFailed: "Update failed — server did not respond or rejected the request",
             loadingBannerTitle: "Refreshing data",
             loadingBannerBody: "If a previous snapshot exists, it stays visible until the new request finishes.",
             errorBannerTitle: "Connection failed",
@@ -1854,6 +1868,8 @@
           activeDetailsTab: "summary",
           detailsOpen: false,
           activeMainTab: "overview",
+          maxThinking: true,
+          maxThinkingLoaded: false,
         };
 
         let autoRefreshTimer = null;
@@ -2317,6 +2333,25 @@
         }
 
         function renderOverview() {
+          // Lazily sync maxThinking toggle state from server on first render.
+          if (!state.maxThinkingLoaded) {
+            state.maxThinkingLoaded = true;
+            (async () => {
+              try {
+                const apiBase = getApiBaseUrl();
+                const res = await fetch(apiBase + "/api/config", { headers: getApiHeaders() });
+                if (!res.ok) return;
+                const cfg = await res.json();
+                if (typeof cfg.maxThinking === "boolean" && cfg.maxThinking !== state.maxThinking) {
+                  state.maxThinking = cfg.maxThinking;
+                  renderAll();
+                }
+              } catch {
+                // Server not reachable yet — keep optimistic default and let user toggle later.
+              }
+            })();
+          }
+
           const connectionState = getConnectionState();
           const mode = getMode(state.data);
           const cards = [
@@ -2395,6 +2430,24 @@
                 </div>
               `,
             },
+            {
+              icon: "auto",
+              title: text("maxThinkingTitle"),
+              value: `<span>${escapeHtml(state.maxThinking ? text("maxThinkingOn") : text("maxThinkingOff"))}</span>`,
+              helper: text("maxThinkingHelp"),
+              accent: state.maxThinking ? "pill-success" : "pill-neutral",
+              extra: `
+                <div class="auto-refresh-controls">
+                  <div class="auto-refresh-header">
+                    <label class="switch" for="max-thinking-toggle">
+                      <input id="max-thinking-toggle" class="switch-input" type="checkbox" ${state.maxThinking ? "checked" : ""} />
+                      <span class="switch-track"></span>
+                    </label>
+                    <span class="pill ${state.maxThinking ? "pill-success" : "pill-neutral"} auto-refresh-summary">${escapeHtml(state.maxThinking ? text("maxThinkingSummaryOn") : text("maxThinkingSummaryOff"))}</span>
+                  </div>
+                </div>
+              `,
+            },
           ];
 
           refs.overviewGrid.innerHTML = cards
@@ -2447,6 +2500,30 @@
             };
             customInput.addEventListener("change", commitCustomRefresh);
             customInput.addEventListener("blur", commitCustomRefresh);
+          }
+
+          const maxThinkingToggle = document.getElementById("max-thinking-toggle");
+          if (maxThinkingToggle) {
+            maxThinkingToggle.addEventListener("change", async (event) => {
+              const checkbox = event.currentTarget;
+              const desired = checkbox.checked;
+              const previous = state.maxThinking;
+              state.maxThinking = desired;
+              renderAll();
+              try {
+                const apiBase = getApiBaseUrl();
+                const res = await fetch(apiBase + "/api/config", {
+                  method: "PUT",
+                  headers: { ...getApiHeaders(), "Content-Type": "application/json" },
+                  body: JSON.stringify({ maxThinking: desired }),
+                });
+                if (!res.ok) throw new Error("HTTP " + res.status);
+              } catch (err) {
+                state.maxThinking = previous;
+                renderAll();
+                showToast(text("maxThinkingUpdateFailed"), "error");
+              }
+            });
           }
         }
 

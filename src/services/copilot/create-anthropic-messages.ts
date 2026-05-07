@@ -400,7 +400,11 @@ async function createWithMultiAccount(
           throw error
         }
         consola.warn(
-          `Account ${account.label}: 5xx from /v1/messages, trying next account`,
+          `Account ${account.label}: 5xx from /v1/messages${
+            hasAnotherAnthropicAccountToTry(triedAccountIds) ?
+              ", trying next account"
+            : " — no other accounts available, propagating error"
+          }`,
         )
         continue
       }
@@ -427,6 +431,18 @@ async function createWithMultiAccount(
         new Error("Network request failed")
       )
   throw new Error("No available accounts")
+}
+
+/**
+ * Peek at whether `getActiveAccount()` would return an untried account on the
+ * next iteration. Used purely for honest log messaging — doesn't affect
+ * routing.
+ */
+function hasAnotherAnthropicAccountToTry(
+  triedAccountIds: Set<string>,
+): boolean {
+  const next = accountManager.getActiveAccount()
+  return next !== undefined && !triedAccountIds.has(next.id)
 }
 
 // ---------------------------------------------------------------------------

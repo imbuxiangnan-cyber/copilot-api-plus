@@ -16,6 +16,7 @@ import type {
 } from "~/routes/messages/anthropic-types"
 
 import { HTTPError } from "~/lib/error"
+import { state } from "~/lib/state"
 import { findModel } from "~/lib/utils"
 
 /** Upstream message that triggers the assistant-thinking-strip retry. */
@@ -117,6 +118,7 @@ export function normalizeAdaptiveThinkingForCopilot(
 export function injectMaxThinkingBudget(
   payload: AnthropicMessagesPayload,
 ): void {
+  if (!state.maxThinking) return
   if (payload.thinking !== undefined) return
 
   const modelInfo = findModel(payload.model)

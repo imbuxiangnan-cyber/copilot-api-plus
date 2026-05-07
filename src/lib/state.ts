@@ -31,6 +31,22 @@ export interface State {
    */
   disableAnthropicPassthrough: boolean
 
+  /**
+   * When true, requests that don't specify a `thinking` field will get the
+   * model's maximum thinking budget injected automatically (adaptive for
+   * adaptive-thinking models, otherwise `enabled` with `max_thinking_budget`).
+   *
+   * Trade-off:
+   *   - Pre-2026-06-01 Copilot billing is per-request (token count doesn't
+   *     change cost), so leaving this on is "free quality".
+   *   - Post-2026-06-01 billing switches to per-token, at which point
+   *     auto-injection burns tokens. Users on token billing should turn this
+   *     off (or upgrade to a release that flips the default).
+   *
+   * Default: true (preserve existing v1.3.x quality-first behavior).
+   */
+  maxThinking: boolean
+
   // Selected models (from --claude-code setup)
   selectedModel?: string
   selectedSmallModel?: string
@@ -43,4 +59,5 @@ export const state: State = {
   showToken: false,
   multiAccountEnabled: false,
   disableAnthropicPassthrough: false,
+  maxThinking: true,
 }

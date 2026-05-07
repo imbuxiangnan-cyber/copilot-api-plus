@@ -1104,7 +1104,11 @@ async function createWithMultiAccount(payload: ChatCompletionsPayload) {
       }
 
       consola.warn(
-        `Account ${account.label} failed (attempt ${attempt + 1}), trying next...`,
+        `Account ${account.label} failed (attempt ${attempt + 1})${
+          hasAnotherAccountToTry(triedAccountIds) ? ", trying next..." : (
+            " — no other accounts available, propagating error"
+          )
+        }`,
       )
     }
   }
@@ -1115,6 +1119,16 @@ async function createWithMultiAccount(payload: ChatCompletionsPayload) {
         new Error("Network request failed")
       )
   throw new Error("No available accounts")
+}
+
+/**
+ * Peek at whether `getActiveAccount()` would return an untried account on the
+ * next iteration. Used purely for honest log messaging — doesn't affect
+ * routing.
+ */
+function hasAnotherAccountToTry(triedAccountIds: Set<string>): boolean {
+  const next = accountManager.getActiveAccount()
+  return next !== undefined && !triedAccountIds.has(next.id)
 }
 
 // ---------------------------------------------------------------------------
