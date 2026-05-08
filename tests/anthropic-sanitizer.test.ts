@@ -311,7 +311,7 @@ describe("injectMaxThinkingBudget", () => {
     state.maxThinking = true
   })
 
-  test("injects adaptive thinking for adaptive-capable model", () => {
+  test("injects adaptive thinking + effort=max for adaptive-capable model", () => {
     setModelCapability("claude-opus-4.7", {
       max_thinking_budget: 32000,
       adaptive_thinking: true,
@@ -319,6 +319,18 @@ describe("injectMaxThinkingBudget", () => {
     const payload = basePayload({ model: "claude-opus-4.7" })
     injectMaxThinkingBudget(payload)
     expect(payload.thinking).toEqual({ type: "adaptive" })
+    expect(payload.effort).toBe("max")
+  })
+
+  test("preserves client-supplied effort when injecting adaptive thinking", () => {
+    setModelCapability("claude-opus-4.7", {
+      max_thinking_budget: 32000,
+      adaptive_thinking: true,
+    })
+    const payload = basePayload({ model: "claude-opus-4.7", effort: "low" })
+    injectMaxThinkingBudget(payload)
+    expect(payload.thinking).toEqual({ type: "adaptive" })
+    expect(payload.effort).toBe("low")
   })
 
   test("injects enabled thinking with max budget for non-adaptive model", () => {

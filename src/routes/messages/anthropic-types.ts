@@ -22,6 +22,14 @@ export interface AnthropicMessagesPayload {
     type: "enabled" | "adaptive"
     budget_tokens?: number
   }
+  /**
+   * Top-level effort signal (Anthropic 2026 API). For Claude Opus 4.7+
+   * the recommended way to maximize thinking depth is
+   * `thinking: {type: "adaptive"}` combined with `effort: "max"`.
+   * The `xhigh` level is Opus-4.7-only; `max` is supported on
+   * Opus 4.7 / 4.6 and Sonnet 4.6.
+   */
+  effort?: "low" | "medium" | "high" | "xhigh" | "max"
   service_tier?: "auto" | "standard_only"
 }
 

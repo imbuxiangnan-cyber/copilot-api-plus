@@ -101,19 +101,22 @@ export function normalizeAdaptiveThinkingForCopilot(
 
 /**
  * If the client did not specify a `thinking` field, inject the maximum
- * thinking budget the model supports — pulled from Copilot's `/models`
+ * thinking depth the model supports — pulled from Copilot's `/models`
  * capabilities. Mutates in place.
  *
- *   - Models with `adaptive_thinking: true` (claude-opus-4.7,
- *     claude-sonnet-4.6) get `{ type: "adaptive" }` so the model
- *     decides depth dynamically — recommended by Anthropic for
- *     these models.
+ *   - Models with `adaptive_thinking: true` (Claude Opus 4.7,
+ *     Sonnet 4.6, etc.) get `{ type: "adaptive" }` plus a top-level
+ *     `effort: "max"` (or `"xhigh"` for Opus 4.7 long-horizon work).
+ *     This matches Anthropic's 2026 API: manual `budget_tokens` on
+ *     Opus 4.7 returns 400, and `effort` is the documented control
+ *     for thinking depth on adaptive models.
  *   - Other thinking-capable models get
  *     `{ type: "enabled", budget_tokens: max_thinking_budget }`.
  *   - Models without thinking capability are left untouched.
  *
  * Skipped if the client already specified `thinking` (any value) — we
- * always defer to explicit client intent.
+ * always defer to explicit client intent. Also skipped when the runtime
+ * `state.maxThinking` kill switch is off.
  */
 export function injectMaxThinkingBudget(
   payload: AnthropicMessagesPayload,
@@ -125,16 +128,19 @@ export function injectMaxThinkingBudget(
   const supports = modelInfo?.capabilities.supports
   if (!supports) return
 
-  const maxBudget = supports.max_thinking_budget
-  if (!maxBudget || maxBudget <= 0) return
-
   if (supports.adaptive_thinking === true) {
     payload.thinking = { type: "adaptive" }
+    if (payload.effort === undefined) {
+      payload.effort = "max"
+    }
     consola.debug(
-      `Injected adaptive thinking for ${payload.model} (no client preference)`,
+      `Injected adaptive thinking + effort=${payload.effort} for ${payload.model} (no client preference)`,
     )
     return
   }
+
+  const maxBudget = supports.max_thinking_budget
+  if (!maxBudget || maxBudget <= 0) return
 
   payload.thinking = { type: "enabled", budget_tokens: maxBudget }
   consola.debug(
