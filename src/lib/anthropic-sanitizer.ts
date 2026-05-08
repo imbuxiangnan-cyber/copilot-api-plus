@@ -50,6 +50,14 @@ export function sanitizeForCopilotBackend(
 
   // 2. output_config.format flattening for json_schema clients
   sanitizeOutputConfigFormat(extended.output_config?.format)
+
+  // 3. effort - Copilot backend rejects this Anthropic 2026 field with 400
+  //    ("effort: Extra inputs are not permitted"). Strip if present;
+  //    use thinking.budget_tokens to control thinking depth instead.
+  if (payload.effort !== undefined) {
+    consola.debug("Stripping effort field (unsupported by Copilot backend)")
+    delete payload.effort
+  }
 }
 
 function sanitizeOutputConfigFormat(format: unknown): void {
@@ -105,11 +113,13 @@ export function normalizeAdaptiveThinkingForCopilot(
  * capabilities. Mutates in place.
  *
  *   - Models with `adaptive_thinking: true` (Claude Opus 4.7,
- *     Sonnet 4.6, etc.) get `{ type: "adaptive" }` plus a top-level
- *     `effort: "max"` (or `"xhigh"` for Opus 4.7 long-horizon work).
- *     This matches Anthropic's 2026 API: manual `budget_tokens` on
- *     Opus 4.7 returns 400, and `effort` is the documented control
- *     for thinking depth on adaptive models.
+ *     Sonnet 4.6, etc.) get `{ type: "adaptive", budget_tokens: max }`.
+ *     Per Anthropic 2026 docs, `effort` is the recommended control
+ *     for thinking depth on adaptive models — but Copilot's `/v1/messages`
+ *     mirror rejects the top-level `effort` field with a 400. The
+ *     `budget_tokens` hint on adaptive thinking is documented as still
+ *     accepted, and serves as a softer nudge that keeps the model from
+ *     skipping thinking entirely on simple prompts.
  *   - Other thinking-capable models get
  *     `{ type: "enabled", budget_tokens: max_thinking_budget }`.
  *   - Models without thinking capability are left untouched.
@@ -128,19 +138,16 @@ export function injectMaxThinkingBudget(
   const supports = modelInfo?.capabilities.supports
   if (!supports) return
 
+  const maxBudget = supports.max_thinking_budget
+  if (!maxBudget || maxBudget <= 0) return
+
   if (supports.adaptive_thinking === true) {
-    payload.thinking = { type: "adaptive" }
-    if (payload.effort === undefined) {
-      payload.effort = "max"
-    }
+    payload.thinking = { type: "adaptive", budget_tokens: maxBudget }
     consola.debug(
-      `Injected adaptive thinking + effort=${payload.effort} for ${payload.model} (no client preference)`,
+      `Injected adaptive thinking budget=${maxBudget} for ${payload.model} (no client preference)`,
     )
     return
   }
-
-  const maxBudget = supports.max_thinking_budget
-  if (!maxBudget || maxBudget <= 0) return
 
   payload.thinking = { type: "enabled", budget_tokens: maxBudget }
   consola.debug(

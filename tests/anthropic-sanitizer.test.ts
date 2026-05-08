@@ -75,6 +75,12 @@ describe("sanitizeForCopilotBackend", () => {
     sanitizeForCopilotBackend(payload)
     expect(payload.output_config.format).toEqual({ type: "text" })
   })
+
+  test("strips effort field (Copilot backend rejects it with 400)", () => {
+    const payload = basePayload({ effort: "max" })
+    sanitizeForCopilotBackend(payload)
+    expect(payload.effort).toBeUndefined()
+  })
 })
 
 describe("normalizeAdaptiveThinkingForCopilot", () => {
@@ -311,26 +317,18 @@ describe("injectMaxThinkingBudget", () => {
     state.maxThinking = true
   })
 
-  test("injects adaptive thinking + effort=max for adaptive-capable model", () => {
+  test("injects adaptive thinking + budget for adaptive-capable model", () => {
     setModelCapability("claude-opus-4.7", {
       max_thinking_budget: 32000,
       adaptive_thinking: true,
     })
     const payload = basePayload({ model: "claude-opus-4.7" })
     injectMaxThinkingBudget(payload)
-    expect(payload.thinking).toEqual({ type: "adaptive" })
-    expect(payload.effort).toBe("max")
-  })
-
-  test("preserves client-supplied effort when injecting adaptive thinking", () => {
-    setModelCapability("claude-opus-4.7", {
-      max_thinking_budget: 32000,
-      adaptive_thinking: true,
+    expect(payload.thinking).toEqual({
+      type: "adaptive",
+      budget_tokens: 32000,
     })
-    const payload = basePayload({ model: "claude-opus-4.7", effort: "low" })
-    injectMaxThinkingBudget(payload)
-    expect(payload.thinking).toEqual({ type: "adaptive" })
-    expect(payload.effort).toBe("low")
+    expect(payload.effort).toBeUndefined()
   })
 
   test("injects enabled thinking with max budget for non-adaptive model", () => {
