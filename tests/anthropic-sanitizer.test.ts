@@ -285,6 +285,7 @@ function setModelCapability(
   supports: {
     max_thinking_budget?: number
     adaptive_thinking?: boolean
+    reasoning_effort?: Array<string>
   },
 ): void {
   state.models = {
@@ -317,18 +318,54 @@ describe("injectMaxThinkingBudget", () => {
     state.maxThinking = true
   })
 
-  test("injects adaptive thinking + budget for adaptive-capable model", () => {
+  test("injects adaptive thinking + highest allowed effort for adaptive-capable model", () => {
+    setModelCapability("claude-sonnet-4.6", {
+      max_thinking_budget: 32000,
+      adaptive_thinking: true,
+      reasoning_effort: ["low", "medium", "high"],
+    })
+    const payload = basePayload({ model: "claude-sonnet-4.6" })
+    injectMaxThinkingBudget(payload)
+    expect(payload.thinking).toEqual({ type: "adaptive" })
+    expect(payload.output_config?.effort).toBe("high")
+  })
+
+  test("caps adaptive effort at model's whitelist (Opus 4.7 = medium only)", () => {
     setModelCapability("claude-opus-4.7", {
       max_thinking_budget: 32000,
       adaptive_thinking: true,
+      reasoning_effort: ["medium"],
     })
     const payload = basePayload({ model: "claude-opus-4.7" })
     injectMaxThinkingBudget(payload)
-    expect(payload.thinking).toEqual({
-      type: "adaptive",
-      budget_tokens: 32000,
+    expect(payload.thinking).toEqual({ type: "adaptive" })
+    expect(payload.output_config?.effort).toBe("medium")
+  })
+
+  test("omits effort when model has no reasoning_effort whitelist", () => {
+    setModelCapability("some-future-adaptive-model", {
+      max_thinking_budget: 32000,
+      adaptive_thinking: true,
     })
-    expect(payload.effort).toBeUndefined()
+    const payload = basePayload({ model: "some-future-adaptive-model" })
+    injectMaxThinkingBudget(payload)
+    expect(payload.thinking).toEqual({ type: "adaptive" })
+    expect(payload.output_config).toBeUndefined()
+  })
+
+  test("preserves client-supplied output_config.effort", () => {
+    setModelCapability("claude-sonnet-4.6", {
+      max_thinking_budget: 32000,
+      adaptive_thinking: true,
+      reasoning_effort: ["low", "medium", "high"],
+    })
+    const payload = basePayload({
+      model: "claude-sonnet-4.6",
+      output_config: { effort: "low" },
+    })
+    injectMaxThinkingBudget(payload)
+    expect(payload.thinking).toEqual({ type: "adaptive" })
+    expect(payload.output_config?.effort).toBe("low")
   })
 
   test("injects enabled thinking with max budget for non-adaptive model", () => {

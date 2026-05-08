@@ -23,13 +23,22 @@ export interface AnthropicMessagesPayload {
     budget_tokens?: number
   }
   /**
-   * Top-level effort signal (Anthropic 2026 API). For Claude Opus 4.7+
-   * the recommended way to maximize thinking depth is
-   * `thinking: {type: "adaptive"}` combined with `effort: "max"`.
-   * The `xhigh` level is Opus-4.7-only; `max` is supported on
-   * Opus 4.7 / 4.6 and Sonnet 4.6.
+   * Anthropic's 2026 top-level `effort` field is NOT accepted by
+   * Copilot's `/v1/messages` mirror — it returns 400 "Extra inputs
+   * are not permitted". Kept for type-completeness / client
+   * passthrough; `sanitizeForCopilotBackend` strips it before forward.
    */
   effort?: "low" | "medium" | "high" | "xhigh" | "max"
+  /**
+   * Copilot-specific control for adaptive thinking depth. Per-model
+   * allowed values come from the model's `supports.reasoning_effort`
+   * array in `/models` (Opus 4.7 = `["medium"]`, Sonnet 4.6 =
+   * `["low","medium","high"]`). Sending an unsupported value 400s.
+   */
+  output_config?: {
+    effort?: "low" | "medium" | "high" | "max" | "xhigh"
+    format?: unknown
+  }
   service_tier?: "auto" | "standard_only"
 }
 

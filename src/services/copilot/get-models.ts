@@ -56,6 +56,14 @@ interface ModelSupports {
   max_thinking_budget?: number
   min_thinking_budget?: number
   adaptive_thinking?: boolean
+  /**
+   * Per-model whitelist of `output_config.effort` values that Copilot's
+   * `/v1/messages` mirror will accept for adaptive-thinking models.
+   * As of 2026-05, Copilot caps Opus 4.7 to `["medium"]` and allows
+   * Sonnet 4.6 `["low","medium","high"]`. Sending anything outside
+   * this list returns 400 "not supported by model X; supported values: [...]".
+   */
+  reasoning_effort?: Array<string>
 }
 
 interface ModelCapabilities {

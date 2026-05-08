@@ -108,18 +108,53 @@ export function normalizeAdaptiveThinkingForCopilot(
 // ---------------------------------------------------------------------------
 
 /**
+ * Pick the highest reasoning effort the model permits.
+ *
+ * Copilot's `/v1/messages` mirror caps `output_config.effort` to
+ * the per-model `supports.reasoning_effort` whitelist. As of 2026-05:
+ *   - Opus 4.7  → ["medium"]              → max we can ask is "medium"
+ *   - Sonnet 4.6 → ["low","medium","high"] → "high"
+ *
+ * Anything outside the list returns 400 "not supported by model X;
+ * supported values: [...]". `xhigh` and `max` exist in Anthropic's
+ * direct API but Copilot does not surface them on any model today.
+ */
+const EFFORT_RANK: Record<string, number> = {
+  low: 1,
+  medium: 2,
+  high: 3,
+  xhigh: 4,
+  max: 5,
+}
+
+function pickHighestSupportedEffort(
+  allowed: ReadonlyArray<string> | undefined,
+): "low" | "medium" | "high" | "xhigh" | "max" | undefined {
+  if (!allowed || allowed.length === 0) return undefined
+  let best: string | undefined
+  let bestRank = -1
+  for (const value of allowed) {
+    const rank = EFFORT_RANK[value] ?? -1
+    if (rank > bestRank) {
+      bestRank = rank
+      best = value
+    }
+  }
+  return best as "low" | "medium" | "high" | "xhigh" | "max" | undefined
+}
+
+/**
  * If the client did not specify a `thinking` field, inject the maximum
  * thinking depth the model supports — pulled from Copilot's `/models`
  * capabilities. Mutates in place.
  *
  *   - Models with `adaptive_thinking: true` (Claude Opus 4.7,
- *     Sonnet 4.6, etc.) get `{ type: "adaptive", budget_tokens: max }`.
- *     Per Anthropic 2026 docs, `effort` is the recommended control
- *     for thinking depth on adaptive models — but Copilot's `/v1/messages`
- *     mirror rejects the top-level `effort` field with a 400. The
- *     `budget_tokens` hint on adaptive thinking is documented as still
- *     accepted, and serves as a softer nudge that keeps the model from
- *     skipping thinking entirely on simple prompts.
+ *     Sonnet 4.6, etc.) get `{ type: "adaptive" }` plus, when the
+ *     model advertises `supports.reasoning_effort`, the highest
+ *     value from that whitelist injected as `output_config.effort`.
+ *     This is the only Copilot-accepted way to control adaptive
+ *     thinking depth — `budget_tokens` on adaptive 400s, and the
+ *     top-level `effort` field 400s.
  *   - Other thinking-capable models get
  *     `{ type: "enabled", budget_tokens: max_thinking_budget }`.
  *   - Models without thinking capability are left untouched.
@@ -138,16 +173,27 @@ export function injectMaxThinkingBudget(
   const supports = modelInfo?.capabilities.supports
   if (!supports) return
 
-  const maxBudget = supports.max_thinking_budget
-  if (!maxBudget || maxBudget <= 0) return
-
   if (supports.adaptive_thinking === true) {
-    payload.thinking = { type: "adaptive", budget_tokens: maxBudget }
+    payload.thinking = { type: "adaptive" }
+    const effort = pickHighestSupportedEffort(supports.reasoning_effort)
+    if (effort !== undefined) {
+      const outputConfig = (payload.output_config ?? {}) as {
+        effort?: string
+        format?: unknown
+      }
+      if (outputConfig.effort === undefined) {
+        outputConfig.effort = effort
+        payload.output_config = outputConfig
+      }
+    }
     consola.debug(
-      `Injected adaptive thinking budget=${maxBudget} for ${payload.model} (no client preference)`,
+      `Injected adaptive thinking + output_config.effort=${effort ?? "<none>"} for ${payload.model} (no client preference)`,
     )
     return
   }
+
+  const maxBudget = supports.max_thinking_budget
+  if (!maxBudget || maxBudget <= 0) return
 
   payload.thinking = { type: "enabled", budget_tokens: maxBudget }
   consola.debug(
