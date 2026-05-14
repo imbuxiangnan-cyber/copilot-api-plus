@@ -34,6 +34,7 @@ import {
   type AnthropicMessagesPayload,
   type AnthropicStreamState,
 } from "./anthropic-types"
+import { injectIntoAnthropicPayload } from "./inject-system-override"
 import {
   translateToAnthropic,
   translateToOpenAI,
@@ -223,7 +224,7 @@ async function handleNativePassthrough(
   let result: AnthropicMessagesResult
   try {
     result = await createAnthropicMessages(
-      stripSystemReminders(anthropicPayload),
+      injectIntoAnthropicPayload(stripSystemReminders(anthropicPayload)),
       { anthropicBeta },
     )
   } catch (error) {
@@ -425,7 +426,7 @@ async function handleTranslatedCompletion(
   anthropicPayload: AnthropicMessagesPayload,
 ): Promise<Response> {
   const openAIPayload = translateToOpenAI(
-    stripSystemReminders(anthropicPayload),
+    injectIntoAnthropicPayload(stripSystemReminders(anthropicPayload)),
   )
 
   const response = await createChatCompletions(openAIPayload)

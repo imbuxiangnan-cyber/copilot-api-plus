@@ -8,6 +8,7 @@ import { resetConnections } from "~/lib/proxy"
 import { checkRateLimit } from "~/lib/rate-limit"
 import { state } from "~/lib/state"
 import { findModel, isNullish } from "~/lib/utils"
+import { injectIntoOpenAIPayload } from "~/routes/messages/inject-system-override"
 import { stripOpenAIReminders } from "~/routes/messages/strip-reminders"
 import {
   createChatCompletions,
@@ -46,9 +47,11 @@ export async function handleCompletion(c: Context) {
   consola.debug("Request payload:", JSON.stringify(rawPayload).slice(-400))
 
   const payload = applyMaxTokens(
-    stripOpenAIReminders(
-      rawPayload as unknown as Parameters<typeof stripOpenAIReminders>[0],
-    ) as unknown as ChatCompletionsPayload,
+    injectIntoOpenAIPayload(
+      stripOpenAIReminders(
+        rawPayload as unknown as Parameters<typeof stripOpenAIReminders>[0],
+      ) as unknown as ChatCompletionsPayload,
+    ),
   )
 
   if (state.manualApprove) await awaitApproval()
