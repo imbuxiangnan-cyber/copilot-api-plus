@@ -3,6 +3,7 @@ import consola from "consola"
 import { events } from "fetch-event-stream"
 
 import { accountManager } from "~/lib/account-manager"
+import { pickHighestSupportedEffort } from "~/lib/anthropic-sanitizer"
 import {
   copilotHeaders,
   copilotBaseUrl,
@@ -314,12 +315,31 @@ function injectThinking(
     return { ...payload, thinking_budget: budget }
   }
 
-  // Fallback: inject reasoning_effort at the highest supported level.
-  // Default is "high"; auto-downgraded at runtime if a model rejects it.
+  return injectDefaultReasoningEffort(payload, resolvedModel, model)
+}
+
+/**
+ * Pick the highest reasoning_effort the model accepts and inject it.
+ *
+ * Preference order:
+ *   1. Runtime-learned cap (set after a past 400 from this model)
+ *   2. Highest level in /models supports.reasoning_effort whitelist
+ *      (e.g. gpt-5.5 advertises [..., "xhigh"], so we pick "xhigh")
+ *   3. Hardcoded "high" fallback for models without a whitelist
+ */
+function injectDefaultReasoningEffort(
+  payload: ChatCompletionsPayload,
+  resolvedModel: string,
+  model: import("~/services/copilot/get-models").Model | undefined,
+): ChatCompletionsPayload {
   if (reasoningUnsupportedModels.has(resolvedModel)) {
     return payload
   }
-  const effort = reasoningEffortCap.get(resolvedModel) ?? "high"
+  const cap = reasoningEffortCap.get(resolvedModel)
+  const advertised = pickHighestSupportedEffort(
+    model?.capabilities.supports.reasoning_effort,
+  )
+  const effort = cap ?? advertised ?? "high"
   return {
     ...payload,
     reasoning_effort: effort as ChatCompletionsPayload["reasoning_effort"],
@@ -1343,7 +1363,7 @@ export interface ChatCompletionsPayload {
   user?: string | null
 
   // OpenAI reasoning_effort parameter — triggers Copilot thinking mode
-  reasoning_effort?: "low" | "medium" | "high" | "max" | null
+  reasoning_effort?: "low" | "medium" | "high" | "xhigh" | "max" | null
 
   // Copilot thinking budget — number of tokens allocated for thinking
   thinking_budget?: number | null

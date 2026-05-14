@@ -127,7 +127,7 @@ const EFFORT_RANK: Record<string, number> = {
   max: 5,
 }
 
-function pickHighestSupportedEffort(
+export function pickHighestSupportedEffort(
   allowed: ReadonlyArray<string> | undefined,
 ): "low" | "medium" | "high" | "xhigh" | "max" | undefined {
   if (!allowed || allowed.length === 0) return undefined
@@ -183,7 +183,8 @@ export function injectMaxThinkingBudget(
       }
       if (outputConfig.effort === undefined) {
         outputConfig.effort = effort
-        payload.output_config = outputConfig
+        payload.output_config =
+          outputConfig as AnthropicMessagesPayload["output_config"]
       }
     }
     consola.debug(
