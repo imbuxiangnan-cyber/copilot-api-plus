@@ -836,7 +836,11 @@ function isNonAccountError(errMsg: string): boolean {
 async function handleMultiAccountHttpError(
   error: HTTPError,
   account: import("~/lib/account-manager").Account,
-  retryContext: { payload: ChatCompletionsPayload; tokenSource: TokenSource },
+  retryContext: {
+    payload: ChatCompletionsPayload
+    tokenSource: TokenSource
+    hasOtherAccount: boolean
+  },
 ): Promise<AsyncGenerator | ChatCompletionResponse | null> {
   switch (error.response.status) {
     case 401: {
@@ -848,10 +852,33 @@ async function handleMultiAccountHttpError(
       )
     }
     case 403: {
+      // Single-account guard: marking the only account as banned would
+      // disable the proxy for everything. Propagate to the client instead.
+      if (!retryContext.hasOtherAccount) {
+        consola.warn(
+          `Account ${account.label}: 403 — only account, propagating to client without marking`,
+        )
+        ;(
+          error as HTTPError & { __nonAccountError?: boolean }
+        ).__nonAccountError = true
+        return null
+      }
       accountManager.markAccountStatus(account.id, "banned", "403 Forbidden")
       return null
     }
     case 429: {
+      // Single-account guard: marking the only account as rate_limited would
+      // make the next request fail with "no available accounts". Surface
+      // the 429 to the client (Claude Code) so it can back off itself.
+      if (!retryContext.hasOtherAccount) {
+        consola.warn(
+          `Account ${account.label}: 429 — only account, propagating to client without marking`,
+        )
+        ;(
+          error as HTTPError & { __nonAccountError?: boolean }
+        ).__nonAccountError = true
+        return null
+      }
       accountManager.markAccountStatus(
         account.id,
         "rate_limited",
@@ -1091,6 +1118,7 @@ async function createWithMultiAccount(payload: ChatCompletionsPayload) {
         const retryResult = await handleMultiAccountHttpError(error, account, {
           payload,
           tokenSource,
+          hasOtherAccount: hasAnotherAccountToTry(triedAccountIds),
         })
         if (retryResult) return retryResult
         // Non-account error — stop rotating, propagate to client.

@@ -393,19 +393,10 @@ async function createWithMultiAccount(
       lastError = error
 
       if (error instanceof HTTPError) {
-        if (error.response.status === 401) {
-          return handleMultiAccount401(ctx, account)
-        }
-        if (error.response.status >= 400 && error.response.status < 500) {
-          throw error
-        }
-        consola.warn(
-          `Account ${account.label}: 5xx from /v1/messages${
-            hasAnotherAnthropicAccountToTry(triedAccountIds) ?
-              ", trying next account"
-            : " — no other accounts available, propagating error"
-          }`,
-        )
+        const action = handleAnthropicHttpError(error, account, triedAccountIds)
+        if (action === "refresh401") return handleMultiAccount401(ctx, account)
+        if (action === "throw") throw error
+        // "continue" — try next account
         continue
       }
 
@@ -431,6 +422,57 @@ async function createWithMultiAccount(
         new Error("Network request failed")
       )
   throw new Error("No available accounts")
+}
+
+/**
+ * Decide what to do for an HTTP error from a multi-account request attempt.
+ *
+ * Returns:
+ *  - "refresh401" — caller should run the 401-refresh-and-retry flow
+ *  - "throw"      — caller should rethrow the error to the client
+ *  - "continue"   — caller should try the next account
+ *
+ * Single-account guard: marking the only account as rate_limited / banned
+ * would disable the proxy entirely, so 429 / 403 are propagated unchanged
+ * to the client when no other account is available.
+ */
+function handleAnthropicHttpError(
+  error: HTTPError,
+  account: import("~/lib/account-manager").Account,
+  triedAccountIds: Set<string>,
+): "refresh401" | "throw" | "continue" {
+  const status = error.response.status
+  if (status === 401) return "refresh401"
+
+  if (status === 429 || status === 403) {
+    const isRateLimit = status === 429
+    if (hasAnotherAnthropicAccountToTry(triedAccountIds)) {
+      accountManager.markAccountStatus(
+        account.id,
+        isRateLimit ? "rate_limited" : "banned",
+        isRateLimit ? "429 Rate limited" : "403 Forbidden",
+      )
+      consola.warn(
+        `Account ${account.label}: ${status} on /v1/messages, trying next account`,
+      )
+      return "continue"
+    }
+    consola.warn(
+      `Account ${account.label}: ${status} on /v1/messages — only account, propagating to client without marking`,
+    )
+    return "throw"
+  }
+
+  if (status >= 400 && status < 500) return "throw"
+
+  consola.warn(
+    `Account ${account.label}: 5xx from /v1/messages${
+      hasAnotherAnthropicAccountToTry(triedAccountIds) ?
+        ", trying next account"
+      : " — no other accounts available, propagating error"
+    }`,
+  )
+  return "continue"
 }
 
 /**

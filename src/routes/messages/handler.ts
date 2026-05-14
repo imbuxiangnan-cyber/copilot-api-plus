@@ -205,37 +205,10 @@ export async function handleCompletion(c: Context) {
   const route = resolveAnthropicRoute(anthropicPayload.model)
   consola.debug(`Anthropic route resolved: ${route}`)
 
-  // Runtime-learned: if a model previously hit Vertex AI's GCP
-  // structured_outputs policy on the native path, force translation.
-  if (
-    route === "native-anthropic"
-    && !nativeBlockedModels.has(anthropicPayload.model)
-  ) {
+  if (route === "native-anthropic") {
     return handleNativePassthrough(c, anthropicPayload)
   }
   return handleTranslatedCompletion(c, anthropicPayload)
-}
-
-// ---------------------------------------------------------------------------
-// Runtime-learned native-passthrough blocklist
-// ---------------------------------------------------------------------------
-
-/**
- * Models whose native /v1/messages path returned an unrecoverable upstream
- * policy error (e.g. Vertex AI's `structured_outputs` GCP org policy).
- * Once added, future requests for that model skip the native path and go
- * straight to the translated /chat/completions path.
- *
- * Cleared on process restart — so a fixed Copilot routing self-heals.
- */
-const nativeBlockedModels = new Set<string>()
-
-const VERTEX_STRUCTURED_OUTPUTS_PATTERN =
-  /vertexai\.allowedPartnerModelFeatures.*?structured_outputs/i
-
-function isVertexStructuredOutputsBlock(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error)
-  return VERTEX_STRUCTURED_OUTPUTS_PATTERN.test(message)
 }
 
 // ---------------------------------------------------------------------------
@@ -247,32 +220,42 @@ async function handleNativePassthrough(
   anthropicPayload: AnthropicMessagesPayload,
 ): Promise<Response> {
   const anthropicBeta = c.req.header("anthropic-beta")
+  const sanitized = injectIntoAnthropicPayload(
+    stripSystemReminders(anthropicPayload),
+  )
 
   let result: AnthropicMessagesResult
   try {
-    result = await createAnthropicMessages(
-      injectIntoAnthropicPayload(stripSystemReminders(anthropicPayload)),
-      { anthropicBeta },
-    )
+    result = await createAnthropicMessages(sanitized, { anthropicBeta })
   } catch (error) {
-    // Vertex AI org policy blocks structured_outputs for this model on
-    // Copilot's GCP project. Mark the model and retry via translation —
-    // /chat/completions routes through a different backend that doesn't
-    // hit this policy.
-    if (isVertexStructuredOutputsBlock(error)) {
-      const firstHit = !nativeBlockedModels.has(anthropicPayload.model)
-      nativeBlockedModels.add(anthropicPayload.model)
-      if (firstHit) {
-        consola.debug(
-          `Native /v1/messages blocked by Vertex GCP policy for "${anthropicPayload.model}" — falling back to translated path (cached for this process)`,
+    const message = (error as Error).message || String(error)
+    // Vertex AI org policy violation: Copilot load-balances /v1/messages
+    // between Vertex and Anthropic-direct backends. Vertex's GCP project
+    // doesn't allow structured_outputs (which Vertex synthesizes from
+    // Anthropic tools), so requests routed there fail. The next request
+    // usually lands on Anthropic-direct. We retry once transparently
+    // — still direct, still Anthropic protocol, no translation.
+    if (
+      /vertexai\.allowedPartnerModelFeatures.*?structured_outputs/i.test(
+        message,
+      )
+    ) {
+      consola.debug(
+        `Native /v1/messages: Vertex GCP policy 400, retrying once (Copilot will likely route to Anthropic-direct)`,
+      )
+      try {
+        result = await createAnthropicMessages(sanitized, { anthropicBeta })
+      } catch (retryError) {
+        const retryMessage = (retryError as Error).message || String(retryError)
+        consola.warn(
+          `Native /v1/messages: Vertex GCP policy 400 on both attempts, propagating to client: ${retryMessage}`,
         )
+        throw retryError
       }
-      return handleTranslatedCompletion(c, anthropicPayload)
+    } else {
+      consola.warn(`Native /v1/messages failed: ${message}`)
+      throw error
     }
-    consola.warn(
-      `Native /v1/messages failed: ${(error as Error).message || String(error)}`,
-    )
-    throw error
   }
 
   if (!anthropicPayload.stream) {
