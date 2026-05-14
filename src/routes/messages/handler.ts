@@ -260,10 +260,13 @@ async function handleNativePassthrough(
     // /chat/completions routes through a different backend that doesn't
     // hit this policy.
     if (isVertexStructuredOutputsBlock(error)) {
+      const firstHit = !nativeBlockedModels.has(anthropicPayload.model)
       nativeBlockedModels.add(anthropicPayload.model)
-      consola.warn(
-        `Native /v1/messages blocked by Vertex GCP policy for "${anthropicPayload.model}" — falling back to translated path (cached for this process)`,
-      )
+      if (firstHit) {
+        consola.debug(
+          `Native /v1/messages blocked by Vertex GCP policy for "${anthropicPayload.model}" — falling back to translated path (cached for this process)`,
+        )
+      }
       return handleTranslatedCompletion(c, anthropicPayload)
     }
     consola.warn(
