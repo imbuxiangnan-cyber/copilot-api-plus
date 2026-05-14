@@ -205,10 +205,37 @@ export async function handleCompletion(c: Context) {
   const route = resolveAnthropicRoute(anthropicPayload.model)
   consola.debug(`Anthropic route resolved: ${route}`)
 
-  if (route === "native-anthropic") {
+  // Runtime-learned: if a model previously hit Vertex AI's GCP
+  // structured_outputs policy on the native path, force translation.
+  if (
+    route === "native-anthropic"
+    && !nativeBlockedModels.has(anthropicPayload.model)
+  ) {
     return handleNativePassthrough(c, anthropicPayload)
   }
   return handleTranslatedCompletion(c, anthropicPayload)
+}
+
+// ---------------------------------------------------------------------------
+// Runtime-learned native-passthrough blocklist
+// ---------------------------------------------------------------------------
+
+/**
+ * Models whose native /v1/messages path returned an unrecoverable upstream
+ * policy error (e.g. Vertex AI's `structured_outputs` GCP org policy).
+ * Once added, future requests for that model skip the native path and go
+ * straight to the translated /chat/completions path.
+ *
+ * Cleared on process restart — so a fixed Copilot routing self-heals.
+ */
+const nativeBlockedModels = new Set<string>()
+
+const VERTEX_STRUCTURED_OUTPUTS_PATTERN =
+  /vertexai\.allowedPartnerModelFeatures.*?structured_outputs/i
+
+function isVertexStructuredOutputsBlock(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return VERTEX_STRUCTURED_OUTPUTS_PATTERN.test(message)
 }
 
 // ---------------------------------------------------------------------------
@@ -228,6 +255,17 @@ async function handleNativePassthrough(
       { anthropicBeta },
     )
   } catch (error) {
+    // Vertex AI org policy blocks structured_outputs for this model on
+    // Copilot's GCP project. Mark the model and retry via translation —
+    // /chat/completions routes through a different backend that doesn't
+    // hit this policy.
+    if (isVertexStructuredOutputsBlock(error)) {
+      nativeBlockedModels.add(anthropicPayload.model)
+      consola.warn(
+        `Native /v1/messages blocked by Vertex GCP policy for "${anthropicPayload.model}" — falling back to translated path (cached for this process)`,
+      )
+      return handleTranslatedCompletion(c, anthropicPayload)
+    }
     consola.warn(
       `Native /v1/messages failed: ${(error as Error).message || String(error)}`,
     )
