@@ -39,6 +39,13 @@ export async function forwardError(c: Context, error: unknown) {
       consola.debug("HTTP error:", errorJson)
     }
 
+    const isCopilotSessionLimit =
+      error.response.status === 429
+      && errorText.includes("user_global_rate_limited:pro_plus")
+    if (isCopilotSessionLimit) {
+      c.header("x-should-retry", "false")
+    }
+
     return c.json(
       {
         error: {
@@ -46,7 +53,9 @@ export async function forwardError(c: Context, error: unknown) {
           type: "error",
         },
       },
-      error.response.status as ContentfulStatusCode,
+      (isCopilotSessionLimit ? 403 : (
+        error.response.status
+      )) as ContentfulStatusCode,
     )
   }
 
