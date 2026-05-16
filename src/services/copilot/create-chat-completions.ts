@@ -54,7 +54,7 @@ let lastUsedAccountId: string | undefined
  * arrive – once the body starts streaming, the timeout is cleared so that
  * long SSE responses are not interrupted.
  */
-async function fetchWithTimeout(
+export async function fetchWithTimeout(
   url: string,
   init: RequestInit,
   {
@@ -102,7 +102,7 @@ async function fetchWithTimeout(
  * On network failure (NOT timeout), the pooled connections are destroyed
  * so that the caller's next attempt gets a fresh socket instantly.
  */
-async function fetchWithRetry(
+export async function fetchWithRetry(
   url: string,
   buildInit: () => RequestInit,
   {
@@ -384,6 +384,18 @@ function logThinkingInjection(
 // Public entry point
 // ---------------------------------------------------------------------------
 
+import { createResponsesAsChat } from "./create-responses"
+
+/**
+ * Models known to require `/v1/responses` (and reject `/chat/completions`
+ * with `unsupported_api_for_model`). Learned at runtime — once a model
+ * hits the 400, all future requests for it skip the chat-completions
+ * attempt and go straight to the Responses API.
+ *
+ * Cleared on process restart so Copilot routing changes self-heal.
+ */
+const responsesApiOnlyModels = new Set<string>()
+
 export const createChatCompletions = async (
   payload: ChatCompletionsPayload,
 ) => {
@@ -395,6 +407,15 @@ export const createChatCompletions = async (
     : payload
   if (resolvedModel !== payload.model) {
     consola.debug(`Model routed: ${payload.model} → ${resolvedModel}`)
+  }
+
+  // Short-circuit: if we've already learned this model is Responses-only
+  // (e.g. gpt-5.5), skip the failing /chat/completions attempt.
+  if (responsesApiOnlyModels.has(resolvedModel)) {
+    consola.debug(
+      `Model "${resolvedModel}" cached as Responses-only — using /v1/responses`,
+    )
+    return createResponsesAsChat(routedPayload)
   }
 
   // ---------------------------------------------------------------------------
@@ -435,6 +456,14 @@ export const createChatCompletions = async (
     releaseSlot()
     return result
   } catch (error) {
+    // Responses-API-only models: cache + retry via /v1/responses.
+    const responsesRetry = handle400UnsupportedApiError(
+      error,
+      { resolvedModel, routedPayload },
+      releaseSlot,
+    )
+    if (responsesRetry !== undefined) return responsesRetry
+
     const maxTokensRetry = handle400MaxTokensError(
       error,
       { resolvedModel, routedPayload: thinkingPayload },
@@ -452,6 +481,57 @@ export const createChatCompletions = async (
     releaseSlot()
     throw error
   }
+}
+
+/**
+ * Handle Copilot's `unsupported_api_for_model` 400 — the model only
+ * accepts /v1/responses, not /chat/completions (e.g. gpt-5.5). Mark the
+ * model so future requests skip the failing attempt, then retry via the
+ * Responses API translator.
+ */
+function handle400UnsupportedApiError(
+  error: unknown,
+  ctx: { resolvedModel: string; routedPayload: ChatCompletionsPayload },
+  releaseSlot: () => void,
+): Promise<AsyncGenerator | ChatCompletionResponse> | undefined {
+  if (!(error instanceof HTTPError) || error.response.status !== 400)
+    return undefined
+  const errMsg = error.message
+  if (
+    !errMsg.includes("unsupported_api_for_model")
+    && !errMsg.includes("not accessible via the /chat/completions endpoint")
+  )
+    return undefined
+
+  responsesApiOnlyModels.add(ctx.resolvedModel)
+  consola.debug(
+    `Model "${ctx.resolvedModel}" requires /v1/responses — switching for future requests`,
+  )
+
+  return (async () => {
+    try {
+      const result = await createResponsesAsChat(ctx.routedPayload)
+      if (Symbol.asyncIterator in result) {
+        const accountInfo = (
+          result as AsyncGenerator & { __accountInfo?: StreamAccountInfo }
+        ).__accountInfo
+        const wrapped = wrapGeneratorWithRelease(
+          result as AsyncGenerator,
+          releaseSlot,
+          accountInfo,
+        )
+        ;(
+          wrapped as AsyncGenerator & { __accountInfo?: StreamAccountInfo }
+        ).__accountInfo = accountInfo
+        return wrapped
+      }
+      releaseSlot()
+      return result
+    } catch (retryError) {
+      releaseSlot()
+      throw retryError
+    }
+  })()
 }
 
 /**
