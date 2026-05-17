@@ -3294,22 +3294,50 @@
           // Quota progress
           const entitlement = acct.usage?.premium_total || 0;
           const remaining = acct.usage?.premium_remaining || 0;
+          const weeklyResetAt = acct.usage?.quotaResetDate ? formatDateTime(acct.usage.quotaResetDate) : "";
           const unlimited = false;
           const percentUsed = !entitlement ? 0 : Math.max(0, ((entitlement - remaining) / entitlement) * 100);
           const tone = getProgressTone(percentUsed, unlimited);
 
-          // Rate-limit indicators (Copilot 5h session + GitHub REST core).
+          // Rate-limit indicators (Copilot 5h session + full GitHub /rate_limit resources).
           const now = Date.now();
           const sessionLimit = acct.limits?.copilotSession;
           const ghLimit = acct.limits?.github;
           const sessionActive = sessionLimit && sessionLimit.estimatedResetAt > now;
-          const ghBlocked = ghLimit && ghLimit.remaining === 0 && (ghLimit.reset * 1000) > now;
           const sessionSecs = sessionActive ? Math.ceil((sessionLimit.estimatedResetAt - now) / 1000) : 0;
-          const ghSecs = ghBlocked ? Math.ceil((ghLimit.reset * 1000 - now) / 1000) : 0;
-          const ghResetAt = ghLimit?.reset ? formatDateTime(ghLimit.reset * 1000) : "";
+          const ghResources = ghLimit?.resources || (ghLimit ? { core: ghLimit } : null);
+          const ghResourceOrder = ["core", "search", "code_search", "graphql", "integration_manifest"];
+          const ghResourceEntries = ghResources
+            ? Object.entries(ghResources).sort(([a], [b]) => {
+                const ai = ghResourceOrder.indexOf(a);
+                const bi = ghResourceOrder.indexOf(b);
+                if (ai !== -1 || bi !== -1) return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+                return a.localeCompare(b);
+              })
+            : [];
+          const ghBlockedEntries = ghResourceEntries.filter(([, limit]) => {
+            return limit.limit > 0 && limit.remaining === 0 && (limit.reset * 1000) > now;
+          });
           const ghFetchedAt = ghLimit?.fetchedAt ? formatDateTime(ghLimit.fetchedAt) : "";
+          const renderGhResource = ([name, limit]) => {
+            const resetMs = limit.reset * 1000;
+            const blocked = limit.limit > 0 && limit.remaining === 0 && resetMs > now;
+            const resetLabel = limit.reset ? formatDateTime(resetMs) : "";
+            const resetCountdown = blocked ? formatCountdownSecs(Math.ceil((resetMs - now) / 1000)) : "";
+            return `
+              <div class="flex justify-between gap-2 ${blocked ? "text-[var(--warning)]" : ""}">
+                <span class="mono">${escapeHtml(name)}</span>
+                <span class="mono text-right">
+                  ${escapeHtml(formatNumber(limit.remaining))} / ${escapeHtml(formatNumber(limit.limit))}
+                  <span class="text-[var(--muted)]">(${escapeHtml(text("usageUsed"))}: ${escapeHtml(formatNumber(limit.used || 0))})</span>
+                  ${resetLabel ? `<br><span class="text-[var(--muted)]">${escapeHtml(text("quotaReset"))}: ${escapeHtml(resetLabel)}</span>` : ""}
+                  ${resetCountdown ? `<br><span class="text-[var(--warning)]">${escapeHtml(text("accountResetIn"))}: ${escapeHtml(resetCountdown)}</span>` : ""}
+                </span>
+              </div>
+            `;
+          };
 
-          const rateLimitBlock = (sessionActive || ghLimit) ? `
+          const rateLimitBlock = (sessionActive || ghResourceEntries.length > 0) ? `
             <div class="space-y-1 text-xs">
               ${sessionActive ? `
                 <div class="flex justify-between items-center">
@@ -3317,18 +3345,15 @@
                   <span class="mono text-[var(--muted)]">${escapeHtml(text("accountResetIn"))}: ${escapeHtml(formatCountdownSecs(sessionSecs))}</span>
                 </div>
               ` : ""}
-              ${ghLimit ? (ghBlocked ? `
-                <div class="flex justify-between items-center">
-                  <span class="pill pill-warning">${escapeHtml(text("accountGithubLimit"))}</span>
-                  <span class="mono text-[var(--muted)]">${escapeHtml(text("accountResetIn"))}: ${escapeHtml(formatCountdownSecs(ghSecs))}</span>
+              ${ghResourceEntries.length > 0 ? `
+                <div class="text-[var(--muted)] leading-relaxed space-y-1">
+                  <div class="flex justify-between items-center">
+                    <span class="pill ${ghBlockedEntries.length > 0 ? "pill-warning" : "pill-neutral"}">${escapeHtml(text("accountGithubLimit"))}</span>
+                    ${ghFetchedAt ? `<span>${escapeHtml(text("accountGithubFetchedAt"))}: ${escapeHtml(ghFetchedAt)}</span>` : ""}
+                  </div>
+                  <div class="space-y-1">${ghResourceEntries.map(renderGhResource).join("")}</div>
                 </div>
-              ` : `
-                <div class="text-[var(--muted)] leading-relaxed">
-                  <div class="mono">${escapeHtml(text("accountGithubLimit"))}: ${escapeHtml(formatNumber(ghLimit.remaining))} / ${escapeHtml(formatNumber(ghLimit.limit))}</div>
-                  ${ghResetAt ? `<div>${escapeHtml(text("quotaReset"))}: ${escapeHtml(ghResetAt)}</div>` : ""}
-                  ${ghFetchedAt ? `<div>${escapeHtml(text("accountGithubFetchedAt"))}: ${escapeHtml(ghFetchedAt)}</div>` : ""}
-                </div>
-              `) : ""}
+              ` : ""}
             </div>
           ` : "";
 
@@ -3356,6 +3381,7 @@
                   <div class="progress-track">
                     <div class="progress-fill ${tone}" style="width: ${unlimited ? 100 : Math.min(percentUsed, 100)}%"></div>
                   </div>
+                  ${weeklyResetAt ? `<div class="text-xs text-[var(--muted)]">${escapeHtml(text("quotaReset"))}: ${escapeHtml(weeklyResetAt)}</div>` : ""}
                 </div>
               ` : ""}
               ${rateLimitBlock}

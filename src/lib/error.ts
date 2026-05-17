@@ -23,54 +23,61 @@ export class HTTPError extends Error {
  *
  * Returns:
  *  - the earliest resetAt timestamp in ms,
- *  - the source label ("copilot-5h", "github-core", "weekly"),
+ *  - the source label ("copilot-5h", "github-core", "github-search", ...),
  *  - the seconds remaining until that reset.
  *
  * Returns undefined if no account has a known active limit.
  */
-function earliestRateLimitReset():
-  | {
-      resetAt: number
-      source: string
-      secondsRemaining: number
-    }
-  | undefined {
+type RateLimitReset = {
+  resetAt: number
+  source: string
+  secondsRemaining: number
+}
+
+function earlierReset(
+  current: RateLimitReset | undefined,
+  candidate: { resetAt: number; source: string },
+  now: number,
+): RateLimitReset | undefined {
+  if (candidate.resetAt <= now) return current
+  if (current && candidate.resetAt >= current.resetAt) return current
+  return {
+    resetAt: candidate.resetAt,
+    source: candidate.source,
+    secondsRemaining: Math.ceil((candidate.resetAt - now) / 1000),
+  }
+}
+
+function earliestRateLimitReset(): RateLimitReset | undefined {
   const now = Date.now()
-  let earliest:
-    | { resetAt: number; source: string; secondsRemaining: number }
-    | undefined
+  let earliest: RateLimitReset | undefined
 
   for (const account of accountManager.getAccounts()) {
     const limits = account.limits
     if (!limits) continue
 
-    // Copilot 5h session limit
     const session = limits.copilotSession
-    if (session && session.estimatedResetAt > now) {
-      const secs = Math.ceil((session.estimatedResetAt - now) / 1000)
-      if (!earliest || session.estimatedResetAt < earliest.resetAt) {
-        earliest = {
-          resetAt: session.estimatedResetAt,
-          source: "copilot-5h",
-          secondsRemaining: secs,
-        }
-      }
+    if (session) {
+      earliest = earlierReset(
+        earliest,
+        { resetAt: session.estimatedResetAt, source: "copilot-5h" },
+        now,
+      )
     }
 
-    // GitHub REST API core quota (reset is unix seconds)
+    // GitHub REST API quotas (reset is unix seconds). Prefer the full
+    // resources map when available; fall back to the legacy core-shaped object.
     const gh = limits.github
-    if (gh && gh.remaining === 0) {
-      const resetMs = gh.reset * 1000
-      if (resetMs > now) {
-        const secs = Math.ceil((resetMs - now) / 1000)
-        if (!earliest || resetMs < earliest.resetAt) {
-          earliest = {
-            resetAt: resetMs,
-            source: "github-core",
-            secondsRemaining: secs,
-          }
-        }
-      }
+    const ghResources = gh?.resources ?? (gh ? { core: gh } : undefined)
+    if (!ghResources) continue
+
+    for (const [name, resource] of Object.entries(ghResources)) {
+      if (resource.limit <= 0 || resource.remaining !== 0) continue
+      earliest = earlierReset(
+        earliest,
+        { resetAt: resource.reset * 1000, source: `github-${name}` },
+        now,
+      )
     }
   }
 

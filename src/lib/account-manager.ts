@@ -8,7 +8,10 @@ import { startConnectionRecycling, stopConnectionRecycling } from "~/lib/proxy"
 import { rootCause } from "~/lib/utils"
 import { getCopilotToken } from "~/services/github/get-copilot-token"
 import { getCopilotUsage } from "~/services/github/get-copilot-usage"
-import { getGitHubRateLimit } from "~/services/github/get-rate-limit"
+import {
+  getGitHubRateLimit,
+  type GithubRateLimitResource,
+} from "~/services/github/get-rate-limit"
 import { getGitHubUser } from "~/services/github/get-user"
 
 // ---------------------------------------------------------------------------
@@ -58,13 +61,18 @@ export interface Account {
    * display the remaining cooldown to the user.
    */
   limits?: {
-    /** GitHub REST API limit (from GET /rate_limit `resources.core`). */
+    /** GitHub REST API limits (from GET /rate_limit). */
     github?: {
+      /** Backward-compatible alias for `resources.core`. */
       limit: number
       remaining: number
       used: number
       /** Reset time as unix seconds (matches GitHub API). */
       reset: number
+      /** Top-level `rate` block returned by GitHub (usually aliases core). */
+      rate?: GithubRateLimitResource
+      /** Per-resource quota snapshots keyed by GitHub resource name. */
+      resources?: Record<string, GithubRateLimitResource>
       fetchedAt: number
     }
     /**
@@ -473,6 +481,8 @@ export class AccountManager {
           remaining: core.remaining,
           used: core.used,
           reset: core.reset,
+          rate: data.rate,
+          resources: data.resources,
           fetchedAt: Date.now(),
         },
       }
