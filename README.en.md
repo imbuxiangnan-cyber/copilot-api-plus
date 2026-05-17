@@ -21,6 +21,7 @@ English | [简体中文](README.md)
 - [Proxy Configuration](#-proxy-configuration)
 - [Claude Code Integration](#-claude-code-integration)
 - [opencode Integration](#-opencode-integration)
+- [Cursor IDE Integration](#-cursor-ide-integration)
 - [API Endpoints](#-api-endpoints)
 - [API Key Authentication](#-api-key-authentication)
 - [Technical Details](#-technical-details)
@@ -515,6 +516,38 @@ export OPENAI_API_KEY=dummy
 # Run opencode
 npx opencode@latest
 ```
+
+---
+
+## 🖱️ Cursor IDE Integration
+
+[Cursor](https://cursor.com/) is a VS Code-based AI editor. Cursor 1.x sends **OpenAI Responses API** shape payloads (`input` array + `reasoning` field) but still POSTs them to the `/chat/completions` endpoint.
+
+copilot-api-plus **auto-detects** Responses-shape bodies and forwards them to Copilot's `/v1/responses` upstream, then translates the reply back into Chat-Completions chunks — **no client-side configuration is required**.
+
+### Cursor Configuration
+
+1. Start copilot-api-plus:
+
+   ```bash
+   npx copilot-api-plus@latest start
+   ```
+
+2. In Cursor **Settings → Models → API Keys**:
+   - **OpenAI Base URL**: `http://localhost:4141/v1`
+   - **OpenAI API Key**: any non-empty string (use `dummy` if `--api-key` is not enabled)
+3. Add the Copilot model names (e.g. `gpt-5-mini`, `claude-sonnet-4`) to the model list and click **Verify**
+
+### How Cursor passthrough works
+
+- Detection: request body contains `input: []`, does **not** contain `messages: []`, and `model` is a string → dispatched through the Responses passthrough
+- Bodies that contain both `messages` and `input` defer to the Chat pipeline (no hijacking)
+- Streaming responses are translated chunk-by-chunk via the SSE translator, so the client sees the exact Chat-Completion format it expects
+- **Multi-account is transparent**: the passthrough shares the same rotation / breaker / jitter / token-refresh code as the Chat path, so failover is invisible to Cursor
+
+### Cursor known limitations
+
+- The Responses passthrough does **not** apply the Chat-specific `reasoning_effort` auto-downgrade (`high` → `medium`), because `/v1/responses` returns different error message shapes for `reasoning: { effort }`. Non-account 400 errors (unsupported model, invalid params, etc.) are still correctly classified and do not penalize the account.
 
 ---
 

@@ -16,6 +16,11 @@ import {
   type ChatCompletionsPayload,
 } from "~/services/copilot/create-chat-completions"
 
+import {
+  forwardResponsesAsChat,
+  isResponsesShape,
+} from "./responses-passthrough"
+
 /**
  * Set max_tokens from model limits if not already provided in the payload.
  */
@@ -43,13 +48,26 @@ function applyMaxTokens(
 export async function handleCompletion(c: Context) {
   await checkRateLimit(state)
 
-  const rawPayload = await c.req.json<ChatCompletionsPayload>()
+  const rawPayload = await c.req.json<unknown>()
   consola.debug("Request payload:", JSON.stringify(rawPayload).slice(-400))
+
+  // Some clients (e.g. Cursor) POST OpenAI **Responses API** bodies
+  // (`input` array, `reasoning`, `text`, ...) to `/chat/completions`.
+  // Detect that shape and forward to `/v1/responses` upstream, then
+  // translate the reply back into Chat-Completions format.
+  if (isResponsesShape(rawPayload)) {
+    consola.debug(
+      "Detected Responses-shape body on /chat/completions — forwarding to /v1/responses",
+    )
+    if (state.manualApprove) await awaitApproval()
+    const response = await forwardResponsesAsChat(rawPayload)
+    return respondWithResult(c, response)
+  }
 
   const payload = applyMaxTokens(
     injectIntoOpenAIPayload(
       stripOpenAIReminders(
-        rawPayload as unknown as Parameters<typeof stripOpenAIReminders>[0],
+        rawPayload as Parameters<typeof stripOpenAIReminders>[0],
       ) as unknown as ChatCompletionsPayload,
     ),
   )
@@ -58,6 +76,13 @@ export async function handleCompletion(c: Context) {
 
   const response = await createChatCompletions(payload)
 
+  return respondWithResult(c, response)
+}
+
+function respondWithResult(
+  c: Context,
+  response: Awaited<ReturnType<typeof createChatCompletions>>,
+) {
   if (isNonStreaming(response)) {
     // Map reasoning_text to reasoning_content for OpenAI-compatible clients
     const mappedResponse = mapReasoningFields(response)

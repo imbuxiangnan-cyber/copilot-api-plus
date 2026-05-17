@@ -3,6 +3,7 @@ import consola from "consola"
 import { events } from "fetch-event-stream"
 
 import { accountManager } from "~/lib/account-manager"
+import { runWithAccountRotation } from "~/lib/account-rotation"
 import { pickHighestSupportedEffort } from "~/lib/anthropic-sanitizer"
 import {
   copilotHeaders,
@@ -33,20 +34,6 @@ import { findModel, rootCause } from "~/lib/utils"
  * ~120s to start streaming, so we give a generous timeout for headers.
  */
 const FETCH_TIMEOUT_MS = 120_000
-
-// ---------------------------------------------------------------------------
-// Anti-correlation: jitter & frequency limiting
-// ---------------------------------------------------------------------------
-
-/** Minimum interval (ms) between requests on the same account. */
-const MIN_SAME_ACCOUNT_INTERVAL_MS = 1_000
-
-/** Random jitter range (ms) added when switching between accounts. */
-const ACCOUNT_SWITCH_JITTER_MIN_MS = 1_000
-const ACCOUNT_SWITCH_JITTER_MAX_MS = 5_000
-
-/** Track the last-used account ID to detect account switches. */
-let lastUsedAccountId: string | undefined
 
 /**
  * Wrapper around `fetch()` that aborts if the server doesn't respond within
@@ -401,6 +388,19 @@ const responsesApiOnlyModels = new Set<string>()
 export const createChatCompletions = async (
   payload: ChatCompletionsPayload,
 ) => {
+  // Guard: every code path below assumes `messages` is an array
+  // (`.some(...)`, `.flatMap(...)`, etc.). If a caller / client hands us
+  // a malformed body — e.g. a Responses-API-shape payload that escaped
+  // the dispatcher in `routes/chat-completions/handler.ts` — fail fast
+  // with a readable 400 instead of crashing with
+  // `Cannot read properties of undefined (reading 'some')`.
+  if (!Array.isArray(payload.messages)) {
+    throw new HTTPError(
+      "Invalid request: `messages` must be an array. If you intended to send a Responses API payload, POST to /v1/responses or include a `messages` field.",
+      new Response(null, { status: 400, statusText: "Bad Request" }),
+    )
+  }
+
   // Apply model routing
   const resolvedModel = modelRouter.resolveModel(payload.model)
   const routedPayload =
@@ -809,38 +809,22 @@ async function createWithSingleAccount(payload: ChatCompletionsPayload) {
 // ---------------------------------------------------------------------------
 // Multi-account path (failover across accounts)
 // ---------------------------------------------------------------------------
-
-/**
- * Attempt to refresh an account's token and retry the request.
- * Returns the result on success, or null if the refresh/retry failed.
- */
-async function tryRefreshAndRetry(
-  account: import("~/lib/account-manager").Account,
-  payload: ChatCompletionsPayload,
-  tokenSource: TokenSource,
-): Promise<AsyncGenerator | ChatCompletionResponse | null> {
-  try {
-    await accountManager.refreshAccountToken(account)
-    // Update tokenSource with the refreshed token
-    tokenSource.copilotToken = account.copilotToken
-    const result = await doFetch(payload, tokenSource, account.id)
-    accountManager.markAccountSuccess(account.id)
-    return result
-  } catch {
-    accountManager.markAccountStatus(
-      account.id,
-      "error",
-      "Token refresh failed",
-    )
-    return null
-  }
-}
+//
+// Generic rotation/breaker/jitter logic lives in `~/lib/account-rotation.ts`.
+// This module only owns the Chat-Completions–specific bits:
+//   - the transport (doFetch)
+//   - the 400 retry hooks (downgrade reasoning_effort, strip when tools)
+//
+// ---------------------------------------------------------------------------
 
 /** Try to retry a 400 with downgraded reasoning_effort on the same account. */
 async function tryDowngradeReasoningEffort(
   errMsg: string,
-  retryContext: { payload: ChatCompletionsPayload; tokenSource: TokenSource },
-  accountId: string,
+  ctx: {
+    payload: ChatCompletionsPayload
+    tokenSource: TokenSource
+    accountId: string
+  },
 ): Promise<AsyncGenerator | ChatCompletionResponse | null> {
   const isEffortRejection =
     errMsg.includes("supported values")
@@ -848,17 +832,17 @@ async function tryDowngradeReasoningEffort(
       && errMsg.includes("reasoning_effort"))
   if (!isEffortRejection) return null
 
-  const currentEffort = retryContext.payload.reasoning_effort
+  const currentEffort = ctx.payload.reasoning_effort
   if (!currentEffort || currentEffort === "medium" || currentEffort === "low")
     return null
 
-  reasoningEffortCap.set(retryContext.payload.model, "medium")
+  reasoningEffortCap.set(ctx.payload.model, "medium")
   const downgraded = {
-    ...retryContext.payload,
+    ...ctx.payload,
     reasoning_effort: "medium" as const,
   }
   try {
-    return await doFetch(downgraded, retryContext.tokenSource, accountId)
+    return await doFetch(downgraded, ctx.tokenSource, ctx.accountId)
   } catch {
     return null
   }
@@ -867,8 +851,11 @@ async function tryDowngradeReasoningEffort(
 /** Strip reasoning params and retry when tools + reasoning_effort conflict. */
 async function tryStripReasoningForTools(
   errMsg: string,
-  retryContext: { payload: ChatCompletionsPayload; tokenSource: TokenSource },
-  accountId: string,
+  ctx: {
+    payload: ChatCompletionsPayload
+    tokenSource: TokenSource
+    accountId: string
+  },
 ): Promise<AsyncGenerator | ChatCompletionResponse | null> {
   if (
     !errMsg.includes("Function tools")
@@ -876,415 +863,43 @@ async function tryStripReasoningForTools(
   )
     return null
 
-  reasoningWithToolsUnsupported.add(retryContext.payload.model)
+  reasoningWithToolsUnsupported.add(ctx.payload.model)
   consola.debug(
-    `Model "${retryContext.payload.model}" does not support tools + reasoning_effort — stripped for future requests`,
+    `Model "${ctx.payload.model}" does not support tools + reasoning_effort — stripped for future requests`,
   )
-  const stripped = { ...retryContext.payload }
+  const stripped = { ...ctx.payload }
   delete stripped.reasoning_effort
   delete stripped.thinking_budget
   try {
-    return await doFetch(stripped, retryContext.tokenSource, accountId)
+    return await doFetch(stripped, ctx.tokenSource, ctx.accountId)
   } catch {
     return null
   }
 }
 
-/**
- * Whether a 400 error is caused by the request itself (model unavailable,
- * invalid params, etc.) rather than the account. These should NOT trigger
- * account disabling or rotation — rotating to another account would just
- * waste credits hitting the same error.
- */
-function isNonAccountError(errMsg: string): boolean {
-  return (
-    errMsg.includes("model_not_supported")
-    || errMsg.includes("The requested model is not supported")
-    || errMsg.includes("invalid_request_body")
-    || errMsg.includes("invalid_request_error")
-    || errMsg.includes("invalid_reasoning_effort")
-    || errMsg.includes("reasoning_effort")
-    || errMsg.includes("tool_choice")
-  )
-}
-
-/**
- * Handle an HTTP error from a multi-account request attempt.
- *
- * For 401 errors, attempts token refresh and retry.
- * Returns the successful retry result, or null if the error was handled
- * without a successful retry.
- */
-/**
- * Handle a 429 from upstream: detect Copilot 5h Pro+ session-limit signature,
- * snapshot GitHub /rate_limit, and decide whether to mark the account or
- * propagate the error to the client (single-account guard).
- */
-async function handle429(
-  error: HTTPError,
-  account: import("~/lib/account-manager").Account,
-  hasOtherAccount: boolean,
-): Promise<null> {
-  let body: string
-  try {
-    body = await error.response.clone().text()
-  } catch {
-    body = error.message || ""
-  }
-  const isCopilotSessionLimit = body.includes(
-    "user_global_rate_limited:pro_plus",
-  )
-  if (isCopilotSessionLimit) {
-    accountManager.markCopilotSessionLimit(
-      account.id,
-      "user_global_rate_limited:pro_plus",
-    )
-  }
-  void accountManager.refreshGithubRateLimit(account)
-
-  if (!hasOtherAccount) {
-    consola.warn(
-      `Account ${account.label}: 429 — only account, propagating to client without marking`,
-    )
-    ;(error as HTTPError & { __nonAccountError?: boolean }).__nonAccountError =
-      true
-    return null
-  }
-  accountManager.markAccountStatus(
-    account.id,
-    "rate_limited",
-    isCopilotSessionLimit ? "429 Copilot 5h session limit" : "429 Rate limited",
-  )
-  return null
-}
-
-async function handleMultiAccountHttpError(
-  error: HTTPError,
-  account: import("~/lib/account-manager").Account,
-  retryContext: {
-    payload: ChatCompletionsPayload
-    tokenSource: TokenSource
-    hasOtherAccount: boolean
-  },
-): Promise<AsyncGenerator | ChatCompletionResponse | null> {
-  switch (error.response.status) {
-    case 401: {
-      consola.warn(`Account ${account.label}: 401, refreshing token...`)
-      return tryRefreshAndRetry(
-        account,
-        retryContext.payload,
-        retryContext.tokenSource,
-      )
-    }
-    case 403: {
-      // Single-account guard: marking the only account as banned would
-      // disable the proxy for everything. Propagate to the client instead.
-      if (!retryContext.hasOtherAccount) {
-        consola.warn(
-          `Account ${account.label}: 403 — only account, propagating to client without marking`,
-        )
-        ;(
-          error as HTTPError & { __nonAccountError?: boolean }
-        ).__nonAccountError = true
-        return null
-      }
-      accountManager.markAccountStatus(account.id, "banned", "403 Forbidden")
-      return null
-    }
-    case 429: {
-      return handle429(error, account, retryContext.hasOtherAccount)
-    }
-    case 408: {
-      // 408 Request Timeout: the upstream timed out reading our request body.
-      // This is a network/proxy issue (slow uplink, Clash hiccup), NOT an
-      // account problem. Don't mark the account, don't rotate.
-      consola.warn(
-        `Account ${account.label}: 408 request timeout (network issue, not rotating)`,
-      )
-      ;(
-        error as HTTPError & { __nonAccountError?: boolean }
-      ).__nonAccountError = true
-      return null
-    }
-    default: {
-      // 5xx: upstream error — don't retry to avoid wasting request credits.
-      if (error.response.status >= 500) {
-        accountManager.markAccountStatus(
-          account.id,
-          "error",
-          `HTTP ${error.response.status}`,
-        )
-        recordBreakerFailure(`HTTP ${error.response.status}`)
-        return null
-      }
-      // 400: check if it's a reasoning_effort value rejection first.
-      // If so, downgrade to "medium" and retry on the SAME account before
-      // falling through to account rotation.
-      if (error.response.status === 400) {
-        const downgraded = await tryDowngradeReasoningEffort(
-          error.message,
-          retryContext,
-          account.id,
-        )
-        if (downgraded !== null) return downgraded
-
-        // Tools + reasoning_effort conflict (e.g. gpt-5.4):
-        // strip reasoning params and retry on the same account.
-        const toolsConflict = await tryStripReasoningForTools(
-          error.message,
-          retryContext,
-          account.id,
-        )
-        if (toolsConflict !== null) return toolsConflict
-
-        // Non-account 400 errors (model not supported, invalid request body,
-        // tool_choice + thinking conflict, etc.) — these are NOT account
-        // problems. Return null WITHOUT marking the account as failed,
-        // and tag the error so the outer loop knows to stop rotating.
-        if (isNonAccountError(error.message)) {
-          ;(
-            error as HTTPError & { __nonAccountError?: boolean }
-          ).__nonAccountError = true
-          return null
-        }
-      }
-      accountManager.markAccountStatus(
-        account.id,
-        "error",
-        `HTTP ${error.response.status}`,
-      )
-      return null
-    }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Circuit breaker for upstream/network failures.
-//
-// When the upstream (or our path to it via Clash) is broken, we used to keep
-// retrying every request, each one waiting ~5–30s before the inevitable
-// timeout — a self-inflicted DoS. Instead, after CB_THRESHOLD consecutive
-// network/5xx failures we OPEN the circuit: every new request fails fast
-// with a 503 for CB_OPEN_MS. After that window we go HALF-OPEN: the next
-// request is a probe; success closes the circuit, failure re-opens it.
-//
-// Tuning: 3 failures / 30s. Standard Hystrix-ish default. Real Clash
-// hiccups self-heal in 1–2 retries; 3 means it's actually broken.
-// ---------------------------------------------------------------------------
-const CB_THRESHOLD = 3
-const CB_OPEN_MS = 30_000
-
-const breaker = {
-  failures: 0,
-  openedAt: 0, // 0 = closed
-}
-
-function breakerOpenRemainingMs(): number {
-  if (breaker.openedAt === 0) return 0
-  const elapsed = Date.now() - breaker.openedAt
-  return elapsed >= CB_OPEN_MS ? 0 : CB_OPEN_MS - elapsed
-}
-
-function recordBreakerSuccess(): void {
-  if (breaker.failures !== 0 || breaker.openedAt !== 0) {
-    consola.info("Circuit breaker: closing (request succeeded)")
-  }
-  breaker.failures = 0
-  breaker.openedAt = 0
-}
-
-function recordBreakerFailure(reason: string): void {
-  breaker.failures += 1
-  if (breaker.failures >= CB_THRESHOLD && breaker.openedAt === 0) {
-    breaker.openedAt = Date.now()
-    consola.warn(
-      `Circuit breaker OPEN for ${CB_OPEN_MS / 1000}s after ${breaker.failures} consecutive failures (last: ${reason})`,
-    )
-  }
-}
-
-// eslint-disable-next-line max-lines-per-function, complexity
 async function createWithMultiAccount(payload: ChatCompletionsPayload) {
-  // Fast-fail if the breaker is open. Half-open: let one probe through.
-  const remaining = breakerOpenRemainingMs()
-  if (remaining > 0) {
-    const err = new HTTPError(
-      "Upstream temporarily unavailable",
-      new Response(
-        JSON.stringify({
-          error: {
-            type: "service_unavailable",
-            message: `Upstream (or proxy) is failing repeatedly. Circuit breaker open; will retry probe in ${Math.ceil(remaining / 1000)}s.`,
-          },
-        }),
-        {
-          status: 503,
-          statusText: "Service Unavailable",
-          headers: {
-            "content-type": "application/json",
-            "retry-after": String(Math.ceil(remaining / 1000)),
-          },
-        },
-      ),
-    )
-    throw err
-  }
-
-  const triedAccountIds = new Set<string>()
-  let lastError: unknown
-  // Per-call flag: allow ONE same-account retry after a network error.
-  // Reset connection pool first so we don't reuse a dead socket.
-  let networkRetried = false
-
-  // Try up to 3 different accounts
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const account = accountManager.getActiveAccount()
-    if (!account || triedAccountIds.has(account.id)) {
-      // No more untried accounts available
-      break
-    }
-    triedAccountIds.add(account.id)
-
-    if (!account.copilotToken) {
-      // Token may be missing after restart — try to refresh before giving up
-      consola.debug(
-        `Account ${account.label} has no copilot token, refreshing...`,
-      )
-      await accountManager.refreshAccountToken(account)
-
-      if (!account.copilotToken) {
-        consola.warn(`Account ${account.label}: token refresh failed, skipping`)
-        accountManager.markAccountStatus(
-          account.id,
-          "error",
-          "No copilot token",
-        )
-        continue
-      }
-    }
-
-    // Build a TokenSource from the account
-    const tokenSource: TokenSource = {
-      copilotToken: account.copilotToken,
-      copilotApiEndpoint: account.copilotApiEndpoint,
-      accountType: account.accountType,
-      githubToken: account.githubToken,
-      vsCodeVersion: state.vsCodeVersion,
-      machineId: account.machineId,
-      sessionId: account.sessionId,
-      proxy: account.proxy,
-    }
-
-    try {
-      // --- Anti-correlation: frequency limiting ---
-      // Enforce minimum interval between requests on the same account
-      if (account.lastRequestAt) {
-        const elapsed = Date.now() - account.lastRequestAt
-        if (elapsed < MIN_SAME_ACCOUNT_INTERVAL_MS) {
-          await new Promise((r) =>
-            setTimeout(r, MIN_SAME_ACCOUNT_INTERVAL_MS - elapsed),
-          )
-        }
-      }
-
-      // --- Anti-correlation: inter-account jitter ---
-      // Add random delay when switching between accounts
-      if (lastUsedAccountId && lastUsedAccountId !== account.id) {
-        const jitter =
-          ACCOUNT_SWITCH_JITTER_MIN_MS
-          + Math.random()
-            * (ACCOUNT_SWITCH_JITTER_MAX_MS - ACCOUNT_SWITCH_JITTER_MIN_MS)
-        consola.debug(
-          `Account switch jitter: ${Math.round(jitter)}ms (${lastUsedAccountId.slice(0, 8)} → ${account.id.slice(0, 8)})`,
-        )
-        await new Promise((r) => setTimeout(r, jitter))
-      }
-      // eslint-disable-next-line require-atomic-updates
-      lastUsedAccountId = account.id
-
-      const result = await doFetch(payload, tokenSource, account.id)
-      account.lastRequestAt = Date.now()
-      accountManager.markAccountSuccess(account.id)
-      recordBreakerSuccess()
-      // Tag streaming results with account info for keepalive targeting
-      if (Symbol.asyncIterator in result) {
-        ;(
-          result as AsyncGenerator & {
-            __accountInfo?: StreamAccountInfo
-          }
-        ).__accountInfo = {
-          accountId: account.id,
-          accountProxy: account.proxy,
-          apiBaseUrl: copilotBaseUrl(tokenSource),
-        }
-      }
-      return result
-    } catch (error) {
-      lastError = error
-
-      if (error instanceof HTTPError) {
-        const retryResult = await handleMultiAccountHttpError(error, account, {
-          payload,
-          tokenSource,
-          hasOtherAccount: hasAnotherAccountToTry(triedAccountIds),
-        })
-        if (retryResult) return retryResult
-        // Non-account error — stop rotating, propagate to client.
-        if (
-          (error as HTTPError & { __nonAccountError?: boolean })
-            .__nonAccountError
-        ) {
-          throw error
-        }
-      } else {
-        // Network error (ECONNRESET, TLS disconnect, fetch failed, etc.):
-        // these are local/proxy/route problems, NOT account problems.
-        // Strategy: reset THIS account's connection pool (kill stale
-        // sockets) and retry the same account ONCE. If it fails again,
-        // throw — let the client (Claude Code) decide whether to retry.
-        const errMsg = (error as Error).message || String(error)
-        if (!networkRetried) {
-          networkRetried = true
-          consola.warn(
-            `Account ${account.label}: network error, resetting pool and retrying once: ${errMsg}`,
-          )
-          resetAccountConnections(account.id)
-          triedAccountIds.delete(account.id) // allow same account to be picked again
-          continue
-        }
-        consola.warn(
-          `Account ${account.label}: network error after retry (giving up): ${errMsg}`,
-        )
-        recordBreakerFailure(`network: ${errMsg.slice(0, 80)}`)
-        throw error
-      }
-
-      consola.warn(
-        `Account ${account.label} failed (attempt ${attempt + 1})${
-          hasAnotherAccountToTry(triedAccountIds) ? ", trying next..." : (
-            " — no other accounts available, propagating error"
-          )
-        }`,
-      )
-    }
-  }
-
-  // All accounts exhausted
-  if (lastError)
-    throw lastError instanceof Error ? lastError : (
-        new Error("Network request failed")
-      )
-  throw new Error("No available accounts")
-}
-
-/**
- * Peek at whether `getActiveAccount()` would return an untried account on the
- * next iteration. Used purely for honest log messaging — doesn't affect
- * routing.
- */
-function hasAnotherAccountToTry(triedAccountIds: Set<string>): boolean {
-  const next = accountManager.getActiveAccount()
-  return next !== undefined && !triedAccountIds.has(next.id)
+  return runWithAccountRotation<
+    ChatCompletionsPayload,
+    AsyncGenerator | ChatCompletionResponse
+  >({
+    label: "chat",
+    payload,
+    transport: (p, tokenSource, accountId) =>
+      doFetch(p, tokenSource, accountId),
+    on400: async (error, ctx, account) => {
+      const downgraded = await tryDowngradeReasoningEffort(error.message, {
+        payload: ctx.payload,
+        tokenSource: ctx.tokenSource,
+        accountId: account.id,
+      })
+      if (downgraded !== null) return downgraded
+      return tryStripReasoningForTools(error.message, {
+        payload: ctx.payload,
+        tokenSource: ctx.tokenSource,
+        accountId: account.id,
+      })
+    },
+  })
 }
 
 // ---------------------------------------------------------------------------
