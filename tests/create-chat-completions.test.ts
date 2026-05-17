@@ -79,7 +79,7 @@ test("normalizeMaxTokens: passes max_tokens unchanged for unknown model", async 
   globalThis.fetch = mockFetch
   await createChatCompletions(payload)
   const sentBody = JSON.parse(
-    (mockFetch.mock.calls[0][1] as { body: string }).body,
+    (mockFetch.mock.calls[0] as unknown as [unknown, { body: string }])[1].body,
   ) as Record<string, unknown>
   expect(sentBody["max_tokens"]).toBe(1000)
   expect(sentBody["max_completion_tokens"]).toBeUndefined()
@@ -132,7 +132,7 @@ test("normalizeMaxTokens: switches to max_completion_tokens after 400 rejection"
 
   // Second call body: max_tokens renamed to max_completion_tokens, value unchanged
   const retryBody = JSON.parse(
-    (mockFetch.mock.calls[1][1] as { body: string }).body,
+    (mockFetch.mock.calls[1] as unknown as [unknown, { body: string }])[1].body,
   ) as Record<string, unknown>
   expect(retryBody["max_completion_tokens"]).toBe(8192)
   expect(retryBody["max_tokens"]).toBeUndefined()
