@@ -8,6 +8,7 @@ import { startConnectionRecycling, stopConnectionRecycling } from "~/lib/proxy"
 import { rootCause } from "~/lib/utils"
 import { getCopilotToken } from "~/services/github/get-copilot-token"
 import { getCopilotUsage } from "~/services/github/get-copilot-usage"
+import { getGitHubRateLimit } from "~/services/github/get-rate-limit"
 import { getGitHubUser } from "~/services/github/get-user"
 
 // ---------------------------------------------------------------------------
@@ -49,6 +50,35 @@ export interface Account {
     premium_overage_permitted?: boolean
     quotaResetDate: string
     lastCheckedAt: number
+  }
+
+  /**
+   * Rate-limit snapshots — surfaced on the web UI as countdowns and injected
+   * into 429 error responses so downstream clients (Claude Code / Codex) can
+   * display the remaining cooldown to the user.
+   */
+  limits?: {
+    /** GitHub REST API limit (from GET /rate_limit `resources.core`). */
+    github?: {
+      limit: number
+      remaining: number
+      used: number
+      /** Reset time as unix seconds (matches GitHub API). */
+      reset: number
+      fetchedAt: number
+    }
+    /**
+     * Copilot ~5h session-level rate limit (Pro+ only). Surfaced when
+     * upstream returns 429 `user_global_rate_limited:pro_plus`. We estimate
+     * the reset 5h after the first 429 since GitHub does not expose it
+     * directly today.
+     */
+    copilotSession?: {
+      blockedAt: number
+      /** ms epoch — estimated `blockedAt + 5h`. */
+      estimatedResetAt: number
+      reason: string
+    }
   }
 
   // Anti-correlation
@@ -425,6 +455,68 @@ export class AccountManager {
 
   // ---------- Background refresh -----------------------------------------
 
+  /**
+   * Refresh GitHub REST API rate-limit snapshot for a single account.
+   *
+   * Stored on `account.limits.github`. Called on startup, after account
+   * creation, and after upstream 429s — the endpoint itself is free.
+   */
+  async refreshGithubRateLimit(account: Account): Promise<void> {
+    try {
+      const data = await getGitHubRateLimit(account.githubToken)
+      const core = data.resources.core
+
+      account.limits = {
+        ...account.limits,
+        github: {
+          limit: core.limit,
+          remaining: core.remaining,
+          used: core.used,
+          reset: core.reset,
+          fetchedAt: Date.now(),
+        },
+      }
+      this.debouncedSave()
+    } catch (err) {
+      consola.debug(
+        `Account ${account.label}: failed to refresh GitHub rate_limit:`,
+        err,
+      )
+    }
+  }
+
+  /**
+   * Mark a Copilot ~5h session-level rate limit. Called when upstream returns
+   * 429 with `user_global_rate_limited:pro_plus` (the Pro+ 5h cooldown).
+   *
+   * The reset time is *estimated* (blockedAt + 5h) because GitHub does not
+   * surface the actual reset moment. UI/error responses display a "≤ 5h"
+   * countdown so users know roughly when the cooldown lifts.
+   */
+  markCopilotSessionLimit(id: string, reason: string): void {
+    const account = this.accounts.find((a) => a.id === id)
+    if (!account) return
+    const now = Date.now()
+    account.limits = {
+      ...account.limits,
+      copilotSession: {
+        blockedAt: now,
+        estimatedResetAt: now + 5 * 60 * 60 * 1000,
+        reason,
+      },
+    }
+    this.debouncedSave()
+  }
+
+  /** Clear the Copilot 5h session marker (e.g. after a successful request). */
+  clearCopilotSessionLimit(id: string): void {
+    const account = this.accounts.find((a) => a.id === id)
+    if (!account?.limits?.copilotSession) return
+    const { copilotSession: _drop, ...rest } = account.limits
+    account.limits = rest
+    this.debouncedSave()
+  }
+
   /** Refresh Copilot tokens for all non-disabled accounts. */
   async refreshAllTokens(): Promise<void> {
     const targets = this.accounts.filter((a) => a.status !== "disabled")
@@ -435,6 +527,12 @@ export class AccountManager {
   async refreshAllUsage(): Promise<void> {
     const targets = this.accounts.filter((a) => a.status !== "disabled")
     await Promise.allSettled(targets.map((a) => this.refreshAccountUsage(a)))
+  }
+
+  /** Refresh GitHub /rate_limit for all non-disabled accounts. */
+  async refreshAllGithubRateLimits(): Promise<void> {
+    const targets = this.accounts.filter((a) => a.status !== "disabled")
+    await Promise.allSettled(targets.map((a) => this.refreshGithubRateLimit(a)))
   }
 
   /**
@@ -455,6 +553,9 @@ export class AccountManager {
     // Initial refresh — await token refresh so accounts are ready for requests
     await this.refreshAllTokens()
     void this.refreshAllUsage()
+    // Query GitHub /rate_limit for already-authorized accounts at startup.
+    // The endpoint is free (does not consume quota), so this is safe.
+    void this.refreshAllGithubRateLimits()
 
     this.refreshInterval = setInterval(() => {
       void this.refreshAllTokens()
@@ -462,6 +563,7 @@ export class AccountManager {
 
     this.usageInterval = setInterval(() => {
       void this.refreshAllUsage()
+      void this.refreshAllGithubRateLimits()
     }, usageIntervalMs)
 
     consola.debug(

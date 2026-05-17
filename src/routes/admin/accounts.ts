@@ -90,6 +90,9 @@ accountRoutes.post("/", async (c) => {
       body.accountType,
     )
 
+    // Snapshot GitHub /rate_limit at account creation (free endpoint).
+    void accountManager.refreshGithubRateLimit(account)
+
     // Set optional per-account proxy for IP isolation
     if (body.proxy) {
       try {
@@ -232,12 +235,57 @@ accountRoutes.post("/:id/refresh", async (c) => {
 
     await accountManager.refreshAccountToken(account)
     await accountManager.refreshAccountUsage(account)
+    await accountManager.refreshGithubRateLimit(account)
 
     return c.json({ account: sanitiseAccount(account) })
   } catch (error) {
     consola.warn(`Error refreshing account: ${rootCause(error)}`)
     consola.debug("Error refreshing account:", error)
     return c.json({ error: "Failed to refresh account" }, 500)
+  }
+})
+
+// ---------------------------------------------------------------------------
+// POST /:id/refresh-limits — Force refresh GitHub /rate_limit snapshot only
+// ---------------------------------------------------------------------------
+
+accountRoutes.post("/:id/refresh-limits", async (c) => {
+  try {
+    const id = c.req.param("id")
+    const account = accountManager.getAccountById(id)
+
+    if (!account) {
+      return c.json({ error: "Account not found" }, 404)
+    }
+
+    await accountManager.refreshGithubRateLimit(account)
+    return c.json({ account: sanitiseAccount(account) })
+  } catch (error) {
+    consola.warn(`Error refreshing rate limits: ${rootCause(error)}`)
+    consola.debug("Error refreshing rate limits:", error)
+    return c.json({ error: "Failed to refresh rate limits" }, 500)
+  }
+})
+
+// ---------------------------------------------------------------------------
+// POST /:id/clear-session-limit — Manually clear the Copilot 5h session marker
+// ---------------------------------------------------------------------------
+
+accountRoutes.post("/:id/clear-session-limit", (c) => {
+  try {
+    const id = c.req.param("id")
+    const account = accountManager.getAccountById(id)
+
+    if (!account) {
+      return c.json({ error: "Account not found" }, 404)
+    }
+
+    accountManager.clearCopilotSessionLimit(id)
+    return c.json({ account: sanitiseAccount(account) })
+  } catch (error) {
+    consola.warn(`Error clearing session limit: ${rootCause(error)}`)
+    consola.debug("Error clearing session limit:", error)
+    return c.json({ error: "Failed to clear session limit" }, 500)
   }
 })
 
@@ -395,6 +443,8 @@ accountRoutes.post("/auth/poll", async (c) => {
         accountLabel,
         account_type || "individual",
       )
+      // Snapshot GitHub /rate_limit at account creation (free endpoint).
+      void accountManager.refreshGithubRateLimit(account)
       return c.json({ status: "complete", account: sanitiseAccount(account) })
     }
 

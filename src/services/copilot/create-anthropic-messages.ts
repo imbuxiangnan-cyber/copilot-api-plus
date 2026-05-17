@@ -96,7 +96,8 @@ async function fetchWithTimeout(
       signal: controller.signal,
     }
     if (accountId) {
-      fetchOptions.dispatcher = getAccountDispatcher(accountId, accountProxy)
+      ;(fetchOptions as { dispatcher?: unknown }).dispatcher =
+        getAccountDispatcher(accountId, accountProxy)
     }
     return await fetch(url, fetchOptions)
   } catch (error: unknown) {
@@ -393,7 +394,11 @@ async function createWithMultiAccount(
       lastError = error
 
       if (error instanceof HTTPError) {
-        const action = handleAnthropicHttpError(error, account, triedAccountIds)
+        const action = await handleAnthropicHttpError(
+          error,
+          account,
+          triedAccountIds,
+        )
         if (action === "refresh401") return handleMultiAccount401(ctx, account)
         if (action === "throw") throw error
         // "continue" — try next account
@@ -436,16 +441,34 @@ async function createWithMultiAccount(
  * would disable the proxy entirely, so 429 / 403 are propagated unchanged
  * to the client when no other account is available.
  */
-function handleAnthropicHttpError(
+async function handleAnthropicHttpError(
   error: HTTPError,
   account: import("~/lib/account-manager").Account,
   triedAccountIds: Set<string>,
-): "refresh401" | "throw" | "continue" {
+): Promise<"refresh401" | "throw" | "continue"> {
   const status = error.response.status
   if (status === 401) return "refresh401"
 
   if (status === 429 || status === 403) {
     const isRateLimit = status === 429
+
+    if (isRateLimit) {
+      // Detect Copilot 5h Pro+ session limit + refresh GH rate-limit snapshot.
+      let body: string
+      try {
+        body = await error.response.clone().text()
+      } catch {
+        body = error.message || ""
+      }
+      if (body.includes("user_global_rate_limited:pro_plus")) {
+        accountManager.markCopilotSessionLimit(
+          account.id,
+          "user_global_rate_limited:pro_plus",
+        )
+      }
+      void accountManager.refreshGithubRateLimit(account)
+    }
+
     if (hasAnotherAnthropicAccountToTry(triedAccountIds)) {
       accountManager.markAccountStatus(
         account.id,

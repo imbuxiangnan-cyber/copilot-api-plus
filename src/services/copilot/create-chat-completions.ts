@@ -77,7 +77,8 @@ export async function fetchWithTimeout(
       signal: controller.signal,
     }
     if (accountId) {
-      fetchOptions.dispatcher = getAccountDispatcher(accountId, accountProxy)
+      ;(fetchOptions as { dispatcher?: unknown }).dispatcher =
+        getAccountDispatcher(accountId, accountProxy)
     }
     const response = await fetch(url, fetchOptions)
     return response
@@ -368,7 +369,8 @@ function logThinkingInjection(
     )
   } else if (
     injected.reasoning_effort
-    && injected.reasoning_effort !== original.reasoning_effort
+    && injected.reasoning_effort
+      !== (original.reasoning_effort as string | null | undefined)
   ) {
     consola.debug(
       `Thinking: injected reasoning_effort=${injected.reasoning_effort} for "${resolvedModel}"`,
@@ -913,6 +915,49 @@ function isNonAccountError(errMsg: string): boolean {
  * Returns the successful retry result, or null if the error was handled
  * without a successful retry.
  */
+/**
+ * Handle a 429 from upstream: detect Copilot 5h Pro+ session-limit signature,
+ * snapshot GitHub /rate_limit, and decide whether to mark the account or
+ * propagate the error to the client (single-account guard).
+ */
+async function handle429(
+  error: HTTPError,
+  account: import("~/lib/account-manager").Account,
+  hasOtherAccount: boolean,
+): Promise<null> {
+  let body: string
+  try {
+    body = await error.response.clone().text()
+  } catch {
+    body = error.message || ""
+  }
+  const isCopilotSessionLimit = body.includes(
+    "user_global_rate_limited:pro_plus",
+  )
+  if (isCopilotSessionLimit) {
+    accountManager.markCopilotSessionLimit(
+      account.id,
+      "user_global_rate_limited:pro_plus",
+    )
+  }
+  void accountManager.refreshGithubRateLimit(account)
+
+  if (!hasOtherAccount) {
+    consola.warn(
+      `Account ${account.label}: 429 — only account, propagating to client without marking`,
+    )
+    ;(error as HTTPError & { __nonAccountError?: boolean }).__nonAccountError =
+      true
+    return null
+  }
+  accountManager.markAccountStatus(
+    account.id,
+    "rate_limited",
+    isCopilotSessionLimit ? "429 Copilot 5h session limit" : "429 Rate limited",
+  )
+  return null
+}
+
 async function handleMultiAccountHttpError(
   error: HTTPError,
   account: import("~/lib/account-manager").Account,
@@ -947,24 +992,7 @@ async function handleMultiAccountHttpError(
       return null
     }
     case 429: {
-      // Single-account guard: marking the only account as rate_limited would
-      // make the next request fail with "no available accounts". Surface
-      // the 429 to the client (Claude Code) so it can back off itself.
-      if (!retryContext.hasOtherAccount) {
-        consola.warn(
-          `Account ${account.label}: 429 — only account, propagating to client without marking`,
-        )
-        ;(
-          error as HTTPError & { __nonAccountError?: boolean }
-        ).__nonAccountError = true
-        return null
-      }
-      accountManager.markAccountStatus(
-        account.id,
-        "rate_limited",
-        "429 Rate limited",
-      )
-      return null
+      return handle429(error, account, retryContext.hasOtherAccount)
     }
     case 408: {
       // 408 Request Timeout: the upstream timed out reading our request body.

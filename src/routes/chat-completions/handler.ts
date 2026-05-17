@@ -92,14 +92,14 @@ function mapReasoningFields(
   response: ChatCompletionResponse,
 ): ChatCompletionResponse {
   const hasReasoningText = response.choices.some(
-    (c) => (c.message as Record<string, unknown>).reasoning_text,
+    (c) => (c.message as unknown as Record<string, unknown>).reasoning_text,
   )
   if (!hasReasoningText) return response
 
   return {
     ...response,
     choices: response.choices.map((choice) => {
-      const msg = choice.message as Record<string, unknown>
+      const msg = choice.message as unknown as Record<string, unknown>
       if (!msg.reasoning_text) return choice
       return {
         ...choice,

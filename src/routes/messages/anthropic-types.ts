@@ -76,6 +76,18 @@ export interface AnthropicThinkingBlock {
   signature?: string
 }
 
+/**
+ * Anthropic also emits `redacted_thinking` blocks containing an opaque,
+ * server-encrypted payload when extended-thinking content is redacted.
+ * We don't render these — they're stripped before forwarding to Copilot —
+ * but they must appear in the type so the sanitizer's discriminator
+ * comparison stays valid.
+ */
+export interface AnthropicRedactedThinkingBlock {
+  type: "redacted_thinking"
+  data: string
+}
+
 export type AnthropicUserContentBlock =
   | AnthropicTextBlock
   | AnthropicImageBlock
@@ -85,6 +97,7 @@ export type AnthropicAssistantContentBlock =
   | AnthropicTextBlock
   | AnthropicToolUseBlock
   | AnthropicThinkingBlock
+  | AnthropicRedactedThinkingBlock
 
 export interface AnthropicUserMessage {
   role: "user"
