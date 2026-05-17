@@ -788,6 +788,38 @@
         gap: 0.45rem;
       }
 
+      .github-limits-modal-dialog {
+        max-width: 760px;
+        max-height: min(86vh, 760px);
+        overflow: auto;
+      }
+
+      .github-limits-table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        font-size: 0.86rem;
+      }
+
+      .github-limits-table th,
+      .github-limits-table td {
+        padding: 0.75rem 0.65rem;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        vertical-align: top;
+      }
+
+      .github-limits-table th {
+        color: var(--muted);
+        font-weight: 700;
+        white-space: nowrap;
+      }
+
+      .github-limits-table tr.is-blocked td {
+        color: var(--warning);
+        background: rgba(178, 104, 31, 0.06);
+      }
+
       .btn-sm {
         padding: 0.45rem 0.85rem;
         font-size: 0.82rem;
@@ -1458,6 +1490,15 @@
             accountSessionLimit: "5h 会话冷却",
             accountGithubLimit: "GitHub API",
             accountGithubFetchedAt: "获取时间",
+            accountGithubSummary: "GitHub API：{blocked}/{total} 项受限",
+            accountGithubNormalSummary: "GitHub API：{total} 项限额",
+            accountGithubViewDetails: "查看详情",
+            accountGithubModalTitle: "GitHub API 限额详情",
+            accountGithubResource: "资源",
+            accountGithubRemaining: "剩余 / 总额",
+            accountGithubUsed: "已用",
+            accountGithubResetAt: "重置时间",
+            accountGithubNoReset: "无",
             accountResetIn: "重置剩余",
             accountClearSessionLimit: "清除冷却",
             accountStatusBanned: "已封禁",
@@ -1673,6 +1714,15 @@
             accountSessionLimit: "5h Session Cooldown",
             accountGithubLimit: "GitHub API",
             accountGithubFetchedAt: "Fetched",
+            accountGithubSummary: "GitHub API: {blocked}/{total} limited",
+            accountGithubNormalSummary: "GitHub API: {total} resources",
+            accountGithubViewDetails: "View details",
+            accountGithubModalTitle: "GitHub API Rate Limit Details",
+            accountGithubResource: "Resource",
+            accountGithubRemaining: "Remaining / Limit",
+            accountGithubUsed: "Used",
+            accountGithubResetAt: "Reset at",
+            accountGithubNoReset: "None",
             accountResetIn: "Resets in",
             accountClearSessionLimit: "Clear Cooldown",
             accountStatusBanned: "Banned",
@@ -3214,6 +3264,120 @@
         // ═══════════════════════════════════════
         let accountsData = [];
 
+        function getGithubResourceEntries(acct) {
+          const ghLimit = acct?.limits?.github;
+          const rawResources = ghLimit?.resources && typeof ghLimit.resources === "object" ? ghLimit.resources : (ghLimit ? { core: ghLimit } : null);
+          const order = ["core", "search", "code_search", "graphql", "integration_manifest"];
+          if (!rawResources) return [];
+          return Object.entries(rawResources)
+            .filter(([name, limit]) => typeof name === "string" && name.trim() && limit && typeof limit === "object")
+            .map(([name, limit]) => ({
+              name,
+              limit: {
+                limit: Number.isFinite(Number(limit.limit)) ? Math.max(0, Number(limit.limit)) : 0,
+                remaining: Number.isFinite(Number(limit.remaining)) ? Math.max(0, Number(limit.remaining)) : 0,
+                used: Number.isFinite(Number(limit.used)) ? Math.max(0, Number(limit.used)) : 0,
+                reset: Number.isFinite(Number(limit.reset)) ? Math.max(0, Number(limit.reset)) : 0,
+              },
+            }))
+            .sort((a, b) => {
+              const ai = order.indexOf(a.name);
+              const bi = order.indexOf(b.name);
+              if (ai !== -1 || bi !== -1) return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+              return a.name.localeCompare(b.name);
+            });
+        }
+
+        function isGithubResourceBlocked(limit, now = Date.now()) {
+          if (!limit) return false;
+          const limitTotal = Number(limit.limit || 0);
+          const remaining = Number(limit.remaining || 0);
+          const resetMs = Number(limit.reset || 0) * 1000;
+          return limitTotal > 0 && remaining === 0 && resetMs > now;
+        }
+
+        function formatGithubResourceName(name) {
+          const key = String(name || "");
+          const zhMap = {
+            core: "核心接口",
+            search: "搜索",
+            code_search: "代码搜索",
+            graphql: "GraphQL",
+            integration_manifest: "集成清单",
+            actions_runner_registration: "Actions Runner 注册",
+            audit_log: "审计日志",
+            audit_log_streaming: "审计日志流",
+            code_scanning_autofix: "代码扫描自动修复",
+            code_scanning_upload: "代码扫描上传",
+            dependency_sbom: "依赖 SBOM",
+            dependency_snapshots: "依赖快照",
+            scim: "SCIM",
+          };
+          if (state.language === "zh" && zhMap[key]) return zhMap[key];
+          const acronyms = new Map([["graphql", "GraphQL"], ["scim", "SCIM"], ["sbom", "SBOM"]]);
+          return key.split("_").filter(Boolean).map((part) => acronyms.get(part.toLowerCase()) || part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
+        }
+
+        function renderGithubResourceName(name) {
+          const display = formatGithubResourceName(name);
+          return `
+            <span class="font-semibold text-[var(--text)]">${escapeHtml(display || name)}</span>
+            ${display && display !== name ? `<div class="mono text-xs text-[var(--muted)]">${escapeHtml(name)}</div>` : ""}
+          `;
+        }
+
+        function showGithubLimitsModal(acct) {
+          const entries = getGithubResourceEntries(acct);
+          const ghLimit = acct?.limits?.github;
+          const fetchedAt = ghLimit?.fetchedAt ? formatDateTime(ghLimit.fetchedAt) : "";
+          const now = Date.now();
+          const rows = entries.map(({ name, limit }) => {
+            const blocked = isGithubResourceBlocked(limit, now);
+            const resetMs = limit.reset * 1000;
+            const resetLabel = limit.reset ? formatDateTime(resetMs) : text("accountGithubNoReset");
+            const resetCountdown = blocked ? formatCountdownSecs(Math.ceil((resetMs - now) / 1000)) : "";
+            return `
+              <tr class="${blocked ? "is-blocked" : ""}">
+                <td>${renderGithubResourceName(name)}${blocked ? `<span class="pill pill-warning mt-2">${escapeHtml(text("accountStatusRateLimited"))}</span>` : ""}</td>
+                <td class="mono">${escapeHtml(formatNumber(limit.remaining))} / ${escapeHtml(formatNumber(limit.limit))}</td>
+                <td class="mono">${escapeHtml(formatNumber(limit.used))}</td>
+                <td>
+                  <span>${escapeHtml(resetLabel)}</span>
+                  ${resetCountdown ? `<div class="text-xs text-[var(--warning)]">${escapeHtml(text("accountResetIn"))}: ${escapeHtml(resetCountdown)}</div>` : ""}
+                </td>
+              </tr>
+            `;
+          }).join("");
+          const overlay = document.createElement("div");
+          overlay.className = "modal-overlay is-open";
+          overlay.innerHTML = `
+            <div class="modal-dialog github-limits-modal-dialog" style="position:relative;">
+              <button type="button" class="modal-close" aria-label="Close" data-github-limits-close>×</button>
+              <h3 class="modal-title">${escapeHtml(text("accountGithubModalTitle"))}</h3>
+              ${fetchedAt ? `<p class="mt-2 text-sm text-[var(--muted)]">${escapeHtml(text("accountGithubFetchedAt"))}: ${escapeHtml(fetchedAt)}</p>` : ""}
+              <div class="mt-5 overflow-x-auto">
+                <table class="github-limits-table">
+                  <thead>
+                    <tr>
+                      <th>${escapeHtml(text("accountGithubResource"))}</th>
+                      <th>${escapeHtml(text("accountGithubRemaining"))}</th>
+                      <th>${escapeHtml(text("accountGithubUsed"))}</th>
+                      <th>${escapeHtml(text("accountGithubResetAt"))}</th>
+                    </tr>
+                  </thead>
+                  <tbody>${rows}</tbody>
+                </table>
+              </div>
+            </div>
+          `;
+          document.body.appendChild(overlay);
+          const close = () => overlay.remove();
+          overlay.querySelector("[data-github-limits-close]").addEventListener("click", close);
+          overlay.addEventListener("click", (e) => {
+            if (e.target === overlay) close();
+          });
+        }
+
         function getStatusPill(status) {
           const map = {
             active: { label: "accountStatusActive", cls: "pill-success" },
@@ -3299,59 +3463,32 @@
           const percentUsed = !entitlement ? 0 : Math.max(0, ((entitlement - remaining) / entitlement) * 100);
           const tone = getProgressTone(percentUsed, unlimited);
 
-          // Rate-limit indicators (Copilot 5h session + full GitHub /rate_limit resources).
+          // Rate-limit indicators (Copilot 5h session + compact GitHub /rate_limit summary).
           const now = Date.now();
           const sessionLimit = acct.limits?.copilotSession;
           const ghLimit = acct.limits?.github;
           const sessionActive = sessionLimit && sessionLimit.estimatedResetAt > now;
           const sessionSecs = sessionActive ? Math.ceil((sessionLimit.estimatedResetAt - now) / 1000) : 0;
-          const ghResources = ghLimit?.resources || (ghLimit ? { core: ghLimit } : null);
-          const ghResourceOrder = ["core", "search", "code_search", "graphql", "integration_manifest"];
-          const ghResourceEntries = ghResources
-            ? Object.entries(ghResources).sort(([a], [b]) => {
-                const ai = ghResourceOrder.indexOf(a);
-                const bi = ghResourceOrder.indexOf(b);
-                if (ai !== -1 || bi !== -1) return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
-                return a.localeCompare(b);
-              })
-            : [];
-          const ghBlockedEntries = ghResourceEntries.filter(([, limit]) => {
-            return limit.limit > 0 && limit.remaining === 0 && (limit.reset * 1000) > now;
-          });
+          const ghResourceEntries = getGithubResourceEntries(acct);
+          const ghBlockedEntries = ghResourceEntries.filter(({ limit }) => isGithubResourceBlocked(limit, now));
           const ghFetchedAt = ghLimit?.fetchedAt ? formatDateTime(ghLimit.fetchedAt) : "";
-          const renderGhResource = ([name, limit]) => {
-            const resetMs = limit.reset * 1000;
-            const blocked = limit.limit > 0 && limit.remaining === 0 && resetMs > now;
-            const resetLabel = limit.reset ? formatDateTime(resetMs) : "";
-            const resetCountdown = blocked ? formatCountdownSecs(Math.ceil((resetMs - now) / 1000)) : "";
-            return `
-              <div class="flex justify-between gap-2 ${blocked ? "text-[var(--warning)]" : ""}">
-                <span class="mono">${escapeHtml(name)}</span>
-                <span class="mono text-right">
-                  ${escapeHtml(formatNumber(limit.remaining))} / ${escapeHtml(formatNumber(limit.limit))}
-                  <span class="text-[var(--muted)]">(${escapeHtml(text("usageUsed"))}: ${escapeHtml(formatNumber(limit.used || 0))})</span>
-                  ${resetLabel ? `<br><span class="text-[var(--muted)]">${escapeHtml(text("quotaReset"))}: ${escapeHtml(resetLabel)}</span>` : ""}
-                  ${resetCountdown ? `<br><span class="text-[var(--warning)]">${escapeHtml(text("accountResetIn"))}: ${escapeHtml(resetCountdown)}</span>` : ""}
-                </span>
-              </div>
-            `;
-          };
+          const ghSummaryKey = ghBlockedEntries.length > 0 ? "accountGithubSummary" : "accountGithubNormalSummary";
+          const ghSummary = text(ghSummaryKey, { blocked: ghBlockedEntries.length, total: ghResourceEntries.length });
 
           const rateLimitBlock = (sessionActive || ghResourceEntries.length > 0) ? `
-            <div class="space-y-1 text-xs">
+            <div class="space-y-2 text-xs">
               ${sessionActive ? `
-                <div class="flex justify-between items-center">
+                <div class="flex flex-wrap justify-between items-center gap-2">
                   <span class="pill pill-warning">${escapeHtml(text("accountSessionLimit"))}</span>
                   <span class="mono text-[var(--muted)]">${escapeHtml(text("accountResetIn"))}: ${escapeHtml(formatCountdownSecs(sessionSecs))}</span>
                 </div>
               ` : ""}
               ${ghResourceEntries.length > 0 ? `
-                <div class="text-[var(--muted)] leading-relaxed space-y-1">
-                  <div class="flex justify-between items-center">
-                    <span class="pill ${ghBlockedEntries.length > 0 ? "pill-warning" : "pill-neutral"}">${escapeHtml(text("accountGithubLimit"))}</span>
-                    ${ghFetchedAt ? `<span>${escapeHtml(text("accountGithubFetchedAt"))}: ${escapeHtml(ghFetchedAt)}</span>` : ""}
-                  </div>
-                  <div class="space-y-1">${ghResourceEntries.map(renderGhResource).join("")}</div>
+                <div class="flex flex-wrap items-center gap-2 text-[var(--muted)] leading-relaxed">
+                  <span class="pill ${ghBlockedEntries.length > 0 ? "pill-warning" : "pill-neutral"}">${escapeHtml(text("accountGithubLimit"))}</span>
+                  <span>${escapeHtml(ghSummary)}</span>
+                  ${ghFetchedAt ? `<span>${escapeHtml(text("accountGithubFetchedAt"))}: ${escapeHtml(ghFetchedAt)}</span>` : ""}
+                  <button type="button" class="btn btn-ghost btn-sm" data-acct-action="github-limits" data-acct-id="${escapeHtml(String(acct.id || login))}">${escapeHtml(text("accountGithubViewDetails"))}</button>
                 </div>
               ` : ""}
             </div>
@@ -3420,8 +3557,15 @@
             btn.addEventListener("click", async () => {
               const action = btn.getAttribute("data-acct-action");
               const id = btn.getAttribute("data-acct-id");
-              btn.disabled = true;
               const origHTML = btn.innerHTML;
+              if (action === "github-limits") {
+                const acct = accountsData.find((item) => String(item.id || item.githubLogin || "") === String(id));
+                if (acct) showGithubLimitsModal(acct);
+                btn.disabled = false;
+                btn.innerHTML = origHTML;
+                return;
+              }
+              btn.disabled = true;
               btn.innerHTML = icon("refresh") + " ...";
               try {
                 if (action === "delete") {
