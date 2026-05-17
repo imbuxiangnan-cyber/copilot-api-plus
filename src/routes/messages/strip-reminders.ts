@@ -196,6 +196,9 @@ export function stripSystemReminders(
 export function stripOpenAIReminders<P extends OpenAILikePayload>(
   payload: P,
 ): P {
+  // Defensive: some clients (e.g. certain Cursor model paths) POST bodies
+  // without a `messages` array. Skip silently instead of crashing.
+  if (!Array.isArray(payload.messages)) return payload
   let changed = false
   const newMessages = payload.messages.map((m) => {
     if (m.content === null) return m

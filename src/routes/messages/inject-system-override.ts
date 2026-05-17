@@ -166,6 +166,8 @@ export function injectIntoOpenAIPayload<P extends ChatCompletionsPayload>(
   if (!ENABLED) return payload
 
   const msgs = payload.messages
+  // Defensive: skip injection if no messages array (malformed/alt-shape payload)
+  if (!Array.isArray(msgs)) return payload
   // Already injected?
   for (const m of msgs) {
     if (m.role !== "system" && m.role !== "developer") continue
