@@ -137,3 +137,25 @@ test("normalizeMaxTokens: switches to max_completion_tokens after 400 rejection"
   expect(retryBody["max_completion_tokens"]).toBe(8192)
   expect(retryBody["max_tokens"]).toBeUndefined()
 })
+
+test("rejects malformed payload missing `messages` array with HTTP 400", async () => {
+  // Simulates a Responses-API-shape body slipping past the dispatcher
+  // (or any other client that POSTs garbage to /chat/completions).
+  // Must produce a readable 400, NOT a 500 from
+  // `Cannot read properties of undefined (reading 'some')`.
+  const malformed = {
+    model: "gpt-5-mini",
+    input: [{ role: "user", content: "hi" }],
+  } as unknown as ChatCompletionsPayload
+
+  try {
+    await createChatCompletions(malformed)
+    throw new Error("expected createChatCompletions to throw")
+  } catch (err) {
+    expect(err).toBeInstanceOf(Error)
+    const e = err as Error & { response?: Response }
+    expect(e.response).toBeDefined()
+    expect(e.response?.status).toBe(400)
+    expect(e.message).toMatch(/messages/i)
+  }
+})

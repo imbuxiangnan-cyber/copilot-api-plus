@@ -23,6 +23,7 @@
 - [代理配置](#-代理配置)
 - [Claude Code 集成](#-claude-code-集成)
 - [opencode 集成](#-opencode-集成)
+- [Cursor IDE 集成](#-cursor-ide-集成)
 - [API 端点](#-api-端点)
 - [API Key 认证](#-api-key-认证)
 - [技术细节](#-技术细节)
@@ -514,6 +515,38 @@ export OPENAI_API_KEY=dummy
 # 运行 opencode
 npx opencode@latest
 ```
+
+---
+
+## 🖱️ Cursor IDE 集成
+
+[Cursor](https://cursor.com/) 是基于 VS Code 的 AI 编辑器。1.x 版本使用 **OpenAI Responses API** 格式（`input` 数组 + `reasoning` 字段），但仍 POST 到 `/chat/completions` 端点。
+
+copilot-api-plus 会**自动检测** Responses 形态的请求体并转发到 Copilot 的 `/v1/responses` 上游，再把响应翻译回 Chat-Completions 格式 —— **客户端无需任何配置**。
+
+### Cursor 配置步骤
+
+1. 启动 copilot-api-plus：
+
+   ```bash
+   npx copilot-api-plus@latest start
+   ```
+
+2. 在 Cursor 的 **Settings → Models → API Keys** 中：
+   - **OpenAI Base URL**：`http://localhost:4141/v1`
+   - **OpenAI API Key**：任意非空字符串（如果没有启用 `--api-key`，填 `dummy` 即可）
+3. 在模型列表中添加 Copilot 提供的模型名（如 `gpt-5-mini`、`claude-sonnet-4` 等），点击 **Verify**
+
+### Cursor 工作原理
+
+- 检测逻辑：请求体含 `input: []` 且不含 `messages: []`，且 `model` 是字符串 → 走 Responses 直通路径
+- 同时携带 `messages` 和 `input` 的请求会优先走 Chat 流水线（不会被劫持）
+- 流式响应通过 SSE 翻译器逐块转回 Chat-Completion chunk，客户端看到的格式完全一致
+- **多账号透明支持**：与 Chat 路径共享同一套轮换 / 熔断 / 抖动 / Token 刷新逻辑，故障转移对 Cursor 无感
+
+### Cursor 已知限制
+
+- Responses 直通路径**不支持** Chat 专属的 `reasoning_effort` 自动降级（如 `high` → `medium`），因为 `/v1/responses` 的 `reasoning: { effort }` 错误信息格式不同。非账号相关的 400（模型不支持、参数无效等）仍会被正确识别并不计入账号失败。
 
 ---
 
