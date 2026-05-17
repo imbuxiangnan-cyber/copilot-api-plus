@@ -791,6 +791,25 @@
       .github-limits-modal-dialog {
         max-width: 760px;
         max-height: min(86vh, 760px);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      .github-limits-modal-header {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        margin: -2rem -2rem 0;
+        padding: 2rem 4rem 1rem 2rem;
+        background: var(--surface-strong);
+        border-bottom: 1px solid var(--line);
+        border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+      }
+
+      .github-limits-modal-body {
+        margin: 0 -2rem -2rem;
+        padding: 0 2rem 2rem;
         overflow: auto;
       }
 
@@ -3299,19 +3318,33 @@
         function formatGithubResourceName(name) {
           const key = String(name || "");
           const zhMap = {
-            core: "核心接口",
-            search: "搜索",
-            code_search: "代码搜索",
-            graphql: "GraphQL",
-            integration_manifest: "集成清单",
             actions_runner_registration: "Actions Runner 注册",
+            actions_runner_scale_sets: "Actions Runner 扩缩容集合",
+            actions_runner_scale_sets_registration: "Actions Runner 扩缩容注册",
+            actions_secrets: "Actions 密钥",
+            actions_variables: "Actions 变量",
             audit_log: "审计日志",
             audit_log_streaming: "审计日志流",
+            checks: "检查运行",
             code_scanning_autofix: "代码扫描自动修复",
             code_scanning_upload: "代码扫描上传",
+            code_search: "代码搜索",
+            codespaces: "Codespaces",
+            copilot: "Copilot",
+            core: "核心接口",
             dependency_sbom: "依赖 SBOM",
             dependency_snapshots: "依赖快照",
+            graphql: "GraphQL",
+            integration_manifest: "集成清单",
+            issues: "议题",
+            packages: "软件包",
+            pulls: "拉取请求",
+            reactions: "回应",
             scim: "SCIM",
+            search: "搜索",
+            secret_scanning: "密钥扫描",
+            source_import: "源码导入",
+            statuses: "提交状态",
           };
           if (state.language === "zh" && zhMap[key]) return zhMap[key];
           const acronyms = new Map([["graphql", "GraphQL"], ["scim", "SCIM"], ["sbom", "SBOM"]]);
@@ -3352,26 +3385,35 @@
           overlay.className = "modal-overlay is-open";
           overlay.innerHTML = `
             <div class="modal-dialog github-limits-modal-dialog" style="position:relative;">
-              <button type="button" class="modal-close" aria-label="Close" data-github-limits-close>×</button>
-              <h3 class="modal-title">${escapeHtml(text("accountGithubModalTitle"))}</h3>
-              ${fetchedAt ? `<p class="mt-2 text-sm text-[var(--muted)]">${escapeHtml(text("accountGithubFetchedAt"))}: ${escapeHtml(fetchedAt)}</p>` : ""}
-              <div class="mt-5 overflow-x-auto">
-                <table class="github-limits-table">
-                  <thead>
-                    <tr>
-                      <th>${escapeHtml(text("accountGithubResource"))}</th>
-                      <th>${escapeHtml(text("accountGithubRemaining"))}</th>
-                      <th>${escapeHtml(text("accountGithubUsed"))}</th>
-                      <th>${escapeHtml(text("accountGithubResetAt"))}</th>
-                    </tr>
-                  </thead>
-                  <tbody>${rows}</tbody>
-                </table>
+              <div class="github-limits-modal-header">
+                <button type="button" class="modal-close" aria-label="Close" data-github-limits-close>×</button>
+                <h3 class="modal-title">${escapeHtml(text("accountGithubModalTitle"))}</h3>
+                ${fetchedAt ? `<p class="mt-2 text-sm text-[var(--muted)]">${escapeHtml(text("accountGithubFetchedAt"))}: ${escapeHtml(fetchedAt)}</p>` : ""}
+              </div>
+              <div class="github-limits-modal-body">
+                <div class="mt-5 overflow-x-auto">
+                  <table class="github-limits-table">
+                    <thead>
+                      <tr>
+                        <th>${escapeHtml(text("accountGithubResource"))}</th>
+                        <th>${escapeHtml(text("accountGithubRemaining"))}</th>
+                        <th>${escapeHtml(text("accountGithubUsed"))}</th>
+                        <th>${escapeHtml(text("accountGithubResetAt"))}</th>
+                      </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                  </table>
+                </div>
               </div>
             </div>
           `;
           document.body.appendChild(overlay);
-          const close = () => overlay.remove();
+          const previousOverflow = document.body.style.overflow;
+          document.body.style.overflow = "hidden";
+          const close = () => {
+            document.body.style.overflow = previousOverflow;
+            overlay.remove();
+          };
           overlay.querySelector("[data-github-limits-close]").addEventListener("click", close);
           overlay.addEventListener("click", (e) => {
             if (e.target === overlay) close();
