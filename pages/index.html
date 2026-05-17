@@ -1457,6 +1457,7 @@
             accountStatusRateLimited: "限速中",
             accountSessionLimit: "5h 会话冷却",
             accountGithubLimit: "GitHub API",
+            accountGithubFetchedAt: "获取时间",
             accountResetIn: "重置剩余",
             accountClearSessionLimit: "清除冷却",
             accountStatusBanned: "已封禁",
@@ -1671,6 +1672,7 @@
             accountStatusRateLimited: "Rate Limited",
             accountSessionLimit: "5h Session Cooldown",
             accountGithubLimit: "GitHub API",
+            accountGithubFetchedAt: "Fetched",
             accountResetIn: "Resets in",
             accountClearSessionLimit: "Clear Cooldown",
             accountStatusBanned: "Banned",
@@ -3304,8 +3306,10 @@
           const ghBlocked = ghLimit && ghLimit.remaining === 0 && (ghLimit.reset * 1000) > now;
           const sessionSecs = sessionActive ? Math.ceil((sessionLimit.estimatedResetAt - now) / 1000) : 0;
           const ghSecs = ghBlocked ? Math.ceil((ghLimit.reset * 1000 - now) / 1000) : 0;
+          const ghResetAt = ghLimit?.reset ? formatDateTime(ghLimit.reset * 1000) : "";
+          const ghFetchedAt = ghLimit?.fetchedAt ? formatDateTime(ghLimit.fetchedAt) : "";
 
-          const rateLimitBlock = (sessionActive || ghBlocked) ? `
+          const rateLimitBlock = (sessionActive || ghLimit) ? `
             <div class="space-y-1 text-xs">
               ${sessionActive ? `
                 <div class="flex justify-between items-center">
@@ -3313,12 +3317,18 @@
                   <span class="mono text-[var(--muted)]">${escapeHtml(text("accountResetIn"))}: ${escapeHtml(formatCountdownSecs(sessionSecs))}</span>
                 </div>
               ` : ""}
-              ${ghBlocked ? `
+              ${ghLimit ? (ghBlocked ? `
                 <div class="flex justify-between items-center">
                   <span class="pill pill-warning">${escapeHtml(text("accountGithubLimit"))}</span>
                   <span class="mono text-[var(--muted)]">${escapeHtml(text("accountResetIn"))}: ${escapeHtml(formatCountdownSecs(ghSecs))}</span>
                 </div>
-              ` : ""}
+              ` : `
+                <div class="text-[var(--muted)] leading-relaxed">
+                  <div class="mono">${escapeHtml(text("accountGithubLimit"))}: ${escapeHtml(formatNumber(ghLimit.remaining))} / ${escapeHtml(formatNumber(ghLimit.limit))}</div>
+                  ${ghResetAt ? `<div>${escapeHtml(text("quotaReset"))}: ${escapeHtml(ghResetAt)}</div>` : ""}
+                  ${ghFetchedAt ? `<div>${escapeHtml(text("accountGithubFetchedAt"))}: ${escapeHtml(ghFetchedAt)}</div>` : ""}
+                </div>
+              `) : ""}
             </div>
           ` : "";
 
