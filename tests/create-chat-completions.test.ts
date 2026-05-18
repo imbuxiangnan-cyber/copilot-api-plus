@@ -264,7 +264,7 @@ test("Responses streaming translator emits completed output text when no text de
   expect(contentDeltas).toEqual(["", "pong"])
   expect(pongChunkIndex).toBeGreaterThanOrEqual(0)
   expect(finishIndex).toBeGreaterThan(pongChunkIndex)
-  expect(chunks.at(-1).data).toBe("[DONE]")
+  expect(chunks.at(-1)?.data).toBe("[DONE]")
 })
 
 test("Responses streaming translator does not duplicate completed output after text delta", async () => {
