@@ -282,6 +282,61 @@ test("Responses streaming translator does not duplicate completed output after t
   expect(contentDeltas).toEqual(["", "pong"])
   expect(chunks.filter((chunk) => chunk.data === "[DONE]")).toHaveLength(1)
 })
+
+test("Responses streaming translator routes arguments deltas to the added tool_call", async () => {
+  // Regression: upstream `output_item.added` carries both `call_id` (the
+  // `call_xxx` echoed to clients) and `id` (the internal `fc_xxx`), while
+  // subsequent `function_call_arguments.delta` events reference the item
+  // by `item_id` (= `fc_xxx`). Both must map to the SAME tool_call slot,
+  // otherwise arguments stream into a nameless second tool_call and the
+  // real one ends up with `arguments: ""` (= tool invoked with no params).
+  const chunks: Array<{ data?: string }> = []
+  for await (const chunk of responsesStreamToChatChunks(
+    toolCallWithArgumentsResponsesStream(),
+    "gpt-5.5-test-stream-tool-call",
+  )) {
+    chunks.push(chunk)
+  }
+
+  type ToolCallDelta = {
+    index: number
+    id?: string
+    type?: string
+    function?: { name?: string; arguments?: string }
+  }
+  type StreamChunk = {
+    choices?: Array<{
+      delta?: { tool_calls?: Array<ToolCallDelta> }
+      finish_reason?: string | null
+    }>
+  }
+  const parsed = chunks
+    .filter((c) => c.data && c.data !== "[DONE]")
+    .map((c) => JSON.parse(c.data ?? "{}") as StreamChunk)
+
+  const indices = new Set<number>()
+  const argsByIndex = new Map<number, string>()
+  const nameByIndex = new Map<number, string>()
+  for (const ch of parsed) {
+    for (const tc of ch.choices?.[0]?.delta?.tool_calls ?? []) {
+      indices.add(tc.index)
+      if (tc.function?.arguments !== undefined) {
+        argsByIndex.set(
+          tc.index,
+          (argsByIndex.get(tc.index) ?? "") + tc.function.arguments,
+        )
+      }
+      if (tc.function?.name) nameByIndex.set(tc.index, tc.function.name)
+    }
+  }
+
+  // Exactly one tool_call slot — added id and arguments item_id must merge.
+  expect(indices.size).toBe(1)
+  const idx = [...indices][0]
+  expect(nameByIndex.get(idx)).toBe("Bash")
+  expect(argsByIndex.get(idx)).toBe('{"command":"ls"}')
+})
+
 type ChatCompletionStreamChunk = {
   choices?: Array<{
     delta?: { role?: string; content?: string }
@@ -397,6 +452,63 @@ async function* textDeltaThenCompletedResponsesStream() {
             role: "assistant",
             status: "completed",
             content: [{ type: "output_text", text: "pong" }],
+          },
+        ],
+      },
+    }),
+  }
+}
+
+async function* toolCallWithArgumentsResponsesStream() {
+  await Promise.resolve()
+  // Upstream sends both `call_id` and `id` on the added item, then routes
+  // argument deltas by the internal `fc_xxx` `item_id`.
+  yield {
+    data: JSON.stringify({
+      type: "response.output_item.added",
+      output_index: 0,
+      item: {
+        type: "function_call",
+        id: "fc_abc",
+        call_id: "call_xyz",
+        name: "Bash",
+        arguments: "",
+        status: "in_progress",
+      },
+    }),
+  }
+  yield {
+    data: JSON.stringify({
+      type: "response.function_call_arguments.delta",
+      item_id: "fc_abc",
+      output_index: 0,
+      delta: '{"command":',
+    }),
+  }
+  yield {
+    data: JSON.stringify({
+      type: "response.function_call_arguments.delta",
+      item_id: "fc_abc",
+      output_index: 0,
+      delta: '"ls"}',
+    }),
+  }
+  yield {
+    data: JSON.stringify({
+      type: "response.completed",
+      response: {
+        id: "resp-stream-tool-call",
+        object: "response",
+        created_at: 123,
+        model: "gpt-5.5-test-stream-tool-call",
+        output: [
+          {
+            type: "function_call",
+            id: "fc_abc",
+            call_id: "call_xyz",
+            name: "Bash",
+            arguments: '{"command":"ls"}',
+            status: "completed",
           },
         ],
       },

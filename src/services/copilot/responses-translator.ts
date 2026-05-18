@@ -484,8 +484,22 @@ function* handleFunctionCallAdded(
   item: ResponsesFunctionCallOutput,
 ): Generator<SSEMessage> {
   s.hasToolCalls = true
-  const key = item.call_id || item.id || ""
-  const idx = getToolIndex(s, key)
+  // Allocate one tool-call slot and alias every identifier upstream might
+  // use for it. `response.output_item.added` carries both `call_id` (the
+  // public `call_xxx` id echoed back to clients) and `id` (the internal
+  // `fc_xxx` item id). Subsequent `response.function_call_arguments.delta`
+  // events reference the item by `item_id` (= `fc_xxx`), so we MUST map
+  // both keys to the same slot — otherwise arguments stream into a
+  // second, nameless tool_call and the real one ends up with `{}` for
+  // arguments (= tool gets called with no parameters).
+  const primaryKey = item.call_id || item.id || ""
+  const idx = getToolIndex(s, primaryKey)
+  if (item.id && item.id !== primaryKey) {
+    s.toolIndexById.set(item.id, idx)
+  }
+  if (item.call_id && item.call_id !== primaryKey) {
+    s.toolIndexById.set(item.call_id, idx)
+  }
   const roleChunk = ensureRoleChunk(s)
   if (roleChunk) yield roleChunk
   yield makeChunk(s, {
