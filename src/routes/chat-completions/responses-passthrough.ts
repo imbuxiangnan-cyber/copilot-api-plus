@@ -152,6 +152,19 @@ export async function forwardResponsesAsChat(
     model: resolvedModel,
   }
 
+  // Copilot `/v1/responses` rejects max_output_tokens < 16. Clamp values
+  // up (or drop non-positive ones) so token-counting pings don't 400.
+  if (typeof upstreamBody.max_output_tokens === "number") {
+    if (upstreamBody.max_output_tokens > 0) {
+      upstreamBody.max_output_tokens = Math.max(
+        upstreamBody.max_output_tokens,
+        16,
+      )
+    } else {
+      delete upstreamBody.max_output_tokens
+    }
+  }
+
   if (state.multiAccountEnabled && accountManager.hasAccounts()) {
     return runWithAccountRotation<
       LooseResponsesPayload,

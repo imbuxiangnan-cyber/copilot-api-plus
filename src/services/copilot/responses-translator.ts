@@ -292,8 +292,15 @@ export function chatToResponsesPayload(
 
   const input = remainingMessages.flatMap((m) => translateMessage(m))
 
-  const maxOutput =
+  const rawMaxOutput =
     payload.max_completion_tokens ?? payload.max_tokens ?? undefined
+  // Copilot `/v1/responses` rejects max_output_tokens < 16. Clamp small
+  // values (e.g. token-counting pings that pass max_tokens=1) up to the
+  // minimum so the upstream doesn't 400.
+  const maxOutput =
+    typeof rawMaxOutput === "number" && rawMaxOutput > 0 ?
+      Math.max(rawMaxOutput, 16)
+    : undefined
 
   return {
     model: payload.model,
@@ -302,7 +309,7 @@ export function chatToResponsesPayload(
     tools: payload.tools?.map((t) => translateTool(t)),
     tool_choice: translateToolChoice(payload.tool_choice),
     reasoning: translateReasoning(payload.reasoning_effort),
-    max_output_tokens: maxOutput ?? undefined,
+    max_output_tokens: maxOutput,
     temperature: payload.temperature ?? undefined,
     top_p: payload.top_p ?? undefined,
     parallel_tool_calls: undefined,
