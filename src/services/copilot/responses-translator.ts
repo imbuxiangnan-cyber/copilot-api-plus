@@ -425,6 +425,10 @@ interface StreamState {
   hasToolCalls: boolean
   toolIndexById: Map<string, number>
   nextToolIndex: number
+  /** Per-tool-call slot: has the slot's `added` (name+id) event been emitted? */
+  toolAddedByIndex: Map<number, boolean>
+  /** Per-tool-call slot: arguments string already streamed to the client. */
+  toolEmittedArgsByIndex: Map<number, string>
 }
 
 function makeChunk(
@@ -500,6 +504,13 @@ function* handleFunctionCallAdded(
   if (item.call_id && item.call_id !== primaryKey) {
     s.toolIndexById.set(item.call_id, idx)
   }
+  s.toolAddedByIndex.set(idx, true)
+  // Some upstreams attach the full `arguments` to the added event itself
+  // (no subsequent delta). We intentionally do NOT forward `item.arguments`
+  // here, because the common upstream pattern is: added carries `""` and
+  // deltas stream the arguments — forwarding both would duplicate.
+  // The all-or-nothing case (no deltas, args only on the final output) is
+  // handled by the tool-call fallback in `handleCompleted`.
   const roleChunk = ensureRoleChunk(s)
   if (roleChunk) yield roleChunk
   yield makeChunk(s, {
@@ -524,7 +535,15 @@ function* handleArgumentsDelta(
   itemId: string,
   delta: string,
 ): Generator<SSEMessage> {
+  // Defensive: if upstream skipped `output_item.added` and went straight
+  // to arguments deltas, still mark this as a tool-call stream so
+  // finish_reason becomes "tool_calls" instead of "stop".
+  s.hasToolCalls = true
   const idx = getToolIndex(s, itemId)
+  s.toolEmittedArgsByIndex.set(
+    idx,
+    (s.toolEmittedArgsByIndex.get(idx) ?? "") + delta,
+  )
   yield makeChunk(s, {
     index: 0,
     delta: {
@@ -558,6 +577,53 @@ function buildUsageChunk(
   return { data: JSON.stringify(chunk) }
 }
 
+function* emitToolCallFallback(
+  s: StreamState,
+  item: ResponsesFunctionCallOutput,
+): Generator<SSEMessage> {
+  const key = item.call_id || item.id || ""
+  if (!key) return
+  const wasIndexed = s.toolIndexById.has(key)
+  const idx = getToolIndex(s, key)
+  if (item.id) s.toolIndexById.set(item.id, idx)
+  if (item.call_id) s.toolIndexById.set(item.call_id, idx)
+  if (!wasIndexed || !s.toolAddedByIndex.get(idx)) {
+    s.hasToolCalls = true
+    s.toolAddedByIndex.set(idx, true)
+    const roleChunk = ensureRoleChunk(s)
+    if (roleChunk) yield roleChunk
+    yield makeChunk(s, {
+      index: 0,
+      delta: {
+        tool_calls: [
+          {
+            index: idx,
+            id: item.call_id,
+            type: "function",
+            function: { name: item.name, arguments: "" },
+          },
+        ],
+      },
+      finish_reason: null,
+      logprobs: null,
+    })
+  }
+  const emitted = s.toolEmittedArgsByIndex.get(idx) ?? ""
+  const finalArgs = item.arguments
+  if (!finalArgs || finalArgs === emitted) return
+  const suffix =
+    finalArgs.startsWith(emitted) ? finalArgs.slice(emitted.length) : finalArgs
+  s.toolEmittedArgsByIndex.set(idx, finalArgs)
+  yield makeChunk(s, {
+    index: 0,
+    delta: {
+      tool_calls: [{ index: idx, function: { arguments: suffix } }],
+    },
+    finish_reason: null,
+    logprobs: null,
+  })
+}
+
 function* handleCompleted(
   s: StreamState,
   response: ResponsesResponse,
@@ -565,6 +631,14 @@ function* handleCompleted(
   if (!s.hasTextDelta) {
     const text = extractAssistantText(response.output)
     if (text) yield* handleTextDelta(s, text)
+  }
+
+  // Tool-call fallback: emit any function_call from `response.output` that
+  // was never announced/streamed mid-flight, and any missing-tail arguments
+  // for slots whose deltas were truncated.
+  for (const item of response.output) {
+    if (item.type !== "function_call") continue
+    yield* emitToolCallFallback(s, item)
   }
 
   const finishReason: "stop" | "tool_calls" =
@@ -657,6 +731,8 @@ export async function* responsesStreamToChatChunks(
     hasToolCalls: false,
     toolIndexById: new Map(),
     nextToolIndex: 0,
+    toolAddedByIndex: new Map(),
+    toolEmittedArgsByIndex: new Map(),
   }
 
   for await (const sse of source) {

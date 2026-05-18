@@ -337,6 +337,60 @@ test("Responses streaming translator routes arguments deltas to the added tool_c
   expect(argsByIndex.get(idx)).toBe('{"command":"ls"}')
 })
 
+test("Responses streaming translator emits completed-only tool_call as fallback", async () => {
+  // Regression: when upstream skips `output_item.added` and
+  // `function_call_arguments.delta` entirely and only puts the
+  // function_call in the final `response.completed.response.output`,
+  // the client must still see a complete tool_call with name+args+id.
+  const chunks: Array<{ data?: string }> = []
+  for await (const chunk of responsesStreamToChatChunks(
+    completedOnlyToolCallResponsesStream(),
+    "gpt-5.5-test-stream-completed-tool",
+  )) {
+    chunks.push(chunk)
+  }
+
+  type ToolCallDelta = {
+    index: number
+    id?: string
+    type?: string
+    function?: { name?: string; arguments?: string }
+  }
+  type StreamChunk = {
+    choices?: Array<{
+      delta?: { tool_calls?: Array<ToolCallDelta> }
+      finish_reason?: string | null
+    }>
+  }
+  const parsed = chunks
+    .filter((c) => c.data && c.data !== "[DONE]")
+    .map((c) => JSON.parse(c.data ?? "{}") as StreamChunk)
+
+  const argsByIndex = new Map<number, string>()
+  const nameByIndex = new Map<number, string>()
+  const idByIndex = new Map<number, string>()
+  let finishReason: string | null | undefined
+  for (const ch of parsed) {
+    const choice = ch.choices?.[0]
+    if (choice?.finish_reason) finishReason = choice.finish_reason
+    for (const tc of choice?.delta?.tool_calls ?? []) {
+      if (tc.function?.arguments !== undefined) {
+        argsByIndex.set(
+          tc.index,
+          (argsByIndex.get(tc.index) ?? "") + tc.function.arguments,
+        )
+      }
+      if (tc.function?.name) nameByIndex.set(tc.index, tc.function.name)
+      if (tc.id) idByIndex.set(tc.index, tc.id)
+    }
+  }
+
+  expect(nameByIndex.get(0)).toBe("Bash")
+  expect(argsByIndex.get(0)).toBe('{"command":"pwd"}')
+  expect(idByIndex.get(0)).toBe("call_xyz")
+  expect(finishReason).toBe("tool_calls")
+})
+
 type ChatCompletionStreamChunk = {
   choices?: Array<{
     delta?: { role?: string; content?: string }
@@ -508,6 +562,31 @@ async function* toolCallWithArgumentsResponsesStream() {
             call_id: "call_xyz",
             name: "Bash",
             arguments: '{"command":"ls"}',
+            status: "completed",
+          },
+        ],
+      },
+    }),
+  }
+}
+
+async function* completedOnlyToolCallResponsesStream() {
+  await Promise.resolve()
+  yield {
+    data: JSON.stringify({
+      type: "response.completed",
+      response: {
+        id: "resp-stream-completed-tool",
+        object: "response",
+        created_at: 123,
+        model: "gpt-5.5-test-stream-completed-tool",
+        output: [
+          {
+            type: "function_call",
+            id: "fc_abc",
+            call_id: "call_xyz",
+            name: "Bash",
+            arguments: '{"command":"pwd"}',
             status: "completed",
           },
         ],
