@@ -350,6 +350,17 @@ function extractAssistantText(output: Array<ResponsesOutputItem>): string {
   return text
 }
 
+function extractReasoningText(output: Array<ResponsesOutputItem>): string {
+  let text = ""
+  for (const item of output) {
+    if (item.type !== "reasoning") continue
+    for (const part of item.summary ?? []) {
+      text += part.text
+    }
+  }
+  return text
+}
+
 function extractToolCalls(output: Array<ResponsesOutputItem>): Array<ToolCall> {
   const calls: Array<ToolCall> = []
   for (const item of output) {
@@ -369,6 +380,7 @@ export function responsesToChatResponse(
   requestedModel: string,
 ): ChatCompletionResponse {
   const text = extractAssistantText(resp.output)
+  const reasoningText = extractReasoningText(resp.output)
   const toolCalls = extractToolCalls(resp.output)
   const finishReason: "stop" | "tool_calls" =
     toolCalls.length > 0 ? "tool_calls" : "stop"
@@ -383,6 +395,7 @@ export function responsesToChatResponse(
         message: {
           role: "assistant",
           content: toolCalls.length > 0 && !text ? null : text,
+          ...(reasoningText && { reasoning_content: reasoningText }),
           ...(toolCalls.length > 0 && { tool_calls: toolCalls }),
         },
         logprobs: null,
@@ -409,6 +422,7 @@ interface ResponsesStreamEvent {
   response?: ResponsesResponse
   code?: string
   message?: string
+  summary_index?: number
 }
 
 interface SSEMessage {
@@ -422,6 +436,7 @@ interface StreamState {
   requestedModel: string
   roleEmitted: boolean
   hasTextDelta: boolean
+  hasReasoningDelta: boolean
   hasToolCalls: boolean
   toolIndexById: Map<string, number>
   nextToolIndex: number
@@ -478,6 +493,23 @@ function* handleTextDelta(
   yield makeChunk(s, {
     index: 0,
     delta: { content: delta },
+    finish_reason: null,
+    logprobs: null,
+  })
+}
+
+function* handleReasoningDelta(
+  s: StreamState,
+  delta: string,
+): Generator<SSEMessage> {
+  if (delta !== "") {
+    s.hasReasoningDelta = true
+  }
+  const roleChunk = ensureRoleChunk(s)
+  if (roleChunk) yield roleChunk
+  yield makeChunk(s, {
+    index: 0,
+    delta: { reasoning_content: delta },
     finish_reason: null,
     logprobs: null,
   })
@@ -628,6 +660,11 @@ function* handleCompleted(
   s: StreamState,
   response: ResponsesResponse,
 ): Generator<SSEMessage> {
+  if (!s.hasReasoningDelta) {
+    const reasoningText = extractReasoningText(response.output)
+    if (reasoningText) yield* handleReasoningDelta(s, reasoningText)
+  }
+
   if (!s.hasTextDelta) {
     const text = extractAssistantText(response.output)
     if (text) yield* handleTextDelta(s, text)
@@ -681,6 +718,11 @@ function* dispatchEvent(
       if (event.delta) yield* handleTextDelta(s, event.delta)
       return false
     }
+    case "response.reasoning_summary_text.delta":
+    case "response.reasoning_text.delta": {
+      if (event.delta) yield* handleReasoningDelta(s, event.delta)
+      return false
+    }
     case "response.output_item.added": {
       if (event.item?.type === "function_call") {
         yield* handleFunctionCallAdded(s, event.item)
@@ -728,6 +770,7 @@ export async function* responsesStreamToChatChunks(
     requestedModel,
     roleEmitted: false,
     hasTextDelta: false,
+    hasReasoningDelta: false,
     hasToolCalls: false,
     toolIndexById: new Map(),
     nextToolIndex: 0,

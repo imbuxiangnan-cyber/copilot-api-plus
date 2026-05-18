@@ -4,7 +4,10 @@ import type { ChatCompletionsPayload } from "../src/services/copilot/create-chat
 
 import { state } from "../src/lib/state"
 import { createChatCompletions } from "../src/services/copilot/create-chat-completions"
-import { responsesStreamToChatChunks } from "../src/services/copilot/responses-translator"
+import {
+  responsesStreamToChatChunks,
+  responsesToChatResponse,
+} from "../src/services/copilot/responses-translator"
 
 // Mock state
 state.copilotToken = "test-token"
@@ -218,6 +221,40 @@ test("Responses-only fallback returns empty string when output has no text", asy
   expect(chat.choices[0].message.content).toBe("")
 })
 
+test("Responses non-streaming translator preserves reasoning summary", () => {
+  const result = responsesToChatResponse(
+    {
+      id: "resp-reasoning",
+      object: "response",
+      created_at: 123,
+      model: "gpt-5.5-test-reasoning",
+      output: [
+        {
+          type: "reasoning",
+          id: "rs_1",
+          summary: [
+            { type: "summary_text", text: "I should inspect the files." },
+            { type: "summary_text", text: " Then answer." },
+          ],
+        },
+        {
+          type: "message",
+          id: "msg_1",
+          role: "assistant",
+          status: "completed",
+          content: [{ type: "output_text", text: "done" }],
+        },
+      ],
+    },
+    "gpt-5.5-test-reasoning",
+  )
+
+  expect(result.choices[0].message.reasoning_content).toBe(
+    "I should inspect the files. Then answer.",
+  )
+  expect(result.choices[0].message.content).toBe("done")
+})
+
 test("Responses streaming translator emits role chunk for ignored no-text events", async () => {
   const chunks: Array<{ data?: string }> = []
   for await (const chunk of responsesStreamToChatChunks(
@@ -235,10 +272,30 @@ test("Responses streaming translator emits role chunk for ignored no-text events
   const contentDeltas = parsedChunks
     .map((chunk) => chunk.choices?.[0]?.delta?.content)
     .filter((content) => content !== undefined)
+  const reasoningDeltas = parsedChunks
+    .map((chunk) => chunk.choices?.[0]?.delta?.reasoning_content)
+    .filter((content) => content !== undefined)
   expect(roleChunks).toHaveLength(1)
   expect(roleChunks[0].choices?.[0]?.delta?.content).toBe("")
+  expect(reasoningDeltas).toEqual(["thinking"])
   expect(contentDeltas).toEqual([""])
   expect(chunks.filter((chunk) => chunk.data === "[DONE]")).toHaveLength(1)
+})
+
+test("Responses streaming translator emits completed reasoning summary when no reasoning delta arrived", async () => {
+  const chunks: Array<{ data?: string }> = []
+  for await (const chunk of responsesStreamToChatChunks(
+    completedReasoningResponsesStream(),
+    "gpt-5.5-test-stream-completed-reasoning",
+  )) {
+    chunks.push(chunk)
+  }
+
+  const reasoningDeltas = parseStreamChunks(chunks)
+    .map((chunk) => chunk.choices?.[0]?.delta?.reasoning_content)
+    .filter((content) => content !== undefined)
+  expect(reasoningDeltas).toEqual(["I should think."])
+  expect(chunks.at(-1)?.data).toBe("[DONE]")
 })
 
 test("Responses streaming translator emits completed output text when no text delta arrived", async () => {
@@ -393,7 +450,7 @@ test("Responses streaming translator emits completed-only tool_call as fallback"
 
 type ChatCompletionStreamChunk = {
   choices?: Array<{
-    delta?: { role?: string; content?: string }
+    delta?: { role?: string; content?: string; reasoning_content?: string }
     finish_reason?: string | null
   }>
 }
@@ -440,6 +497,28 @@ async function* emptyNoTextResponsesStream() {
             role: "assistant",
             status: "completed",
             content: [],
+          },
+        ],
+      },
+    }),
+  }
+}
+
+async function* completedReasoningResponsesStream() {
+  await Promise.resolve()
+  yield {
+    data: JSON.stringify({
+      type: "response.completed",
+      response: {
+        id: "resp-stream-completed-reasoning",
+        object: "response",
+        created_at: 123,
+        model: "gpt-5.5-test-stream-completed-reasoning",
+        output: [
+          {
+            type: "reasoning",
+            id: "rs_1",
+            summary: [{ type: "summary_text", text: "I should think." }],
           },
         ],
       },

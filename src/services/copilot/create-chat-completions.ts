@@ -427,19 +427,6 @@ export const createChatCompletions = async (
     consola.debug(`Model routed: ${payload.model} → ${resolvedModel}`)
   }
 
-  // Short-circuit: if we've already learned this model is Responses-only
-  // (e.g. gpt-5.5), skip the failing /chat/completions attempt.
-  if (
-    responsesApiOnlyModels.has(resolvedModel)
-    || isLikelyResponsesOnly(resolvedModel)
-  ) {
-    consola.debug(
-      `Model "${resolvedModel}" is Responses-only — using /v1/responses`,
-    )
-    responsesApiOnlyModels.add(resolvedModel)
-    return createResponsesAsChat(routedPayload)
-  }
-
   // ---------------------------------------------------------------------------
   // Thinking injection: use model capabilities to decide strategy
   // ---------------------------------------------------------------------------
@@ -449,6 +436,20 @@ export const createChatCompletions = async (
     || thinkingPayload.thinking_budget !== routedPayload.thinking_budget
 
   logThinkingInjection(routedPayload, thinkingPayload, resolvedModel)
+
+  // Short-circuit: if we've already learned this model is Responses-only
+  // (e.g. gpt-5.5), skip the failing /chat/completions attempt. Use the
+  // thinking-injected payload so Responses-only models still get max effort.
+  if (
+    responsesApiOnlyModels.has(resolvedModel)
+    || isLikelyResponsesOnly(resolvedModel)
+  ) {
+    consola.debug(
+      `Model "${resolvedModel}" is Responses-only — using /v1/responses`,
+    )
+    responsesApiOnlyModels.add(resolvedModel)
+    return createResponsesAsChat(thinkingPayload)
+  }
 
   // Acquire concurrency slot
   const releaseSlot = await modelRouter.acquireSlot(resolvedModel)
