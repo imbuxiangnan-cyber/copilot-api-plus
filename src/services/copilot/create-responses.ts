@@ -10,7 +10,13 @@
 import consola from "consola"
 import { events, type ServerSentEventMessage } from "fetch-event-stream"
 
-import { copilotBaseUrl, copilotHeaders } from "~/lib/api-config"
+import { accountManager } from "~/lib/account-manager"
+import { runWithAccountRotation } from "~/lib/account-rotation"
+import {
+  copilotBaseUrl,
+  copilotHeaders,
+  type TokenSource,
+} from "~/lib/api-config"
 import { HTTPError } from "~/lib/error"
 import { type StreamAccountInfo } from "~/lib/proxy"
 import { state } from "~/lib/state"
@@ -40,10 +46,29 @@ import {
 export async function createResponsesAsChat(
   payload: ChatCompletionsPayload,
 ): Promise<AsyncGenerator<ServerSentEventMessage> | ChatCompletionResponse> {
-  if (!state.copilotToken) throw new Error("Copilot token not found")
+  if (state.multiAccountEnabled && accountManager.hasAccounts()) {
+    return runWithAccountRotation<
+      ChatCompletionsPayload,
+      AsyncGenerator<ServerSentEventMessage> | ChatCompletionResponse
+    >({
+      label: "responses",
+      payload,
+      transport: (p, tokenSource, accountId) =>
+        doResponsesFetch(p, tokenSource, { accountId }),
+    })
+  }
 
+  if (!state.copilotToken) throw new Error("Copilot token not found")
+  return doResponsesFetch(payload, state)
+}
+
+async function doResponsesFetch(
+  payload: ChatCompletionsPayload,
+  source: TokenSource,
+  ctx: { accountId?: string } = {},
+): Promise<AsyncGenerator<ServerSentEventMessage> | ChatCompletionResponse> {
   const responsesPayload = chatToResponsesPayload(payload)
-  const url = `${copilotBaseUrl(state)}/v1/responses`
+  const url = `${copilotBaseUrl(source)}/v1/responses`
 
   const enableVision = responsesPayload.input.some(
     (item) =>
@@ -56,7 +81,7 @@ export async function createResponsesAsChat(
   )
 
   const buildHeaders = (): Record<string, string> => ({
-    ...copilotHeaders(state, enableVision),
+    ...copilotHeaders(source, enableVision),
     "X-Initiator": isAgentCall ? "agent" : "user",
   })
 
@@ -66,15 +91,20 @@ export async function createResponsesAsChat(
     model: responsesPayload.model,
     endpoint: url,
     stream: responsesPayload.stream,
+    accountId: ctx.accountId ?? "single-account",
   })
 
-  let response = await fetchWithRetry(url, () => ({
-    method: "POST",
-    headers: buildHeaders(),
-    body: bodyString,
-  }))
+  let response = await fetchWithRetry(
+    url,
+    () => ({
+      method: "POST",
+      headers: buildHeaders(),
+      body: bodyString,
+    }),
+    { accountId: ctx.accountId, accountProxy: source.proxy },
+  )
 
-  if (response.status === 401) {
+  if (response.status === 401 && !ctx.accountId) {
     consola.warn("Copilot token expired, refreshing and retrying...")
     try {
       await refreshCopilotToken()
@@ -109,7 +139,11 @@ export async function createResponsesAsChat(
     ) as AsyncGenerator<ServerSentEventMessage> & {
       __accountInfo?: StreamAccountInfo
     }
-    translated.__accountInfo = { apiBaseUrl: copilotBaseUrl(state) }
+    translated.__accountInfo = {
+      accountId: ctx.accountId,
+      apiBaseUrl: copilotBaseUrl(source),
+      accountProxy: source.proxy,
+    }
     return translated
   }
 

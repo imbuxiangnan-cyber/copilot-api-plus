@@ -127,9 +127,11 @@ const EFFORT_RANK: Record<string, number> = {
   max: 5,
 }
 
+export type ReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max"
+
 export function pickHighestSupportedEffort(
   allowed: ReadonlyArray<string> | undefined,
-): "low" | "medium" | "high" | "xhigh" | "max" | undefined {
+): ReasoningEffort | undefined {
   if (!allowed || allowed.length === 0) return undefined
   let best: string | undefined
   let bestRank = -1

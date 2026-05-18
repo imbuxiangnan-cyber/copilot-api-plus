@@ -1,6 +1,11 @@
 import consola from "consola"
 
+import {
+  pickHighestSupportedEffort,
+  type ReasoningEffort,
+} from "~/lib/anthropic-sanitizer"
 import { state } from "~/lib/state"
+import { findModel } from "~/lib/utils"
 import {
   type ChatCompletionResponse,
   type ChatCompletionsPayload,
@@ -36,6 +41,7 @@ export function translateToOpenAI(
   // Thinking cannot be enabled when tool_choice forces tool use
   const isForced =
     Boolean(toolChoice) && toolChoice !== "auto" && toolChoice !== "none"
+  const reasoningEffort = pickTranslatedReasoningEffort(payload)
 
   return {
     model: translateModelName(payload.model),
@@ -57,13 +63,26 @@ export function translateToOpenAI(
     // the downstream error handler in createChatCompletions will auto-downgrade.
     ...(!isForced
       && payload.thinking && {
-        reasoning_effort: "high" as const,
+        reasoning_effort: reasoningEffort,
       }),
     ...(!isForced
       && payload.thinking?.budget_tokens && {
         thinking_budget: payload.thinking.budget_tokens,
       }),
   }
+}
+
+function pickTranslatedReasoningEffort(
+  payload: AnthropicMessagesPayload,
+): ReasoningEffort {
+  const requested = payload.output_config?.effort ?? payload.effort
+  if (requested && requested !== "max") return requested
+
+  const model = findModel(translateModelName(payload.model))
+  const advertised = pickHighestSupportedEffort(
+    model?.capabilities.supports.reasoning_effort,
+  )
+  return advertised ?? "high"
 }
 
 export function translateModelName(model: string): string {

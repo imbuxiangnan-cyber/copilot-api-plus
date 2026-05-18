@@ -498,6 +498,8 @@ async function handleHttpError<TPayload, TResult>(
 export function isNonAccountError(errMsg: string): boolean {
   return (
     errMsg.includes("model_not_supported")
+    || errMsg.includes("unsupported_api_for_model")
+    || errMsg.includes("not accessible via the /chat/completions endpoint")
     || errMsg.includes("The requested model is not supported")
     || errMsg.includes("invalid_request_body")
     || errMsg.includes("invalid_request_error")
