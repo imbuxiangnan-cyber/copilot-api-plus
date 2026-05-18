@@ -385,6 +385,22 @@ import { createResponsesAsChat } from "./create-responses"
  */
 const responsesApiOnlyModels = new Set<string>()
 
+/**
+ * Models we know up-front are Responses-API-only on Copilot, so the
+ * first request after process start doesn't burn a `/chat/completions`
+ * roundtrip just to be told `unsupported_api_for_model`. Conservative
+ * — only models we've actually observed reject `/chat/completions`.
+ *
+ * `responsesApiOnlyModels` (learned at runtime) is still the source of
+ * truth: anything not in this hint list, or with a future Copilot
+ * routing change, self-heals via the 400 path below.
+ */
+const RESPONSES_ONLY_MODEL_HINTS: ReadonlyArray<RegExp> = [/^gpt-5\.5(\b|-)/]
+
+function isLikelyResponsesOnly(model: string): boolean {
+  return RESPONSES_ONLY_MODEL_HINTS.some((re) => re.test(model))
+}
+
 export const createChatCompletions = async (
   payload: ChatCompletionsPayload,
 ) => {
@@ -413,10 +429,14 @@ export const createChatCompletions = async (
 
   // Short-circuit: if we've already learned this model is Responses-only
   // (e.g. gpt-5.5), skip the failing /chat/completions attempt.
-  if (responsesApiOnlyModels.has(resolvedModel)) {
+  if (
+    responsesApiOnlyModels.has(resolvedModel)
+    || isLikelyResponsesOnly(resolvedModel)
+  ) {
     consola.debug(
-      `Model "${resolvedModel}" cached as Responses-only — using /v1/responses`,
+      `Model "${resolvedModel}" is Responses-only — using /v1/responses`,
     )
+    responsesApiOnlyModels.add(resolvedModel)
     return createResponsesAsChat(routedPayload)
   }
 

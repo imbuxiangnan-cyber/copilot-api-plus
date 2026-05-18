@@ -164,7 +164,7 @@ test("rejects malformed payload missing `messages` array with HTTP 400", async (
 test("Responses-only fallback returns empty string when output has no text", async () => {
   const payload: ChatCompletionsPayload = {
     messages: [{ role: "user", content: "ping" }],
-    model: "gpt-5.5-test-empty-output",
+    model: "test-unknown-empty-output",
   }
   let callCount = 0
   const mockFetch = mock((url: string) => {
