@@ -773,10 +773,20 @@ async function createWithSingleAccount(payload: ChatCompletionsPayload) {
         || errorBody.includes("invalid_reasoning_effort")
         || errorBody.includes("does not support reasoning")
       const isModelNotSupported = errorBody.includes("model_not_supported")
+      const isUnsupportedApiForModel =
+        errorBody.includes("unsupported_api_for_model")
+        || errorBody.includes(
+          "not accessible via the /chat/completions endpoint",
+        )
       const isMaxTokensError =
         errorBody.includes("max_tokens")
         && errorBody.includes("max_completion_tokens")
-      if (isExpectedReasoningError || isModelNotSupported || isMaxTokensError) {
+      if (
+        isExpectedReasoningError
+        || isModelNotSupported
+        || isUnsupportedApiForModel
+        || isMaxTokensError
+      ) {
         consola.debug(`400 (auto-handled): ${errorBody}`)
       } else {
         consola.warn(`400: ${errorBody}`)
@@ -972,10 +982,20 @@ async function doFetch(
         || errorBody.includes("invalid_reasoning_effort")
         || errorBody.includes("does not support reasoning")
       const isModelNotSupported = errorBody.includes("model_not_supported")
+      const isUnsupportedApiForModel =
+        errorBody.includes("unsupported_api_for_model")
+        || errorBody.includes(
+          "not accessible via the /chat/completions endpoint",
+        )
       const isMaxTokensError =
         errorBody.includes("max_tokens")
         && errorBody.includes("max_completion_tokens")
-      if (isExpectedReasoningError || isModelNotSupported || isMaxTokensError) {
+      if (
+        isExpectedReasoningError
+        || isModelNotSupported
+        || isUnsupportedApiForModel
+        || isMaxTokensError
+      ) {
         consola.debug(`400 (auto-handled): ${errorBody}`)
       } else {
         consola.warn(`400: ${errorBody}`)
