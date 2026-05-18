@@ -85,7 +85,10 @@ export interface ResponsesPayload {
     | "none"
     | "required"
     | { type: "function"; name: string }
-  reasoning?: { effort: "minimal" | "low" | "medium" | "high" | "xhigh" }
+  reasoning?: {
+    effort: "minimal" | "low" | "medium" | "high" | "xhigh"
+    summary?: "auto"
+  }
   max_output_tokens?: number
   temperature?: number
   top_p?: number
@@ -260,9 +263,13 @@ function translateReasoning(
   effort: ChatCompletionsPayload["reasoning_effort"],
 ): ResponsesPayload["reasoning"] {
   if (!effort) return undefined
+  // Request reasoning summaries explicitly; otherwise Copilot gpt-5.5 returns
+  // `summary: null` / `summary: []`, leaving Claude clients with no thinking
+  // block even when `reasoning.effort` is maxed.
+  const summary = "auto" as const
   // "max" is a Copilot alias — Responses API expects literal levels.
-  if (effort === "max") return { effort: "high" }
-  return { effort }
+  if (effort === "max") return { effort: "high", summary }
+  return { effort, summary }
 }
 
 export function chatToResponsesPayload(
@@ -430,6 +437,11 @@ interface SSEMessage {
   event?: string
 }
 
+interface ToolEventRef {
+  itemId: string
+  outputIndex: number | undefined
+}
+
 interface StreamState {
   responseId: string
   created: number
@@ -439,6 +451,7 @@ interface StreamState {
   hasReasoningDelta: boolean
   hasToolCalls: boolean
   toolIndexById: Map<string, number>
+  toolIndexByOutputIndex: Map<number, number>
   nextToolIndex: number
   /** Per-tool-call slot: has the slot's `added` (name+id) event been emitted? */
   toolAddedByIndex: Map<number, boolean>
@@ -481,6 +494,26 @@ function getToolIndex(s: StreamState, key: string): number {
   return idx
 }
 
+function getToolIndexForEvent(
+  s: StreamState,
+  itemId: string,
+  outputIndex: number | undefined,
+): number {
+  if (outputIndex !== undefined) {
+    const existing = s.toolIndexByOutputIndex.get(outputIndex)
+    if (existing !== undefined) {
+      if (itemId) s.toolIndexById.set(itemId, existing)
+      return existing
+    }
+  }
+  const idx = getToolIndex(
+    s,
+    itemId || `output:${outputIndex ?? s.nextToolIndex}`,
+  )
+  if (outputIndex !== undefined) s.toolIndexByOutputIndex.set(outputIndex, idx)
+  return idx
+}
+
 function* handleTextDelta(
   s: StreamState,
   delta: string,
@@ -518,6 +551,7 @@ function* handleReasoningDelta(
 function* handleFunctionCallAdded(
   s: StreamState,
   item: ResponsesFunctionCallOutput,
+  outputIndex: number | undefined,
 ): Generator<SSEMessage> {
   s.hasToolCalls = true
   // Allocate one tool-call slot and alias every identifier upstream might
@@ -529,7 +563,8 @@ function* handleFunctionCallAdded(
   // second, nameless tool_call and the real one ends up with `{}` for
   // arguments (= tool gets called with no parameters).
   const primaryKey = item.call_id || item.id || ""
-  const idx = getToolIndex(s, primaryKey)
+  const idx = getToolIndexForEvent(s, primaryKey, outputIndex)
+  if (outputIndex !== undefined) s.toolIndexByOutputIndex.set(outputIndex, idx)
   if (item.id && item.id !== primaryKey) {
     s.toolIndexById.set(item.id, idx)
   }
@@ -564,14 +599,14 @@ function* handleFunctionCallAdded(
 
 function* handleArgumentsDelta(
   s: StreamState,
-  itemId: string,
+  ref: ToolEventRef,
   delta: string,
 ): Generator<SSEMessage> {
   // Defensive: if upstream skipped `output_item.added` and went straight
   // to arguments deltas, still mark this as a tool-call stream so
   // finish_reason becomes "tool_calls" instead of "stop".
   s.hasToolCalls = true
-  const idx = getToolIndex(s, itemId)
+  const idx = getToolIndexForEvent(s, ref.itemId, ref.outputIndex)
   s.toolEmittedArgsByIndex.set(
     idx,
     (s.toolEmittedArgsByIndex.get(idx) ?? "") + delta,
@@ -580,6 +615,29 @@ function* handleArgumentsDelta(
     index: 0,
     delta: {
       tool_calls: [{ index: idx, function: { arguments: delta } }],
+    },
+    finish_reason: null,
+    logprobs: null,
+  })
+}
+
+function* handleArgumentsDone(
+  s: StreamState,
+  ref: ToolEventRef,
+  finalArgs: string,
+): Generator<SSEMessage> {
+  s.hasToolCalls = true
+  const idx = getToolIndexForEvent(s, ref.itemId, ref.outputIndex)
+  const emitted = s.toolEmittedArgsByIndex.get(idx) ?? ""
+  if (!finalArgs || finalArgs === emitted) return
+  const suffix =
+    finalArgs.startsWith(emitted) ? finalArgs.slice(emitted.length) : finalArgs
+  if (!suffix) return
+  s.toolEmittedArgsByIndex.set(idx, finalArgs)
+  yield makeChunk(s, {
+    index: 0,
+    delta: {
+      tool_calls: [{ index: idx, function: { arguments: suffix } }],
     },
     finish_reason: null,
     logprobs: null,
@@ -612,13 +670,17 @@ function buildUsageChunk(
 function* emitToolCallFallback(
   s: StreamState,
   item: ResponsesFunctionCallOutput,
+  outputIndex: number | undefined,
 ): Generator<SSEMessage> {
   const key = item.call_id || item.id || ""
   if (!key) return
-  const wasIndexed = s.toolIndexById.has(key)
-  const idx = getToolIndex(s, key)
+  const wasIndexed =
+    s.toolIndexById.has(key)
+    || (outputIndex !== undefined && s.toolIndexByOutputIndex.has(outputIndex))
+  const idx = getToolIndexForEvent(s, key, outputIndex)
   if (item.id) s.toolIndexById.set(item.id, idx)
   if (item.call_id) s.toolIndexById.set(item.call_id, idx)
+  if (outputIndex !== undefined) s.toolIndexByOutputIndex.set(outputIndex, idx)
   if (!wasIndexed || !s.toolAddedByIndex.get(idx)) {
     s.hasToolCalls = true
     s.toolAddedByIndex.set(idx, true)
@@ -673,9 +735,9 @@ function* handleCompleted(
   // Tool-call fallback: emit any function_call from `response.output` that
   // was never announced/streamed mid-flight, and any missing-tail arguments
   // for slots whose deltas were truncated.
-  for (const item of response.output) {
+  for (const [outputIndex, item] of response.output.entries()) {
     if (item.type !== "function_call") continue
-    yield* emitToolCallFallback(s, item)
+    yield* emitToolCallFallback(s, item, outputIndex)
   }
 
   const finishReason: "stop" | "tool_calls" =
@@ -705,6 +767,46 @@ function handleTerminalEvent(event: ResponsesStreamEvent): never {
   throw new Error(message)
 }
 
+function* dispatchOutputItemEvent(
+  s: StreamState,
+  event: ResponsesStreamEvent,
+): Generator<SSEMessage> {
+  if (event.item?.type === "reasoning") {
+    if (event.type === "response.output_item.added") {
+      yield* handleReasoningDelta(s, "")
+      return
+    }
+    const reasoningText = extractReasoningText([event.item])
+    if (reasoningText) yield* handleReasoningDelta(s, reasoningText)
+    return
+  }
+  if (event.item?.type !== "function_call") return
+  if (event.type === "response.output_item.added") {
+    yield* handleFunctionCallAdded(s, event.item, event.output_index)
+    return
+  }
+  yield* emitToolCallFallback(s, event.item, event.output_index)
+}
+
+function* dispatchFunctionArgumentsEvent(
+  s: StreamState,
+  event: ResponsesStreamEvent,
+): Generator<SSEMessage> {
+  const ref = {
+    itemId: event.item_id ?? "",
+    outputIndex: event.output_index,
+  }
+  if (event.type === "response.function_call_arguments.delta") {
+    if (event.delta !== undefined) {
+      yield* handleArgumentsDelta(s, ref, event.delta)
+    }
+    return
+  }
+  if (event.arguments !== undefined) {
+    yield* handleArgumentsDone(s, ref, event.arguments)
+  }
+}
+
 /**
  * Dispatch a single Responses-API event to the right handler.
  * Returns generator of chunks and a boolean (true = stream complete).
@@ -723,16 +825,14 @@ function* dispatchEvent(
       if (event.delta) yield* handleReasoningDelta(s, event.delta)
       return false
     }
-    case "response.output_item.added": {
-      if (event.item?.type === "function_call") {
-        yield* handleFunctionCallAdded(s, event.item)
-      }
+    case "response.output_item.added":
+    case "response.output_item.done": {
+      yield* dispatchOutputItemEvent(s, event)
       return false
     }
-    case "response.function_call_arguments.delta": {
-      if (event.delta !== undefined) {
-        yield* handleArgumentsDelta(s, event.item_id ?? "", event.delta)
-      }
+    case "response.function_call_arguments.delta":
+    case "response.function_call_arguments.done": {
+      yield* dispatchFunctionArgumentsEvent(s, event)
       return false
     }
     case "response.completed": {
@@ -773,6 +873,7 @@ export async function* responsesStreamToChatChunks(
     hasReasoningDelta: false,
     hasToolCalls: false,
     toolIndexById: new Map(),
+    toolIndexByOutputIndex: new Map(),
     nextToolIndex: 0,
     toolAddedByIndex: new Map(),
     toolEmittedArgsByIndex: new Map(),

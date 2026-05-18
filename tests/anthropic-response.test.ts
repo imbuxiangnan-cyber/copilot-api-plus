@@ -27,6 +27,11 @@ const anthropicContentBlockToolUseSchema = z.object({
   input: z.record(z.string(), z.any()),
 })
 
+const anthropicContentBlockThinkingSchema = z.object({
+  type: z.literal("thinking"),
+  thinking: z.string(),
+})
+
 const anthropicMessageResponseSchema = z.object({
   id: z.string(),
   type: z.literal("message"),
@@ -35,6 +40,7 @@ const anthropicMessageResponseSchema = z.object({
     z.union([
       anthropicContentBlockTextSchema,
       anthropicContentBlockToolUseSchema,
+      anthropicContentBlockThinkingSchema,
     ]),
   ),
   model: z.string(),
@@ -189,6 +195,54 @@ describe("OpenAI to Anthropic Non-Streaming Response Translation", () => {
     expect(isValidAnthropicResponse(anthropicResponse)).toBe(true)
     expect(anthropicResponse.stop_reason).toBe("max_tokens")
   })
+})
+
+describe("OpenAI to Anthropic Streaming Thinking Translation", () => {
+  test.each([
+    ["checking", "checking"],
+    ["", ""],
+  ])(
+    "should translate reasoning_content=%p into thinking deltas",
+    (input, output) => {
+      const streamState: AnthropicStreamState = {
+        messageStartSent: false,
+        contentBlockIndex: 0,
+        contentBlockOpen: false,
+        toolCalls: {},
+        thinkingBlockOpen: false,
+        thinkingRequested: true,
+      }
+
+      const events = translateChunkToAnthropicEvents(
+        {
+          id: "cmpl-thinking",
+          object: "chat.completion.chunk",
+          created: 1677652288,
+          model: "gpt-5.5",
+          choices: [
+            {
+              index: 0,
+              delta: { reasoning_content: input },
+              finish_reason: null,
+              logprobs: null,
+            },
+          ],
+        },
+        streamState,
+      )
+
+      expect(events).toContainEqual({
+        type: "content_block_start",
+        index: 0,
+        content_block: { type: "thinking", thinking: "" },
+      })
+      expect(events).toContainEqual({
+        type: "content_block_delta",
+        index: 0,
+        delta: { type: "thinking_delta", thinking: output },
+      })
+    },
+  )
 })
 
 describe("OpenAI to Anthropic Streaming Response Translation", () => {

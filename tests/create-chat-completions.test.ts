@@ -282,6 +282,21 @@ test("Responses streaming translator emits role chunk for ignored no-text events
   expect(chunks.filter((chunk) => chunk.data === "[DONE]")).toHaveLength(1)
 })
 
+test("Responses streaming translator starts thinking block on reasoning item", async () => {
+  const chunks: Array<{ data?: string }> = []
+  for await (const chunk of responsesStreamToChatChunks(
+    reasoningItemAddedResponsesStream(),
+    "gpt-5.5-test-stream-reasoning-added",
+  )) {
+    chunks.push(chunk)
+  }
+
+  const reasoningDeltas = parseStreamChunks(chunks)
+    .map((chunk) => chunk.choices?.[0]?.delta?.reasoning_content)
+    .filter((content) => content !== undefined)
+  expect(reasoningDeltas).toEqual([""])
+})
+
 test("Responses streaming translator emits completed reasoning summary when no reasoning delta arrived", async () => {
   const chunks: Array<{ data?: string }> = []
   for await (const chunk of responsesStreamToChatChunks(
@@ -394,6 +409,50 @@ test("Responses streaming translator routes arguments deltas to the added tool_c
   expect(argsByIndex.get(idx)).toBe('{"command":"ls"}')
 })
 
+test("Responses streaming translator uses output_index when argument item_id changes", async () => {
+  // Real Copilot gpt-5.5 obfuscates each function_call_arguments.delta with a
+  // different item_id; output_index is the stable key tying all argument chunks
+  // back to the added function_call. If we key by item_id, Bash receives {}.
+  const chunks: Array<{ data?: string }> = []
+  for await (const chunk of responsesStreamToChatChunks(
+    toolCallWithChangingArgumentItemIdsResponsesStream(),
+    "gpt-5.5-test-stream-changing-item-ids",
+  )) {
+    chunks.push(chunk)
+  }
+
+  type ToolCallDelta = {
+    index: number
+    id?: string
+    type?: string
+    function?: { name?: string; arguments?: string }
+  }
+  type StreamChunk = {
+    choices?: Array<{
+      delta?: { tool_calls?: Array<ToolCallDelta> }
+      finish_reason?: string | null
+    }>
+  }
+  const parsed = chunks
+    .filter((c) => c.data && c.data !== "[DONE]")
+    .map((c) => JSON.parse(c.data ?? "{}") as StreamChunk)
+
+  const indices = new Set<number>()
+  let args = ""
+  let name: string | undefined
+  for (const ch of parsed) {
+    for (const tc of ch.choices?.[0]?.delta?.tool_calls ?? []) {
+      indices.add(tc.index)
+      args += tc.function?.arguments ?? ""
+      name = tc.function?.name ?? name
+    }
+  }
+
+  expect(indices.size).toBe(1)
+  expect(name).toBe("Bash")
+  expect(args).toBe('{"command":"echo hi"}')
+})
+
 test("Responses streaming translator emits completed-only tool_call as fallback", async () => {
   // Regression: when upstream skips `output_item.added` and
   // `function_call_arguments.delta` entirely and only puts the
@@ -499,6 +558,29 @@ async function* emptyNoTextResponsesStream() {
             content: [],
           },
         ],
+      },
+    }),
+  }
+}
+
+async function* reasoningItemAddedResponsesStream() {
+  await Promise.resolve()
+  yield {
+    data: JSON.stringify({
+      type: "response.output_item.added",
+      output_index: 0,
+      item: { type: "reasoning", id: "rs_1", summary: [] },
+    }),
+  }
+  yield {
+    data: JSON.stringify({
+      type: "response.completed",
+      response: {
+        id: "resp-stream-reasoning-added",
+        object: "response",
+        created_at: 123,
+        model: "gpt-5.5-test-stream-reasoning-added",
+        output: [{ type: "reasoning", id: "rs_1", summary: [] }],
       },
     }),
   }
@@ -641,6 +723,84 @@ async function* toolCallWithArgumentsResponsesStream() {
             call_id: "call_xyz",
             name: "Bash",
             arguments: '{"command":"ls"}',
+            status: "completed",
+          },
+        ],
+      },
+    }),
+  }
+}
+
+async function* toolCallWithChangingArgumentItemIdsResponsesStream() {
+  await Promise.resolve()
+  yield {
+    data: JSON.stringify({
+      type: "response.output_item.added",
+      output_index: 1,
+      item: {
+        type: "function_call",
+        id: "fc_added",
+        call_id: "call_xyz",
+        name: "Bash",
+        arguments: "",
+        status: "in_progress",
+      },
+    }),
+  }
+  for (const [itemId, delta] of [
+    ["opaque_1", '{"'],
+    ["opaque_2", "command"],
+    ["opaque_3", '":"'],
+    ["opaque_4", "echo hi"],
+    ["opaque_5", '"}'],
+  ]) {
+    yield {
+      data: JSON.stringify({
+        type: "response.function_call_arguments.delta",
+        item_id: itemId,
+        output_index: 1,
+        delta,
+      }),
+    }
+  }
+  yield {
+    data: JSON.stringify({
+      type: "response.function_call_arguments.done",
+      item_id: "opaque_done",
+      output_index: 1,
+      arguments: '{"command":"echo hi"}',
+    }),
+  }
+  yield {
+    data: JSON.stringify({
+      type: "response.output_item.done",
+      output_index: 1,
+      item: {
+        type: "function_call",
+        id: "fc_done",
+        call_id: "call_xyz",
+        name: "Bash",
+        arguments: '{"command":"echo hi"}',
+        status: "completed",
+      },
+    }),
+  }
+  yield {
+    data: JSON.stringify({
+      type: "response.completed",
+      response: {
+        id: "resp-stream-changing-item-ids",
+        object: "response",
+        created_at: 123,
+        model: "gpt-5.5-test-stream-changing-item-ids",
+        output: [
+          { type: "reasoning", id: "rs_1", summary: [] },
+          {
+            type: "function_call",
+            id: "fc_done",
+            call_id: "call_xyz",
+            name: "Bash",
+            arguments: '{"command":"echo hi"}',
             status: "completed",
           },
         ],
