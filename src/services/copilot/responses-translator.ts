@@ -382,7 +382,7 @@ export function responsesToChatResponse(
         index: 0,
         message: {
           role: "assistant",
-          content: text || null,
+          content: toolCalls.length > 0 && !text ? null : text,
           ...(toolCalls.length > 0 && { tool_calls: toolCalls }),
         },
         logprobs: null,
@@ -421,6 +421,7 @@ interface StreamState {
   created: number
   requestedModel: string
   roleEmitted: boolean
+  hasTextDelta: boolean
   hasToolCalls: boolean
   toolIndexById: Map<string, number>
   nextToolIndex: number
@@ -465,6 +466,9 @@ function* handleTextDelta(
   s: StreamState,
   delta: string,
 ): Generator<SSEMessage> {
+  if (delta !== "") {
+    s.hasTextDelta = true
+  }
   const roleChunk = ensureRoleChunk(s)
   if (roleChunk) yield roleChunk
   yield makeChunk(s, {
@@ -544,6 +548,11 @@ function* handleCompleted(
   s: StreamState,
   response: ResponsesResponse,
 ): Generator<SSEMessage> {
+  if (!s.hasTextDelta) {
+    const text = extractAssistantText(response.output)
+    if (text) yield* handleTextDelta(s, text)
+  }
+
   const finishReason: "stop" | "tool_calls" =
     s.hasToolCalls ? "tool_calls" : "stop"
   yield makeChunk(s, {
@@ -630,6 +639,7 @@ export async function* responsesStreamToChatChunks(
     created: Math.floor(Date.now() / 1000),
     requestedModel,
     roleEmitted: false,
+    hasTextDelta: false,
     hasToolCalls: false,
     toolIndexById: new Map(),
     nextToolIndex: 0,
@@ -639,6 +649,8 @@ export async function* responsesStreamToChatChunks(
     if (!sse.data || sse.data === "[DONE]") continue
     const event = parseEvent(sse.data)
     if (!event) continue
+    const roleChunk = ensureRoleChunk(s)
+    if (roleChunk) yield roleChunk
     const done = yield* dispatchEvent(s, event)
     if (done) return
   }

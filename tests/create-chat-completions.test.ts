@@ -4,6 +4,7 @@ import type { ChatCompletionsPayload } from "../src/services/copilot/create-chat
 
 import { state } from "../src/lib/state"
 import { createChatCompletions } from "../src/services/copilot/create-chat-completions"
+import { responsesStreamToChatChunks } from "../src/services/copilot/responses-translator"
 
 // Mock state
 state.copilotToken = "test-token"
@@ -159,3 +160,246 @@ test("rejects malformed payload missing `messages` array with HTTP 400", async (
     expect(e.message).toMatch(/messages/i)
   }
 })
+
+test("Responses-only fallback returns empty string when output has no text", async () => {
+  const payload: ChatCompletionsPayload = {
+    messages: [{ role: "user", content: "ping" }],
+    model: "gpt-5.5-test-empty-output",
+  }
+  let callCount = 0
+  const mockFetch = mock((url: string) => {
+    callCount++
+    if (url.endsWith("/chat/completions")) {
+      return new Response(
+        JSON.stringify({
+          error: {
+            code: "unsupported_api_for_model",
+            message:
+              "This model is not accessible via the /chat/completions endpoint.",
+          },
+        }),
+        { status: 400, statusText: "Bad Request" },
+      )
+    }
+    return new Response(
+      JSON.stringify({
+        id: "resp-empty",
+        object: "response",
+        created_at: 123,
+        model: payload.model,
+        output: [
+          {
+            type: "reasoning",
+            id: "rs_1",
+            summary: [],
+          },
+          {
+            type: "message",
+            id: "msg_1",
+            role: "assistant",
+            status: "completed",
+            content: [],
+          },
+        ],
+      }),
+      { status: 200 },
+    )
+  })
+  // @ts-expect-error - Mock fetch doesn't implement all fetch properties
+  globalThis.fetch = mockFetch
+
+  const result = await createChatCompletions(payload)
+
+  expect(callCount).toBe(2)
+  expect(Symbol.asyncIterator in result).toBe(false)
+  const chat = result as Awaited<ReturnType<typeof createChatCompletions>> & {
+    choices: Array<{ message: { content: unknown } }>
+  }
+  expect(chat.choices[0].message.content).toBe("")
+})
+
+test("Responses streaming translator emits role chunk for ignored no-text events", async () => {
+  const chunks: Array<{ data?: string }> = []
+  for await (const chunk of responsesStreamToChatChunks(
+    emptyNoTextResponsesStream(),
+    "gpt-5.5-test-stream-empty-output",
+  )) {
+    chunks.push(chunk)
+  }
+
+  expect(chunks.length).toBeGreaterThanOrEqual(3)
+  const parsedChunks = parseStreamChunks(chunks)
+  const roleChunks = parsedChunks.filter(
+    (chunk) => chunk.choices?.[0]?.delta?.role === "assistant",
+  )
+  const contentDeltas = parsedChunks
+    .map((chunk) => chunk.choices?.[0]?.delta?.content)
+    .filter((content) => content !== undefined)
+  expect(roleChunks).toHaveLength(1)
+  expect(roleChunks[0].choices?.[0]?.delta?.content).toBe("")
+  expect(contentDeltas).toEqual([""])
+  expect(chunks.filter((chunk) => chunk.data === "[DONE]")).toHaveLength(1)
+})
+
+test("Responses streaming translator emits completed output text when no text delta arrived", async () => {
+  const chunks: Array<{ data?: string }> = []
+  for await (const chunk of responsesStreamToChatChunks(
+    completedTextResponsesStream(),
+    "gpt-5.5-test-stream-completed-text",
+  )) {
+    chunks.push(chunk)
+  }
+
+  const parsedChunks = parseStreamChunks(chunks)
+  const contentDeltas = parsedChunks
+    .map((chunk) => chunk.choices?.[0]?.delta?.content)
+    .filter((content) => content !== undefined)
+  const finishIndex = parsedChunks.findIndex(
+    (chunk) => chunk.choices?.[0]?.finish_reason === "stop",
+  )
+  const pongChunkIndex = parsedChunks.findIndex(
+    (chunk) => chunk.choices?.[0]?.delta?.content === "pong",
+  )
+
+  expect(contentDeltas).toEqual(["", "pong"])
+  expect(pongChunkIndex).toBeGreaterThanOrEqual(0)
+  expect(finishIndex).toBeGreaterThan(pongChunkIndex)
+  expect(chunks.at(-1).data).toBe("[DONE]")
+})
+
+test("Responses streaming translator does not duplicate completed output after text delta", async () => {
+  const chunks: Array<{ data?: string }> = []
+  for await (const chunk of responsesStreamToChatChunks(
+    textDeltaThenCompletedResponsesStream(),
+    "gpt-5.5-test-stream-no-duplicate",
+  )) {
+    chunks.push(chunk)
+  }
+
+  const contentDeltas = parseStreamChunks(chunks)
+    .map((chunk) => chunk.choices?.[0]?.delta?.content)
+    .filter((content) => content !== undefined)
+  expect(contentDeltas).toEqual(["", "pong"])
+  expect(chunks.filter((chunk) => chunk.data === "[DONE]")).toHaveLength(1)
+})
+type ChatCompletionStreamChunk = {
+  choices?: Array<{
+    delta?: { role?: string; content?: string }
+    finish_reason?: string | null
+  }>
+}
+
+function parseStreamChunks(chunks: Array<{ data?: string }>) {
+  return chunks
+    .filter((chunk) => chunk.data && chunk.data !== "[DONE]")
+    .map((chunk) => JSON.parse(chunk.data ?? "{}") as ChatCompletionStreamChunk)
+}
+
+async function* emptyNoTextResponsesStream() {
+  await Promise.resolve()
+  yield {
+    data: JSON.stringify({
+      type: "response.created",
+      response: {
+        id: "resp-stream-empty",
+        object: "response",
+        created_at: 123,
+        model: "gpt-5.5-test-stream-empty-output",
+        output: [],
+      },
+    }),
+  }
+  yield {
+    data: JSON.stringify({
+      type: "response.reasoning_summary_text.delta",
+      delta: "thinking",
+    }),
+  }
+  yield {
+    data: JSON.stringify({
+      type: "response.completed",
+      response: {
+        id: "resp-stream-empty",
+        object: "response",
+        created_at: 123,
+        model: "gpt-5.5-test-stream-empty-output",
+        output: [
+          { type: "reasoning", id: "rs_1", summary: [] },
+          {
+            type: "message",
+            id: "msg_1",
+            role: "assistant",
+            status: "completed",
+            content: [],
+          },
+        ],
+      },
+    }),
+  }
+}
+
+async function* completedTextResponsesStream() {
+  await Promise.resolve()
+  yield {
+    data: JSON.stringify({
+      type: "response.created",
+      response: {
+        id: "resp-stream-completed-text",
+        object: "response",
+        created_at: 123,
+        model: "gpt-5.5-test-stream-completed-text",
+        output: [],
+      },
+    }),
+  }
+  yield {
+    data: JSON.stringify({
+      type: "response.completed",
+      response: {
+        id: "resp-stream-completed-text",
+        object: "response",
+        created_at: 123,
+        model: "gpt-5.5-test-stream-completed-text",
+        output: [
+          {
+            type: "message",
+            id: "msg_1",
+            role: "assistant",
+            status: "completed",
+            content: [{ type: "output_text", text: "pong" }],
+          },
+        ],
+      },
+    }),
+  }
+}
+
+async function* textDeltaThenCompletedResponsesStream() {
+  await Promise.resolve()
+  yield {
+    data: JSON.stringify({
+      type: "response.output_text.delta",
+      delta: "pong",
+    }),
+  }
+  yield {
+    data: JSON.stringify({
+      type: "response.completed",
+      response: {
+        id: "resp-stream-no-duplicate",
+        object: "response",
+        created_at: 123,
+        model: "gpt-5.5-test-stream-no-duplicate",
+        output: [
+          {
+            type: "message",
+            id: "msg_1",
+            role: "assistant",
+            status: "completed",
+            content: [{ type: "output_text", text: "pong" }],
+          },
+        ],
+      },
+    }),
+  }
+}
