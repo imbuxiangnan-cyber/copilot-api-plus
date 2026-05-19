@@ -535,14 +535,22 @@ function* handleReasoningDelta(
   s: StreamState,
   delta: string,
 ): Generator<SSEMessage> {
-  if (delta !== "") {
-    s.hasReasoningDelta = true
-  }
+  s.hasReasoningDelta = true
   const roleChunk = ensureRoleChunk(s)
   if (roleChunk) yield roleChunk
   yield makeChunk(s, {
     index: 0,
     delta: { reasoning_content: delta },
+    finish_reason: null,
+    logprobs: null,
+  })
+}
+
+function* handleReasoningDone(s: StreamState): Generator<SSEMessage> {
+  if (!s.hasReasoningDelta) return
+  yield makeChunk(s, {
+    index: 0,
+    delta: { reasoning_content: null },
     finish_reason: null,
     logprobs: null,
   })
@@ -774,6 +782,8 @@ function* dispatchOutputItemEvent(
   if (event.item?.type === "reasoning") {
     const reasoningText = extractReasoningText([event.item])
     if (reasoningText) yield* handleReasoningDelta(s, reasoningText)
+    if (event.type === "response.output_item.done")
+      yield* handleReasoningDone(s)
     return
   }
   if (event.item?.type !== "function_call") return

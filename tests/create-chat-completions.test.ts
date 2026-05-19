@@ -1,3 +1,4 @@
+/* eslint-disable max-lines */
 import { test, expect, mock } from "bun:test"
 
 import type { ChatCompletionsPayload } from "../src/services/copilot/create-chat-completions"
@@ -297,6 +298,31 @@ test("Responses streaming translator ignores empty reasoning item", async () => 
   expect(reasoningDeltas).toEqual([])
 })
 
+test("Responses streaming translator closes reasoning when reasoning item is done", async () => {
+  const chunks: Array<{ data?: string }> = []
+  for await (const chunk of responsesStreamToChatChunks(
+    reasoningDoneBeforeTextResponsesStream(),
+    "gpt-5.5-test-stream-reasoning-done",
+  )) {
+    chunks.push(chunk)
+  }
+
+  const parsed = parseStreamChunks(chunks)
+  const reasoningDeltas = parsed
+    .map((chunk) => chunk.choices?.[0]?.delta?.reasoning_content)
+    .filter((content) => content !== undefined)
+  const contentIndex = parsed.findIndex(
+    (chunk) => chunk.choices?.[0]?.delta?.content === "answer",
+  )
+  const reasoningStopIndex = parsed.findIndex(
+    (chunk) => chunk.choices?.[0]?.delta?.reasoning_content === null,
+  )
+
+  expect(reasoningDeltas).toEqual(["Thought summary.", null])
+  expect(reasoningStopIndex).toBeGreaterThanOrEqual(0)
+  expect(contentIndex).toBeGreaterThan(reasoningStopIndex)
+})
+
 test("Responses streaming translator emits completed reasoning summary when no reasoning delta arrived", async () => {
   const chunks: Array<{ data?: string }> = []
   for await (const chunk of responsesStreamToChatChunks(
@@ -509,7 +535,11 @@ test("Responses streaming translator emits completed-only tool_call as fallback"
 
 type ChatCompletionStreamChunk = {
   choices?: Array<{
-    delta?: { role?: string; content?: string; reasoning_content?: string }
+    delta?: {
+      role?: string
+      content?: string
+      reasoning_content?: string | null
+    }
     finish_reason?: string | null
   }>
 }
@@ -581,6 +611,53 @@ async function* reasoningItemAddedResponsesStream() {
         created_at: 123,
         model: "gpt-5.5-test-stream-reasoning-added",
         output: [{ type: "reasoning", id: "rs_1", summary: [] }],
+      },
+    }),
+  }
+}
+
+async function* reasoningDoneBeforeTextResponsesStream() {
+  await Promise.resolve()
+  yield {
+    data: JSON.stringify({
+      type: "response.output_item.done",
+      output_index: 0,
+      item: {
+        type: "reasoning",
+        id: "rs_1",
+        summary: [{ type: "summary_text", text: "Thought summary." }],
+      },
+    }),
+  }
+  yield {
+    data: JSON.stringify({
+      type: "response.output_text.delta",
+      output_index: 1,
+      delta: "answer",
+    }),
+  }
+  yield {
+    data: JSON.stringify({
+      type: "response.completed",
+      response: {
+        id: "resp-stream-reasoning-done",
+        object: "response",
+        created_at: 123,
+        model: "gpt-5.5-test-stream-reasoning-done",
+        output: [
+          {
+            type: "reasoning",
+            id: "rs_1",
+            summary: [{ type: "summary_text", text: "Thought summary." }],
+          },
+          {
+            type: "message",
+            id: "msg_1",
+            role: "assistant",
+            status: "completed",
+            content: [{ type: "output_text", text: "answer" }],
+          },
+        ],
       },
     }),
   }

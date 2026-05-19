@@ -255,6 +255,60 @@ describe("OpenAI to Anthropic Streaming Thinking Translation", () => {
     })
   })
 
+  test("should close thinking block on null reasoning_content", () => {
+    const streamState: AnthropicStreamState = {
+      messageStartSent: false,
+      contentBlockIndex: 0,
+      contentBlockOpen: false,
+      toolCalls: {},
+      thinkingBlockOpen: false,
+      thinkingRequested: true,
+    }
+
+    translateChunkToAnthropicEvents(
+      {
+        id: "cmpl-thinking-close",
+        object: "chat.completion.chunk",
+        created: 1677652288,
+        model: "gpt-5.5",
+        choices: [
+          {
+            index: 0,
+            delta: { reasoning_content: "checking" },
+            finish_reason: null,
+            logprobs: null,
+          },
+        ],
+      },
+      streamState,
+    )
+
+    const events = translateChunkToAnthropicEvents(
+      {
+        id: "cmpl-thinking-close",
+        object: "chat.completion.chunk",
+        created: 1677652288,
+        model: "gpt-5.5",
+        choices: [
+          {
+            index: 0,
+            delta: { reasoning_content: null },
+            finish_reason: null,
+            logprobs: null,
+          },
+        ],
+      },
+      streamState,
+    )
+
+    expect(events).toEqual([
+      {
+        type: "content_block_stop",
+        index: 0,
+      },
+    ])
+  })
+
   test("should ignore empty reasoning_content", () => {
     const streamState: AnthropicStreamState = {
       messageStartSent: false,
