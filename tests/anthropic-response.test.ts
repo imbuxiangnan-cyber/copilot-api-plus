@@ -8,7 +8,10 @@ import type {
 
 import { type AnthropicStreamState } from "~/routes/messages/anthropic-types"
 import { translateToAnthropic } from "~/routes/messages/non-stream-translation"
-import { translateChunkToAnthropicEvents } from "~/routes/messages/stream-translation"
+import {
+  translateChunkToAnthropicEvents,
+  translateErrorToAnthropicErrorEvent,
+} from "~/routes/messages/stream-translation"
 
 const anthropicUsageSchema = z.object({
   input_tokens: z.number().int(),
@@ -194,6 +197,20 @@ describe("OpenAI to Anthropic Non-Streaming Response Translation", () => {
 
     expect(isValidAnthropicResponse(anthropicResponse)).toBe(true)
     expect(anthropicResponse.stop_reason).toBe("max_tokens")
+  })
+})
+
+describe("OpenAI to Anthropic Streaming Error Translation", () => {
+  test("should preserve upstream error messages", () => {
+    expect(
+      translateErrorToAnthropicErrorEvent("No available accounts"),
+    ).toEqual({
+      type: "error",
+      error: {
+        type: "api_error",
+        message: "No available accounts",
+      },
+    })
   })
 })
 

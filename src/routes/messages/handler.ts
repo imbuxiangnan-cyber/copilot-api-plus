@@ -72,10 +72,29 @@ function heartbeatDelay(ms: number): Promise<typeof HEARTBEAT> {
 // Streaming helpers
 // ---------------------------------------------------------------------------
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+function anthropicErrorPayload(error: unknown) {
+  return {
+    type: "error",
+    error: {
+      type: "api_error",
+      message: errorMessage(error),
+    },
+  }
+}
+
 /** Send an error event to the downstream client, ignoring write failures. */
-async function sendErrorEvent(stream: SSEStreamingApi): Promise<void> {
+async function sendErrorEvent(
+  stream: SSEStreamingApi,
+  error?: unknown,
+): Promise<void> {
   try {
-    const errorEvent = translateErrorToAnthropicErrorEvent()
+    const errorEvent = translateErrorToAnthropicErrorEvent(
+      error === undefined ? undefined : errorMessage(error),
+    )
     await stream.writeSSE({
       event: errorEvent.type,
       data: JSON.stringify(errorEvent),
@@ -83,6 +102,19 @@ async function sendErrorEvent(stream: SSEStreamingApi): Promise<void> {
   } catch {
     // Client already disconnected
   }
+}
+
+function handlePreStreamAnthropicError(
+  c: Context,
+  payload: AnthropicMessagesPayload,
+  error: unknown,
+): Response {
+  if (payload.stream) {
+    return streamSSE(c, async (stream) => {
+      await sendErrorEvent(stream, error)
+    })
+  }
+  return c.json(anthropicErrorPayload(error), 500)
 }
 
 /**
@@ -130,7 +162,7 @@ async function consumeStreamWithHeartbeat(
             `Upstream silent for ${Math.round(silenceMs / 1000)}s (limit ${upstreamTimeoutMs / 1000}s), closing stream`,
           )
           resetConnections()
-          await sendErrorEvent(stream)
+          await sendErrorEvent(stream, "Upstream stream timed out")
           break
         }
 
@@ -250,11 +282,11 @@ async function handleNativePassthrough(
         consola.warn(
           `Native /v1/messages: Vertex GCP policy 400 on both attempts, propagating to client: ${retryMessage}`,
         )
-        throw retryError
+        return handlePreStreamAnthropicError(c, anthropicPayload, retryError)
       }
     } else {
       consola.warn(`Native /v1/messages failed: ${message}`)
-      throw error
+      return handlePreStreamAnthropicError(c, anthropicPayload, error)
     }
   }
 
@@ -298,7 +330,7 @@ async function handleNativePassthrough(
         const message = (error as Error).message || String(error)
         consola.warn(`Native SSE stream interrupted: ${message}`)
         resetConnections()
-        await sendErrorEvent(sse)
+        await sendErrorEvent(sse, error)
       }
     }
   })
@@ -334,7 +366,7 @@ async function handleNativeHeartbeatTick(
       `Upstream silent for ${Math.round(silenceMs / 1000)}s (limit ${upstreamTimeoutMs / 1000}s), closing native stream`,
     )
     resetConnections()
-    await sendErrorEvent(stream)
+    await sendErrorEvent(stream, "Upstream stream timed out")
     return { action: "break" }
   }
   await stream.writeSSE({ event: "ping", data: '{"type":"ping"}' })
@@ -453,7 +485,15 @@ async function handleTranslatedCompletion(
     injectIntoAnthropicPayload(stripSystemReminders(anthropicPayload)),
   )
 
-  const response = await createChatCompletions(openAIPayload)
+  let response: Awaited<ReturnType<typeof createChatCompletions>>
+  try {
+    response = await createChatCompletions(openAIPayload)
+  } catch (error) {
+    consola.warn(
+      `Translated /v1/messages failed before stream start: ${errorMessage(error)}`,
+    )
+    return handlePreStreamAnthropicError(c, anthropicPayload, error)
+  }
 
   if (isNonStreaming(response)) {
     return c.json(translateToAnthropic(response))
@@ -506,7 +546,7 @@ async function handleTranslatedCompletion(
         const message = (error as Error).message || String(error)
         consola.warn(`SSE stream interrupted: ${message}`)
         resetConnections()
-        await sendErrorEvent(stream)
+        await sendErrorEvent(stream, error)
       }
     }
   })
