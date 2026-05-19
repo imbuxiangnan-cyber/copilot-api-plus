@@ -772,10 +772,6 @@ function* dispatchOutputItemEvent(
   event: ResponsesStreamEvent,
 ): Generator<SSEMessage> {
   if (event.item?.type === "reasoning") {
-    if (event.type === "response.output_item.added") {
-      yield* handleReasoningDelta(s, "")
-      return
-    }
     const reasoningText = extractReasoningText([event.item])
     if (reasoningText) yield* handleReasoningDelta(s, reasoningText)
     return

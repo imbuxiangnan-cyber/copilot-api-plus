@@ -215,51 +215,77 @@ describe("OpenAI to Anthropic Streaming Error Translation", () => {
 })
 
 describe("OpenAI to Anthropic Streaming Thinking Translation", () => {
-  test.each([
-    ["checking", "checking"],
-    ["", ""],
-  ])(
-    "should translate reasoning_content=%p into thinking deltas",
-    (input, output) => {
-      const streamState: AnthropicStreamState = {
-        messageStartSent: false,
-        contentBlockIndex: 0,
-        contentBlockOpen: false,
-        toolCalls: {},
-        thinkingBlockOpen: false,
-        thinkingRequested: true,
-      }
+  test("should translate non-empty reasoning_content into thinking deltas", () => {
+    const streamState: AnthropicStreamState = {
+      messageStartSent: false,
+      contentBlockIndex: 0,
+      contentBlockOpen: false,
+      toolCalls: {},
+      thinkingBlockOpen: false,
+      thinkingRequested: true,
+    }
 
-      const events = translateChunkToAnthropicEvents(
-        {
-          id: "cmpl-thinking",
-          object: "chat.completion.chunk",
-          created: 1677652288,
-          model: "gpt-5.5",
-          choices: [
-            {
-              index: 0,
-              delta: { reasoning_content: input },
-              finish_reason: null,
-              logprobs: null,
-            },
-          ],
-        },
-        streamState,
-      )
+    const events = translateChunkToAnthropicEvents(
+      {
+        id: "cmpl-thinking",
+        object: "chat.completion.chunk",
+        created: 1677652288,
+        model: "gpt-5.5",
+        choices: [
+          {
+            index: 0,
+            delta: { reasoning_content: "checking" },
+            finish_reason: null,
+            logprobs: null,
+          },
+        ],
+      },
+      streamState,
+    )
 
-      expect(events).toContainEqual({
-        type: "content_block_start",
-        index: 0,
-        content_block: { type: "thinking", thinking: "" },
-      })
-      expect(events).toContainEqual({
-        type: "content_block_delta",
-        index: 0,
-        delta: { type: "thinking_delta", thinking: output },
-      })
-    },
-  )
+    expect(events).toContainEqual({
+      type: "content_block_start",
+      index: 0,
+      content_block: { type: "thinking", thinking: "" },
+    })
+    expect(events).toContainEqual({
+      type: "content_block_delta",
+      index: 0,
+      delta: { type: "thinking_delta", thinking: "checking" },
+    })
+  })
+
+  test("should ignore empty reasoning_content", () => {
+    const streamState: AnthropicStreamState = {
+      messageStartSent: false,
+      contentBlockIndex: 0,
+      contentBlockOpen: false,
+      toolCalls: {},
+      thinkingBlockOpen: false,
+      thinkingRequested: true,
+    }
+
+    const events = translateChunkToAnthropicEvents(
+      {
+        id: "cmpl-thinking-empty",
+        object: "chat.completion.chunk",
+        created: 1677652288,
+        model: "gpt-5.5",
+        choices: [
+          {
+            index: 0,
+            delta: { reasoning_content: "" },
+            finish_reason: null,
+            logprobs: null,
+          },
+        ],
+      },
+      streamState,
+    )
+
+    expect(events).toHaveLength(1)
+    expect(events[0]?.type).toBe("message_start")
+  })
 })
 
 describe("OpenAI to Anthropic Streaming Response Translation", () => {

@@ -282,7 +282,7 @@ test("Responses streaming translator emits role chunk for ignored no-text events
   expect(chunks.filter((chunk) => chunk.data === "[DONE]")).toHaveLength(1)
 })
 
-test("Responses streaming translator starts thinking block on reasoning item", async () => {
+test("Responses streaming translator ignores empty reasoning item", async () => {
   const chunks: Array<{ data?: string }> = []
   for await (const chunk of responsesStreamToChatChunks(
     reasoningItemAddedResponsesStream(),
@@ -294,7 +294,7 @@ test("Responses streaming translator starts thinking block on reasoning item", a
   const reasoningDeltas = parseStreamChunks(chunks)
     .map((chunk) => chunk.choices?.[0]?.delta?.reasoning_content)
     .filter((content) => content !== undefined)
-  expect(reasoningDeltas).toEqual([""])
+  expect(reasoningDeltas).toEqual([])
 })
 
 test("Responses streaming translator emits completed reasoning summary when no reasoning delta arrived", async () => {
