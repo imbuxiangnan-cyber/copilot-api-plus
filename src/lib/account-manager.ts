@@ -119,6 +119,10 @@ const ACCOUNTS_PATH = PATHS.ACCOUNTS_PATH
 
 const COOLDOWN_MS = 60 * 1000 // 60 seconds
 
+function shouldBackgroundRefresh(account: Account): boolean {
+  return account.status !== "disabled" && account.status !== "banned"
+}
+
 export class AccountManager {
   private accounts: Array<Account> = []
   private refreshInterval?: ReturnType<typeof setInterval>
@@ -378,6 +382,8 @@ export class AccountManager {
    * global `state.githubToken` is never mutated — safe for concurrent use.
    */
   async refreshAccountToken(account: Account): Promise<void> {
+    if (!shouldBackgroundRefresh(account)) return
+
     try {
       const data = await getCopilotToken(account.githubToken)
       // eslint-disable-next-line require-atomic-updates
@@ -411,22 +417,38 @@ export class AccountManager {
    * global `state.githubToken` is never mutated — safe for concurrent use.
    */
   async refreshAccountUsage(account: Account): Promise<void> {
+    if (!shouldBackgroundRefresh(account)) return
+
     try {
       const data = await getCopilotUsage(account.githubToken)
-      const snap = data.quota_snapshots
+      const snap = data.quota_snapshots as Partial<typeof data.quota_snapshots>
+      const premium = snap.premium_interactions
+      const chat = snap.chat
+
+      if (premium === undefined || chat === undefined) {
+        this.markAccountStatus(
+          account.id,
+          "banned",
+          "Copilot usage unavailable",
+        )
+        consola.warn(
+          `Account ${account.label}: Copilot usage unavailable, marked as banned`,
+        )
+        return
+      }
 
       // eslint-disable-next-line require-atomic-updates
       account.usage = {
-        premium_remaining: snap.premium_interactions.remaining,
-        premium_total: snap.premium_interactions.entitlement,
-        chat_remaining: snap.chat.remaining,
-        chat_total: snap.chat.entitlement,
-        premium_overage_permitted: snap.premium_interactions.overage_permitted,
+        premium_remaining: premium.remaining,
+        premium_total: premium.entitlement,
+        chat_remaining: chat.remaining,
+        chat_total: chat.entitlement,
+        premium_overage_permitted: premium.overage_permitted,
         quotaResetDate: data.quota_reset_date,
         lastCheckedAt: Date.now(),
       }
 
-      const overagePermitted = snap.premium_interactions.overage_permitted
+      const overagePermitted = premium.overage_permitted
 
       // Transition between active ↔ exhausted.
       // If the upstream account allows overage (paid extra), do NOT mark it
@@ -454,6 +476,13 @@ export class AccountManager {
         this.debouncedSave()
       }
     } catch (err) {
+      if (err instanceof HTTPError && err.response.status === 401) {
+        this.markAccountStatus(account.id, "banned", "GitHub token invalid")
+        consola.warn(
+          `Account ${account.label}: usage auth failed, marked as banned`,
+        )
+        return
+      }
       consola.warn(
         `Account ${account.label}: failed to refresh usage: ${rootCause(err)}`,
       )
@@ -470,6 +499,8 @@ export class AccountManager {
    * creation, and after upstream 429s — the endpoint itself is free.
    */
   async refreshGithubRateLimit(account: Account): Promise<void> {
+    if (!shouldBackgroundRefresh(account)) return
+
     try {
       const data = await getGitHubRateLimit(account.githubToken)
       const core = data.resources.core
@@ -527,21 +558,21 @@ export class AccountManager {
     this.debouncedSave()
   }
 
-  /** Refresh Copilot tokens for all non-disabled accounts. */
+  /** Refresh Copilot tokens for all non-disabled, non-banned accounts. */
   async refreshAllTokens(): Promise<void> {
-    const targets = this.accounts.filter((a) => a.status !== "disabled")
+    const targets = this.accounts.filter((a) => shouldBackgroundRefresh(a))
     await Promise.allSettled(targets.map((a) => this.refreshAccountToken(a)))
   }
 
-  /** Refresh usage snapshots for all non-disabled accounts. */
+  /** Refresh usage snapshots for all non-disabled, non-banned accounts. */
   async refreshAllUsage(): Promise<void> {
-    const targets = this.accounts.filter((a) => a.status !== "disabled")
+    const targets = this.accounts.filter((a) => shouldBackgroundRefresh(a))
     await Promise.allSettled(targets.map((a) => this.refreshAccountUsage(a)))
   }
 
-  /** Refresh GitHub /rate_limit for all non-disabled accounts. */
+  /** Refresh GitHub /rate_limit for all non-disabled, non-banned accounts. */
   async refreshAllGithubRateLimits(): Promise<void> {
-    const targets = this.accounts.filter((a) => a.status !== "disabled")
+    const targets = this.accounts.filter((a) => shouldBackgroundRefresh(a))
     await Promise.allSettled(targets.map((a) => this.refreshGithubRateLimit(a)))
   }
 
