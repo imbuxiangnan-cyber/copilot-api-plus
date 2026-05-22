@@ -58,6 +58,51 @@ export function sanitizeForCopilotBackend(
     consola.debug("Stripping effort field (unsupported by Copilot backend)")
     delete payload.effort
   }
+
+  // 4. server-side tools (web_search_*, computer_*, bash_*, text_editor_*,
+  //    code_execution_*) - Copilot backend 400s with "The use of the web
+  //    search tool is not supported." We strip them so client requests
+  //    still succeed; client-defined tools (those without a `type` field,
+  //    i.e. plain {name, description, input_schema}) are kept.
+  stripUnsupportedServerTools(payload)
+}
+
+function stripUnsupportedServerTools(payload: AnthropicMessagesPayload): void {
+  if (!Array.isArray(payload.tools) || payload.tools.length === 0) return
+  const originalLength = payload.tools.length
+  const filtered = payload.tools.filter(
+    (tool) => !isUnsupportedServerTool(tool),
+  )
+  if (filtered.length === originalLength) return
+
+  const droppedCount = originalLength - filtered.length
+  consola.debug(
+    `Stripping ${droppedCount} unsupported server tool(s) from request`,
+  )
+  if (filtered.length === 0) {
+    delete (payload as { tools?: unknown }).tools
+    return
+  }
+  payload.tools = filtered
+}
+
+function isUnsupportedServerTool(tool: unknown): boolean {
+  if (!isRecord(tool)) return false
+  const type = tool.type
+  if (typeof type !== "string") return false
+  // Anthropic server-side tools all use a versioned `type` (e.g.
+  // `web_search_20250305`, `bash_20250124`, `computer_20250124`,
+  // `text_editor_20250728`, `code_execution_20250825`). Client-defined
+  // tools have no `type` field; tool_choice-style shapes are not in the
+  // tools array. Be defensive and treat any tool with a `type` that
+  // matches a known server-tool prefix as unsupported.
+  return (
+    type.startsWith("web_search")
+    || type.startsWith("computer")
+    || type.startsWith("bash")
+    || type.startsWith("text_editor")
+    || type.startsWith("code_execution")
+  )
 }
 
 function sanitizeOutputConfigFormat(format: unknown): void {
