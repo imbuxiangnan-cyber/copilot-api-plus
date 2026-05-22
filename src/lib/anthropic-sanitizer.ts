@@ -88,12 +88,32 @@ function sanitizeOutputConfigFormat(format: unknown): void {
 /**
  * Adaptive thinking has a slightly different shape than enabled thinking;
  * Copilot rejects `budget_tokens_max`. Mutates in place.
+ *
+ * Additionally, models that only support adaptive thinking (e.g. Claude
+ * Opus 4.7 on Copilot's Vertex backend) 400 when the client sends the
+ * legacy `{ type: "enabled", budget_tokens: N }` shape with:
+ *   `"thinking.type.enabled" is not supported for this model. Use
+ *    "thinking.type.adaptive" and "output_config.effort" to control
+ *    thinking behavior.`
+ *
+ * Claude Code's `/think` (and any other client that hard-codes the
+ * `enabled` shape) hits this on every request. We coerce
+ * `enabled` → `adaptive` for adaptive-only models and seed
+ * `output_config.effort` from the model's `reasoning_effort` whitelist
+ * so the user's intent ("think more") is still honored.
  */
 export function normalizeAdaptiveThinkingForCopilot(
   payload: AnthropicMessagesPayload,
 ): void {
   const thinking = payload.thinking as unknown
-  if (!isRecord(thinking) || thinking.type !== "adaptive") return
+  if (!isRecord(thinking)) return
+
+  if (thinking.type === "enabled") {
+    coerceEnabledToAdaptiveIfRequired(payload, thinking)
+    return
+  }
+
+  if (thinking.type !== "adaptive") return
 
   if ("budget_tokens_max" in thinking) {
     consola.debug(
@@ -101,6 +121,36 @@ export function normalizeAdaptiveThinkingForCopilot(
     )
     delete thinking.budget_tokens_max
   }
+}
+
+function coerceEnabledToAdaptiveIfRequired(
+  payload: AnthropicMessagesPayload,
+  thinking: Record<string, unknown>,
+): void {
+  const modelInfo = findModel(payload.model)
+  const supports = modelInfo?.capabilities.supports
+  if (!supports || supports.adaptive_thinking !== true) return
+
+  delete thinking.budget_tokens
+  delete thinking.budget_tokens_max
+  thinking.type = "adaptive"
+
+  const effort = pickHighestSupportedEffort(supports.reasoning_effort)
+  if (effort !== undefined) {
+    const outputConfig = (payload.output_config ?? {}) as {
+      effort?: string
+      format?: unknown
+    }
+    if (outputConfig.effort === undefined) {
+      outputConfig.effort = effort
+      payload.output_config =
+        outputConfig as AnthropicMessagesPayload["output_config"]
+    }
+  }
+
+  consola.debug(
+    `Coerced thinking.type=enabled → adaptive for ${payload.model} (effort=${effort ?? "<none>"})`,
+  )
 }
 
 // ---------------------------------------------------------------------------

@@ -94,11 +94,53 @@ describe("normalizeAdaptiveThinkingForCopilot", () => {
     expect(payload.thinking.type).toBe("adaptive")
   })
 
-  test("leaves enabled thinking untouched", () => {
+  test("leaves enabled thinking untouched when model is unknown", () => {
     const payload = basePayload() as AnthropicMessagesPayload & {
       thinking?: Record<string, unknown>
     }
     payload.thinking = { type: "enabled", budget_tokens: 1024 }
+    normalizeAdaptiveThinkingForCopilot(payload)
+    expect(payload.thinking).toEqual({ type: "enabled", budget_tokens: 1024 })
+  })
+
+  test("coerces enabled→adaptive for adaptive-only models (Opus 4.7)", () => {
+    setModelCapability("claude-opus-4.7", {
+      adaptive_thinking: true,
+      reasoning_effort: ["medium"],
+    })
+    const payload = basePayload({
+      model: "claude-opus-4.7",
+      thinking: { type: "enabled", budget_tokens: 32000 },
+    })
+    normalizeAdaptiveThinkingForCopilot(payload)
+    expect(payload.thinking).toEqual({ type: "adaptive" })
+    expect(payload.output_config?.effort).toBe("medium")
+  })
+
+  test("coerce preserves explicit client output_config.effort", () => {
+    setModelCapability("claude-opus-4.7", {
+      adaptive_thinking: true,
+      reasoning_effort: ["medium"],
+    })
+    const payload = basePayload({
+      model: "claude-opus-4.7",
+      thinking: { type: "enabled", budget_tokens: 32000 },
+      output_config: { effort: "low" as never },
+    })
+    normalizeAdaptiveThinkingForCopilot(payload)
+    expect(payload.thinking).toEqual({ type: "adaptive" })
+    expect(payload.output_config?.effort).toBe("low")
+  })
+
+  test("does not coerce enabled thinking for non-adaptive models", () => {
+    setModelCapability("claude-opus-4.5", {
+      max_thinking_budget: 32000,
+      adaptive_thinking: false,
+    })
+    const payload = basePayload({
+      model: "claude-opus-4.5",
+      thinking: { type: "enabled", budget_tokens: 1024 },
+    })
     normalizeAdaptiveThinkingForCopilot(payload)
     expect(payload.thinking).toEqual({ type: "enabled", budget_tokens: 1024 })
   })
