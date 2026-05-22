@@ -8,6 +8,7 @@ import {
   overrideAnthropicResponseModel,
   overrideMessageStartEventModel,
 } from "~/lib/anthropic-sanitizer"
+import { isUnsupportedWebToolError } from "~/lib/anthropic-web-tools"
 import { awaitApproval } from "~/lib/approval"
 import {
   isAccountProxied,
@@ -39,6 +40,7 @@ import {
   translateToAnthropic,
   translateToOpenAI,
 } from "./non-stream-translation"
+import { handleWebToolFallback } from "./proxy-web-fallback"
 import {
   translateChunkToAnthropicEvents,
   translateErrorToAnthropicErrorEvent,
@@ -285,6 +287,27 @@ async function handleNativePassthrough(
         return handlePreStreamAnthropicError(c, anthropicPayload, retryError)
       }
     } else {
+      // Copilot rejects Anthropic server-side WebSearch/WebFetch with
+      // "The use of the web search tool is not supported." Run the
+      // zero-config proxy fallback (DuckDuckGo HTML + direct fetch)
+      // instead of propagating the error to the client.
+      if (await isUnsupportedWebToolError(anthropicPayload, error)) {
+        consola.warn(
+          `Native /v1/messages: Copilot rejected WebSearch/WebFetch — switching to proxy fallback`,
+        )
+        try {
+          return await handleWebToolFallback(c, anthropicPayload)
+        } catch (fallbackError) {
+          consola.warn(
+            `Proxy web fallback failed: ${(fallbackError as Error).message || String(fallbackError)}`,
+          )
+          return handlePreStreamAnthropicError(
+            c,
+            anthropicPayload,
+            fallbackError,
+          )
+        }
+      }
       consola.warn(`Native /v1/messages failed: ${message}`)
       return handlePreStreamAnthropicError(c, anthropicPayload, error)
     }

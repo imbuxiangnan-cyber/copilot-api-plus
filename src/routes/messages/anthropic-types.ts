@@ -111,11 +111,32 @@ export interface AnthropicAssistantMessage {
 
 export type AnthropicMessage = AnthropicUserMessage | AnthropicAssistantMessage
 
-export interface AnthropicTool {
+/**
+ * Client-defined custom function tool (no `type` field, has `input_schema`).
+ * This is the only shape OpenAI chat-completions can natively forward.
+ */
+export interface AnthropicCustomTool {
   name: string
   description?: string
   input_schema: Record<string, unknown>
 }
+
+/**
+ * Anthropic server-side tool (e.g. `web_search_20250305`, `web_fetch_*`,
+ * `bash_20250124`, `computer_20250124`, `text_editor_20250728`,
+ * `code_execution_20250825`). Has a `type` discriminator and arbitrary
+ * extra fields. Copilot's `/v1/messages` mirror may reject some of these
+ * (notably web_search/web_fetch on Vertex). When that happens, the
+ * proxy-web-fallback layer intercepts the rejection and emulates the tool
+ * itself via the OpenAI chat-completions tool loop.
+ */
+export interface AnthropicServerTool {
+  type: string
+  name?: string
+  [key: string]: unknown
+}
+
+export type AnthropicTool = AnthropicCustomTool | AnthropicServerTool
 
 export interface AnthropicResponse {
   id: string

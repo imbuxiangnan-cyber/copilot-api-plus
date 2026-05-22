@@ -23,9 +23,19 @@ export interface ModelMappingConfig {
   concurrency?: Record<string, number>
 }
 
+/**
+ * Reserved search backend selector. Default `"duckduckgo"` (zero-config).
+ * `bing` / `brave` / `searxng` are accepted for forward-compat; without
+ * provider keys wired up they currently fall back to DuckDuckGo. Used
+ * only by the WebSearch/WebFetch fallback when Copilot rejects the
+ * Anthropic server-side web tools.
+ */
+export type SearchBackendId = "bing" | "brave" | "duckduckgo" | "searxng"
+
 export interface AppConfig {
   proxy?: ProxyConfig
   modelMapping?: ModelMappingConfig
+  search_backend?: SearchBackendId
 }
 
 /**
@@ -103,6 +113,16 @@ export async function saveModelMappingConfig(
   const config = await loadConfig()
   config.modelMapping = modelMapping
   await saveConfig(config)
+}
+
+/**
+ * Get configured search backend id (or undefined for default DDG).
+ */
+export async function getSearchBackendId(): Promise<
+  SearchBackendId | undefined
+> {
+  const config = await loadConfig()
+  return config.search_backend
 }
 
 /**

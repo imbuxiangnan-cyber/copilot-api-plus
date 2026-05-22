@@ -10,7 +10,11 @@ import { serve, type ServerHandler } from "srvx"
 import invariant from "tiny-invariant"
 
 import { accountManager } from "./lib/account-manager"
-import { applyProxyConfig, getModelMappingConfig } from "./lib/config"
+import {
+  applyProxyConfig,
+  getModelMappingConfig,
+  getSearchBackendId,
+} from "./lib/config"
 import { modelRouter } from "./lib/model-router"
 import { ensurePaths } from "./lib/paths"
 import { initProxyFromEnv } from "./lib/proxy"
@@ -23,6 +27,7 @@ import {
 } from "./lib/token"
 import { cacheModels, cacheVSCodeVersion, rootCause } from "./lib/utils"
 import { server } from "./server"
+import { setSearchBackend } from "./services/web"
 
 interface RunServerOptions {
   port: number
@@ -113,6 +118,24 @@ async function initModelRouting(): Promise<void> {
     }
   } catch (error) {
     consola.debug("Model routing config not loaded:", error)
+  }
+}
+
+/**
+ * Apply search backend selection from saved config. Zero-config default
+ * is DuckDuckGo HTML; other ids are accepted but currently fall back.
+ */
+async function initSearchBackend(): Promise<void> {
+  try {
+    const backendId = await getSearchBackendId()
+    setSearchBackend(backendId)
+    if (backendId && backendId !== "duckduckgo") {
+      consola.info(
+        `Search backend "${backendId}" requested; using DuckDuckGo HTML (other backends not yet implemented)`,
+      )
+    }
+  } catch (error) {
+    consola.debug("Search backend config not loaded:", error)
   }
 }
 
@@ -305,6 +328,9 @@ export async function runServer(options: RunServerOptions): Promise<void> {
 
   // Initialize model routing from config
   await initModelRouting()
+
+  // Apply search backend selection (default duckduckgo, zero-config)
+  await initSearchBackend()
 
   consola.info(
     `Available models: \n${state.models?.data.map((model) => `- ${model.id}`).join("\n")}`,

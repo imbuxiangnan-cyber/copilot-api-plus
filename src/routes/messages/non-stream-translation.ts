@@ -327,14 +327,35 @@ function translateAnthropicToolsToOpenAI(
   if (!anthropicTools) {
     return undefined
   }
-  return anthropicTools.map((tool) => ({
-    type: "function",
-    function: {
-      name: tool.name,
-      description: tool.description,
-      parameters: tool.input_schema,
-    },
-  }))
+  // Server-side tools (web_search_*, web_fetch_*, bash_*, computer_*,
+  // text_editor_*, code_execution_*) have a `type` field and no
+  // `input_schema` — OpenAI chat-completions cannot describe them, so
+  // skip them silently. The native /v1/messages path is the supported
+  // route for server-side tools; web_search/web_fetch get a dedicated
+  // fallback (see proxy-web-fallback.ts).
+  const translated: Array<Tool> = []
+  for (const tool of anthropicTools) {
+    if (
+      "type" in tool
+      && typeof (tool as { type?: unknown }).type === "string"
+    ) {
+      continue
+    }
+    const custom = tool as {
+      name: string
+      description?: string
+      input_schema: Record<string, unknown>
+    }
+    translated.push({
+      type: "function",
+      function: {
+        name: custom.name,
+        description: custom.description,
+        parameters: custom.input_schema,
+      },
+    })
+  }
+  return translated.length > 0 ? translated : undefined
 }
 
 function translateAnthropicToolChoiceToOpenAI(

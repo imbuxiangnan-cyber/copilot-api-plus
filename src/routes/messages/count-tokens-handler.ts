@@ -47,8 +47,9 @@ export async function handleCountTokens(c: Context) {
     if (anthropicPayload.tools && anthropicPayload.tools.length > 0) {
       let mcpToolExist = false
       if (anthropicBeta?.startsWith("claude-code")) {
-        mcpToolExist = anthropicPayload.tools.some((tool) =>
-          tool.name.startsWith("mcp__"),
+        mcpToolExist = anthropicPayload.tools.some(
+          (tool) =>
+            typeof tool.name === "string" && tool.name.startsWith("mcp__"),
         )
       }
       if (!mcpToolExist) {
