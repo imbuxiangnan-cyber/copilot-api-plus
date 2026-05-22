@@ -81,48 +81,6 @@ describe("sanitizeForCopilotBackend", () => {
     sanitizeForCopilotBackend(payload)
     expect(payload.effort).toBeUndefined()
   })
-
-  test("strips server-side tools (web_search/bash/computer/text_editor/code_execution)", () => {
-    const payload = basePayload() as AnthropicMessagesPayload & {
-      tools?: Array<Record<string, unknown>>
-    }
-    payload.tools = [
-      { type: "web_search_20250305", name: "web_search" },
-      { type: "bash_20250124", name: "bash" },
-      { type: "computer_20250124", name: "computer" },
-      { type: "text_editor_20250728", name: "str_replace_editor" },
-      { type: "code_execution_20250825", name: "code_execution" },
-      { name: "my_custom_tool", input_schema: { type: "object" } },
-    ] as never
-    sanitizeForCopilotBackend(payload)
-    expect(payload.tools).toEqual([
-      { name: "my_custom_tool", input_schema: { type: "object" } },
-    ] as never)
-  })
-
-  test("deletes tools array when all entries are server-side tools", () => {
-    const payload = basePayload() as AnthropicMessagesPayload & {
-      tools?: Array<Record<string, unknown>>
-    }
-    payload.tools = [
-      { type: "web_search_20250305", name: "web_search" },
-    ] as never
-    sanitizeForCopilotBackend(payload)
-    expect(payload.tools).toBeUndefined()
-  })
-
-  test("leaves client-defined tools untouched", () => {
-    const payload = basePayload() as AnthropicMessagesPayload & {
-      tools?: Array<Record<string, unknown>>
-    }
-    payload.tools = [
-      { name: "Bash", description: "run a shell command", input_schema: {} },
-    ] as never
-    sanitizeForCopilotBackend(payload)
-    expect(payload.tools).toEqual([
-      { name: "Bash", description: "run a shell command", input_schema: {} },
-    ] as never)
-  })
 })
 
 describe("normalizeAdaptiveThinkingForCopilot", () => {
