@@ -30,6 +30,24 @@ const defaultUsagePayload = {
   },
 }
 
+function makeUsagePayload(
+  premiumRemaining: number,
+  overagePermitted: boolean,
+): typeof defaultUsagePayload {
+  return {
+    ...defaultUsagePayload,
+    quota_snapshots: {
+      ...defaultUsagePayload.quota_snapshots,
+      premium_interactions: {
+        ...defaultUsagePayload.quota_snapshots.premium_interactions,
+        overage_permitted: overagePermitted,
+        quota_remaining: premiumRemaining,
+        remaining: premiumRemaining,
+      },
+    },
+  }
+}
+
 const getCopilotUsageMock = mock(() => Promise.resolve(defaultUsagePayload))
 
 void mock.module("~/services/github/get-copilot-usage", () => ({
@@ -63,6 +81,40 @@ function makeManager(
   manager.saveAccounts = async () => {}
   return manager
 }
+
+describe("AccountManager account selection", () => {
+  test("selects an exhausted-only usable account", () => {
+    const account = makeAccount("exhausted", "exhausted")
+    const manager = makeManager([account])
+
+    expect(manager.getActiveAccount()).toBe(account)
+  })
+
+  test("prefers active account over exhausted account with higher remaining quota", () => {
+    const exhausted = makeAccount("exhausted", "exhausted")
+    exhausted.usage = {
+      premium_remaining: 100,
+      premium_total: 100,
+      chat_remaining: 100,
+      chat_total: 100,
+      quotaResetDate: "2026-06-01",
+      lastCheckedAt: Date.now(),
+    }
+    const active = makeAccount("active", "active")
+    active.usage = {
+      premium_remaining: 1,
+      premium_total: 100,
+      chat_remaining: 100,
+      chat_total: 100,
+      quotaResetDate: "2026-06-01",
+      lastCheckedAt: Date.now(),
+    }
+
+    const manager = makeManager([exhausted, active])
+
+    expect(manager.getActiveAccount()).toBe(active)
+  })
+})
 
 describe("AccountManager background refresh", () => {
   beforeEach(() => {
@@ -107,6 +159,73 @@ describe("AccountManager background refresh", () => {
 
     expect(account.status).toBe("banned")
     expect(account.statusMessage).toBe("Copilot usage unavailable")
+  })
+
+  test("keeps no-overage exhausted usage snapshot active with advisory message", async () => {
+    getCopilotUsageMock.mockResolvedValueOnce(makeUsagePayload(0, false))
+    const account = makeAccount("no-overage", "active")
+    const manager = makeManager([account])
+
+    await manager.refreshAccountUsage(account)
+    const saveTimer = (manager as unknown as ManagerInternals).saveTimer
+    if (saveTimer) clearTimeout(saveTimer)
+
+    expect(account.status).toBe("active")
+    expect(account.statusMessage).toBe("Premium quota exhausted")
+    expect(account.usage?.premium_remaining).toBe(0)
+    expect(account.usage?.premium_overage_permitted).toBe(false)
+  })
+
+  test("keeps overage-permitted negative remaining usage active and clears advisory message", async () => {
+    getCopilotUsageMock.mockResolvedValueOnce(makeUsagePayload(-3, true))
+    const account = makeAccount("overage", "active")
+    account.statusMessage = "Premium quota exhausted"
+    const manager = makeManager([account])
+
+    await manager.refreshAccountUsage(account)
+    const saveTimer = (manager as unknown as ManagerInternals).saveTimer
+    if (saveTimer) clearTimeout(saveTimer)
+
+    expect(account.status).toBe("active")
+    expect(account.statusMessage).toBeUndefined()
+    expect(account.usage?.premium_remaining).toBe(-3)
+    expect(account.usage?.premium_overage_permitted).toBe(true)
+  })
+
+  test("recovers stale exhausted status when overage is permitted", async () => {
+    getCopilotUsageMock.mockResolvedValueOnce(makeUsagePayload(-1, true))
+    const account = makeAccount("stale-exhausted", "exhausted")
+    account.consecutiveFailures = 2
+    account.statusMessage = "Premium quota exhausted"
+    const manager = makeManager([account])
+
+    await manager.refreshAccountUsage(account)
+    const saveTimer = (manager as unknown as ManagerInternals).saveTimer
+    if (saveTimer) clearTimeout(saveTimer)
+
+    expect(account.status).toBe("active")
+    expect(account.statusMessage).toBeUndefined()
+    expect(account.consecutiveFailures).toBe(0)
+    expect(account.usage?.premium_remaining).toBe(-1)
+    expect(account.usage?.premium_overage_permitted).toBe(true)
+  })
+
+  test("markAccountSuccess clears stale exhausted status", () => {
+    const account = makeAccount("success", "exhausted")
+    account.consecutiveFailures = 3
+    account.statusMessage = "Premium quota exhausted"
+    account.cooldownUntil = Date.now() + 10_000
+    const manager = makeManager([account])
+
+    manager.markAccountSuccess(account.id)
+    const saveTimer = (manager as unknown as ManagerInternals).saveTimer
+    if (saveTimer) clearTimeout(saveTimer)
+
+    expect(account.status).toBe("active")
+    expect(account.statusMessage).toBeUndefined()
+    expect(account.consecutiveFailures).toBe(0)
+    expect(account.cooldownUntil).toBeUndefined()
+    expect(account.lastUsedAt).toBeGreaterThan(0)
   })
 
   test("marks account banned when usage endpoint returns 401", async () => {

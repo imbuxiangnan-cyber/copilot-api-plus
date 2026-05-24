@@ -118,6 +118,7 @@ const ACCOUNTS_PATH = PATHS.ACCOUNTS_PATH
 // ---------------------------------------------------------------------------
 
 const COOLDOWN_MS = 60 * 1000 // 60 seconds
+const PREMIUM_QUOTA_EXHAUSTED_MESSAGE = "Premium quota exhausted"
 
 function shouldBackgroundRefresh(account: Account): boolean {
   return account.status !== "disabled" && account.status !== "banned"
@@ -262,20 +263,18 @@ export class AccountManager {
   /**
    * Pick the best available account.
    *
-   * 1. Filter out disabled, banned, exhausted, and accounts still in cooldown.
-   * 2. Prefer accounts with more remaining premium quota.
-   * 3. Fall back to round-robin (least-recently-used) when quotas are equal
+   * 1. Filter out disabled, banned, and accounts still in cooldown.
+   * 2. Prefer accounts not marked exhausted; quota exhaustion is advisory and
+   *    upstream 429/403 responses remain authoritative.
+   * 3. Within each status group, prefer more remaining premium quota.
+   * 4. Fall back to round-robin (least-recently-used) when quotas are equal
    *    or unknown.
    */
   getActiveAccount(): Account | undefined {
     const now = Date.now()
 
     const eligible = this.accounts.filter((a) => {
-      if (
-        a.status === "disabled"
-        || a.status === "banned"
-        || a.status === "exhausted"
-      ) {
+      if (a.status === "disabled" || a.status === "banned") {
         return false
       }
       if (a.cooldownUntil && a.cooldownUntil > now) return false
@@ -284,16 +283,12 @@ export class AccountManager {
 
     if (eligible.length === 0) {
       // Fallback: if there is exactly one account and it's only cooling down
-      // (not banned/disabled/exhausted), return it anyway.  With a single
-      // account there is nothing to "switch to", so blocking all requests
-      // for the cooldown period would be a self-inflicted outage.
+      // (not banned/disabled), return it anyway. With a single account there is
+      // nothing to "switch to", so blocking all requests for the cooldown period
+      // would be a self-inflicted outage.
       if (this.accounts.length === 1) {
         const solo = this.accounts[0]
-        if (
-          solo.status !== "disabled"
-          && solo.status !== "banned"
-          && solo.status !== "exhausted"
-        ) {
+        if (solo.status !== "disabled" && solo.status !== "banned") {
           return solo
         }
       }
@@ -301,6 +296,13 @@ export class AccountManager {
     }
 
     eligible.sort((a, b) => {
+      const aExhausted = a.status === "exhausted"
+      const bExhausted = b.status === "exhausted"
+
+      // Quota exhaustion is advisory: keep exhausted accounts eligible, but use
+      // non-exhausted accounts first when there is a choice.
+      if (aExhausted !== bExhausted) return aExhausted ? 1 : -1
+
       const aRemaining = a.usage?.premium_remaining ?? -1
       const bRemaining = b.usage?.premium_remaining ?? -1
 
@@ -364,7 +366,11 @@ export class AccountManager {
     account.consecutiveFailures = 0
     account.lastUsedAt = Date.now()
 
-    if (account.status === "error" || account.status === "rate_limited") {
+    if (
+      account.status === "error"
+      || account.status === "rate_limited"
+      || account.status === "exhausted"
+    ) {
       account.status = "active"
       account.statusMessage = undefined
       account.cooldownUntil = undefined
@@ -450,31 +456,22 @@ export class AccountManager {
 
       const overagePermitted = premium.overage_permitted
 
-      // Transition between active ↔ exhausted.
-      // If the upstream account allows overage (paid extra), do NOT mark it
-      // exhausted just because remaining went negative — the user can keep
-      // making requests and pay per-use. We only flip back from "exhausted"
-      // to "active" automatically; we never auto-flip into "exhausted" when
-      // overage is permitted.
-      if (
-        account.usage.premium_remaining <= 0
-        && account.status === "active"
-        && !overagePermitted
-      ) {
-        this.markAccountStatus(
-          account.id,
-          "exhausted",
-          "Premium quota exhausted",
-        )
-      } else if (
-        account.status === "exhausted"
-        && (account.usage.premium_remaining > 0 || overagePermitted)
-      ) {
-        account.status = "active"
+      const quotaLooksExhausted =
+        account.usage.premium_remaining <= 0 && !overagePermitted
+
+      if (quotaLooksExhausted) {
+        account.statusMessage = PREMIUM_QUOTA_EXHAUSTED_MESSAGE
+      } else if (account.statusMessage === PREMIUM_QUOTA_EXHAUSTED_MESSAGE) {
         account.statusMessage = undefined
-        account.consecutiveFailures = 0
-        this.debouncedSave()
       }
+
+      if (account.status === "exhausted" && !quotaLooksExhausted) {
+        account.status = "active"
+        account.cooldownUntil = undefined
+        account.consecutiveFailures = 0
+      }
+
+      this.debouncedSave()
     } catch (err) {
       if (err instanceof HTTPError && err.response.status === 401) {
         this.markAccountStatus(account.id, "banned", "GitHub token invalid")
