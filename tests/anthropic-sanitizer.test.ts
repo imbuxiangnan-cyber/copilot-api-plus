@@ -372,13 +372,13 @@ describe("injectMaxThinkingBudget", () => {
     expect(payload.output_config?.effort).toBe("high")
   })
 
-  test("caps adaptive effort at model's whitelist (Opus 4.7 = medium only)", () => {
-    setModelCapability("claude-opus-4.7", {
+  test("caps adaptive effort at model's whitelist (Opus 4.8 = medium only)", () => {
+    setModelCapability("claude-opus-4.8", {
       max_thinking_budget: 32000,
       adaptive_thinking: true,
       reasoning_effort: ["medium"],
     })
-    const payload = basePayload({ model: "claude-opus-4.7" })
+    const payload = basePayload({ model: "claude-opus-4.8" })
     injectMaxThinkingBudget(payload)
     expect(payload.thinking).toEqual({ type: "adaptive" })
     expect(payload.output_config?.effort).toBe("medium")
@@ -393,6 +393,21 @@ describe("injectMaxThinkingBudget", () => {
     injectMaxThinkingBudget(payload)
     expect(payload.thinking).toEqual({ type: "adaptive" })
     expect(payload.output_config).toBeUndefined()
+  })
+
+  test("coerces enabled thinking to adaptive for Opus 4.8", () => {
+    setModelCapability("claude-opus-4.8", {
+      max_thinking_budget: 32000,
+      adaptive_thinking: true,
+      reasoning_effort: ["medium"],
+    })
+    const payload = basePayload({
+      model: "claude-opus-4.8",
+      thinking: { type: "enabled", budget_tokens: 10_000 },
+    })
+    normalizeAdaptiveThinkingForCopilot(payload)
+    expect(payload.thinking).toEqual({ type: "adaptive" })
+    expect(payload.output_config?.effort).toBe("medium")
   })
 
   test("preserves client-supplied output_config.effort", () => {

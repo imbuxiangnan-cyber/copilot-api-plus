@@ -43,9 +43,15 @@ export interface ModelsResponse {
 
 interface ModelLimits {
   max_context_window_tokens?: number
+  max_non_streaming_output_tokens?: number
   max_output_tokens?: number
   max_prompt_tokens?: number
   max_inputs?: number
+  vision?: {
+    max_prompt_image_size?: number
+    max_prompt_images?: number
+    supported_media_types?: Array<string>
+  }
 }
 
 interface ModelSupports {
@@ -59,7 +65,7 @@ interface ModelSupports {
   /**
    * Per-model whitelist of `output_config.effort` values that Copilot's
    * `/v1/messages` mirror will accept for adaptive-thinking models.
-   * As of 2026-05, Copilot caps Opus 4.7 to `["medium"]` and allows
+   * As of 2026-05, Copilot caps Opus 4.8/4.7 to `["medium"]` and allows
    * Sonnet 4.6 `["low","medium","high"]`. Sending anything outside
    * this list returns 400 "not supported by model X; supported values: [...]".
    */

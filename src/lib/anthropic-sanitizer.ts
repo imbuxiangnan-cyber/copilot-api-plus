@@ -90,7 +90,7 @@ function sanitizeOutputConfigFormat(format: unknown): void {
  * Copilot rejects `budget_tokens_max`. Mutates in place.
  *
  * Additionally, models that only support adaptive thinking (e.g. Claude
- * Opus 4.7 on Copilot's Vertex backend) 400 when the client sends the
+ * Opus 4.8/4.7 on Copilot's Vertex backend) 400 when the client sends the
  * legacy `{ type: "enabled", budget_tokens: N }` shape with:
  *   `"thinking.type.enabled" is not supported for this model. Use
  *    "thinking.type.adaptive" and "output_config.effort" to control
@@ -162,8 +162,8 @@ function coerceEnabledToAdaptiveIfRequired(
  *
  * Copilot's `/v1/messages` mirror caps `output_config.effort` to
  * the per-model `supports.reasoning_effort` whitelist. As of 2026-05:
- *   - Opus 4.7  → ["medium"]              → max we can ask is "medium"
- *   - Sonnet 4.6 → ["low","medium","high"] → "high"
+ *   - Opus 4.8/4.7 → ["medium"]              → max we can ask is "medium"
+ *   - Sonnet 4.6   → ["low","medium","high"] → "high"
  *
  * Anything outside the list returns 400 "not supported by model X;
  * supported values: [...]". `xhigh` and `max` exist in Anthropic's
@@ -200,7 +200,7 @@ export function pickHighestSupportedEffort(
  * thinking depth the model supports — pulled from Copilot's `/models`
  * capabilities. Mutates in place.
  *
- *   - Models with `adaptive_thinking: true` (Claude Opus 4.7,
+ *   - Models with `adaptive_thinking: true` (Claude Opus 4.8/4.7,
  *     Sonnet 4.6, etc.) get `{ type: "adaptive" }` plus, when the
  *     model advertises `supports.reasoning_effort`, the highest
  *     value from that whitelist injected as `output_config.effort`.

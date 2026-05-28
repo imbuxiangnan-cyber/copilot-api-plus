@@ -48,11 +48,11 @@ describe("resolveAnthropicRoute", () => {
     // not the symbolic "anthropic-messages".
     setModels([
       {
-        id: "claude-opus-4.7",
+        id: "claude-opus-4.8",
         supported_endpoints: ["/v1/messages", "/chat/completions"],
       },
     ])
-    expect(resolveAnthropicRoute("claude-opus-4.7")).toBe("native-anthropic")
+    expect(resolveAnthropicRoute("claude-opus-4.8")).toBe("native-anthropic")
   })
 
   test("recognizes both /v1/messages and anthropic-messages aliases", () => {

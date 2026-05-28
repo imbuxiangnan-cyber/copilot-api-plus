@@ -32,7 +32,7 @@ export interface AnthropicMessagesPayload {
   /**
    * Copilot-specific control for adaptive thinking depth. Per-model
    * allowed values come from the model's `supports.reasoning_effort`
-   * array in `/models` (Opus 4.7 = `["medium"]`, Sonnet 4.6 =
+   * array in `/models` (Opus 4.8/4.7 = `["medium"]`, Sonnet 4.6 =
    * `["low","medium","high"]`). Sending an unsupported value 400s.
    */
   output_config?: {
