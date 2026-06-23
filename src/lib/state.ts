@@ -47,6 +47,10 @@ export interface State {
    */
   maxThinking: boolean
 
+  // GitHub Enterprise base URL overrides
+  githubBaseUrl?: string
+  githubApiBaseUrl?: string
+
   // Selected models (from --claude-code setup)
   selectedModel?: string
   selectedSmallModel?: string

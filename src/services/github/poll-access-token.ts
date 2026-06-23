@@ -1,8 +1,8 @@
 import consola from "consola"
 
 import {
-  GITHUB_BASE_URL,
   GITHUB_CLIENT_ID,
+  githubBaseUrl,
   standardHeaders,
 } from "~/lib/api-config"
 import { sleep } from "~/lib/utils"
@@ -22,7 +22,7 @@ export async function pollAccessToken(
 
   while (Date.now() < expirationTime) {
     const response = await fetch(
-      `${GITHUB_BASE_URL}/login/oauth/access_token`,
+      `${githubBaseUrl()}/login/oauth/access_token`,
       {
         method: "POST",
         headers: standardHeaders(),

@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto"
 
+import { state } from "~/lib/state"
+
 export const standardHeaders = () => ({
   "content-type": "application/json",
   accept: "application/json",
@@ -68,7 +70,45 @@ export const copilotHeaders = (
   return headers
 }
 
-export const GITHUB_API_BASE_URL = "https://api.github.com"
+const PUBLIC_GITHUB_BASE_URL = "https://github.com"
+const PUBLIC_GITHUB_API_BASE_URL = "https://api.github.com"
+
+function normalizeBaseUrl(url: string | undefined): string | undefined {
+  const trimmed = url?.trim()
+  if (!trimmed) return undefined
+  return trimmed.replace(/\/+$/, "")
+}
+
+function envValue(...names: Array<string>): string | undefined {
+  for (const name of names) {
+    const value = normalizeBaseUrl(process.env[name])
+    if (value) return value
+  }
+  return undefined
+}
+
+export function githubBaseUrl(): string {
+  return (
+    normalizeBaseUrl(state.githubBaseUrl)
+    ?? envValue("GITHUB_BASE_URL", "COPILOT_API_GITHUB_BASE_URL")
+    ?? PUBLIC_GITHUB_BASE_URL
+  )
+}
+
+export function githubApiBaseUrl(): string {
+  const explicitApiUrl =
+    normalizeBaseUrl(state.githubApiBaseUrl)
+    ?? envValue("GITHUB_API_BASE_URL", "COPILOT_API_GITHUB_API_BASE_URL")
+
+  if (explicitApiUrl) return explicitApiUrl
+
+  const baseUrl = githubBaseUrl()
+  return baseUrl === PUBLIC_GITHUB_BASE_URL ?
+      PUBLIC_GITHUB_API_BASE_URL
+    : `${baseUrl}/api/v3`
+}
+
+export const GITHUB_API_BASE_URL = PUBLIC_GITHUB_API_BASE_URL
 export const githubHeaders = (source: TokenSource) => ({
   ...standardHeaders(),
   authorization: `token ${source.githubToken}`,
@@ -79,6 +119,6 @@ export const githubHeaders = (source: TokenSource) => ({
   "x-vscode-user-agent-library-version": "electron-fetch",
 })
 
-export const GITHUB_BASE_URL = "https://github.com"
+export const GITHUB_BASE_URL = PUBLIC_GITHUB_BASE_URL
 export const GITHUB_CLIENT_ID = "Iv1.b507a08c87ecfe98"
 export const GITHUB_APP_SCOPES = ["read:user"].join(" ")

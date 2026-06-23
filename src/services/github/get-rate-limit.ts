@@ -1,4 +1,4 @@
-import { GITHUB_API_BASE_URL, standardHeaders } from "~/lib/api-config"
+import { githubApiBaseUrl, standardHeaders } from "~/lib/api-config"
 import { HTTPError } from "~/lib/error"
 import { state } from "~/lib/state"
 
@@ -13,7 +13,7 @@ export async function getGitHubRateLimit(
   githubToken?: string,
 ): Promise<GithubRateLimitResponse> {
   const token = githubToken ?? state.githubToken
-  const response = await fetch(`${GITHUB_API_BASE_URL}/rate_limit`, {
+  const response = await fetch(`${githubApiBaseUrl()}/rate_limit`, {
     headers: {
       authorization: `token ${token}`,
       ...standardHeaders(),

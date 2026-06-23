@@ -31,6 +31,14 @@ export const addAccount = defineCommand({
       default: "individual",
       description: "Account type (individual/business/enterprise)",
     },
+    "github-base-url": {
+      type: "string",
+      description: "GitHub web base URL (for GitHub Enterprise device login)",
+    },
+    "github-api-base-url": {
+      type: "string",
+      description: "GitHub API base URL (for GitHub Enterprise REST API)",
+    },
     verbose: {
       alias: "v",
       type: "boolean",
@@ -49,6 +57,8 @@ export const addAccount = defineCommand({
       await applyProxyConfig()
       initProxyFromEnv()
       state.accountType = args["account-type"]
+      state.githubBaseUrl = args["github-base-url"]
+      state.githubApiBaseUrl = args["github-api-base-url"]
       await cacheVSCodeVersion()
 
       // Device Code flow

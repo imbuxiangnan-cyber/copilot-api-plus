@@ -43,6 +43,8 @@ interface RunServerOptions {
   apiKeys?: Array<string>
   disableAnthropicPassthrough: boolean
   maxThinking: boolean
+  githubBaseUrl?: string
+  githubApiBaseUrl?: string
 }
 
 /**
@@ -272,6 +274,8 @@ export async function runServer(options: RunServerOptions): Promise<void> {
   state.showToken = options.showToken
   state.apiKeys = options.apiKeys
   state.disableAnthropicPassthrough = options.disableAnthropicPassthrough
+  state.githubBaseUrl = options.githubBaseUrl
+  state.githubApiBaseUrl = options.githubApiBaseUrl
 
   if (options.disableAnthropicPassthrough) {
     consola.info(
@@ -404,6 +408,14 @@ export const start = defineCommand({
       description:
         "Provide GitHub token directly (must be generated using the `auth` subcommand)",
     },
+    "github-base-url": {
+      type: "string",
+      description: "GitHub web base URL (for GitHub Enterprise device login)",
+    },
+    "github-api-base-url": {
+      type: "string",
+      description: "GitHub API base URL (for GitHub Enterprise REST API)",
+    },
     "claude-code": {
       alias: "c",
       type: "boolean",
@@ -465,6 +477,8 @@ export const start = defineCommand({
       apiKeys,
       disableAnthropicPassthrough: args["disable-anthropic-passthrough"],
       maxThinking: args["max-thinking"],
+      githubBaseUrl: args["github-base-url"],
+      githubApiBaseUrl: args["github-api-base-url"],
     })
   },
 })

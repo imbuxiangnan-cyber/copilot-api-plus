@@ -5,8 +5,8 @@ import type { Account } from "~/lib/account-manager"
 
 import { accountManager } from "~/lib/account-manager"
 import {
-  GITHUB_BASE_URL,
   GITHUB_CLIENT_ID,
+  githubBaseUrl,
   standardHeaders,
 } from "~/lib/api-config"
 import { rootCause } from "~/lib/utils"
@@ -396,7 +396,7 @@ accountRoutes.post("/auth/poll", async (c) => {
 
     // Single poll attempt to GitHub's token endpoint
     const response = await fetch(
-      `${GITHUB_BASE_URL}/login/oauth/access_token`,
+      `${githubBaseUrl()}/login/oauth/access_token`,
       {
         method: "POST",
         headers: standardHeaders(),

@@ -1,4 +1,4 @@
-import { GITHUB_API_BASE_URL, githubHeaders } from "~/lib/api-config"
+import { githubApiBaseUrl, githubHeaders } from "~/lib/api-config"
 import { HTTPError } from "~/lib/error"
 import { state } from "~/lib/state"
 
@@ -13,7 +13,7 @@ import { state } from "~/lib/state"
 export const getCopilotUsage = async (
   githubToken?: string,
 ): Promise<CopilotUsageResponse> => {
-  const response = await fetch(`${GITHUB_API_BASE_URL}/copilot_internal/user`, {
+  const response = await fetch(`${githubApiBaseUrl()}/copilot_internal/user`, {
     headers: githubHeaders({
       ...state,
       githubToken: githubToken ?? state.githubToken,

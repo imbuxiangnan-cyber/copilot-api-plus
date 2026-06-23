@@ -1,6 +1,6 @@
 import consola from "consola"
 
-import { GITHUB_API_BASE_URL, githubHeaders } from "~/lib/api-config"
+import { githubApiBaseUrl, githubHeaders } from "~/lib/api-config"
 import { HTTPError } from "~/lib/error"
 import { state } from "~/lib/state"
 
@@ -16,7 +16,7 @@ export const getCopilotToken = async (githubToken?: string) => {
   const tokenToUse = githubToken ?? state.githubToken
   const isExplicitToken = githubToken !== undefined
 
-  const url = `${GITHUB_API_BASE_URL}/copilot_internal/v2/token`
+  const url = `${githubApiBaseUrl()}/copilot_internal/v2/token`
   const fetchOptions: RequestInit = {
     headers: githubHeaders({
       ...state,

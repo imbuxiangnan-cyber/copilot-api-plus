@@ -1,8 +1,6 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 
 import type { Account } from "~/lib/account-manager"
-
-import { HTTPError } from "~/lib/error"
 
 const defaultUsagePayload = {
   quota_reset_date: "2026-06-01",
@@ -48,13 +46,22 @@ function makeUsagePayload(
   }
 }
 
-const getCopilotUsageMock = mock(() => Promise.resolve(defaultUsagePayload))
+const originalFetch = globalThis.fetch
+const fetchMock = mock(() => Promise.resolve(jsonResponse(defaultUsagePayload)))
 
-void mock.module("~/services/github/get-copilot-usage", () => ({
-  getCopilotUsage: getCopilotUsageMock,
-}))
+function jsonResponse(body: unknown, init?: ResponseInit): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+    ...init,
+  })
+}
 
 const { AccountManager } = await import("~/lib/account-manager")
+
+afterEach(() => {
+  globalThis.fetch = originalFetch
+})
 
 type ManagerInternals = {
   accounts: Array<Account>
@@ -118,7 +125,9 @@ describe("AccountManager account selection", () => {
 
 describe("AccountManager background refresh", () => {
   beforeEach(() => {
-    getCopilotUsageMock.mockClear()
+    fetchMock.mockClear()
+    fetchMock.mockResolvedValue(jsonResponse(defaultUsagePayload))
+    globalThis.fetch = fetchMock as unknown as typeof fetch
   })
 
   test("skips banned accounts during refreshAllUsage", async () => {
@@ -130,26 +139,31 @@ describe("AccountManager background refresh", () => {
 
     await manager.refreshAllUsage()
 
-    expect(getCopilotUsageMock).toHaveBeenCalledTimes(1)
-    expect(getCopilotUsageMock).toHaveBeenCalledWith("token-active")
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect((init.headers as Record<string, string>).authorization).toBe(
+      "token token-active",
+    )
   })
 
   test("marks account banned when usage payload has no premium quota", async () => {
-    getCopilotUsageMock.mockResolvedValueOnce({
-      quota_reset_date: "2026-06-01",
-      quota_snapshots: {
-        chat: {
-          entitlement: 100,
-          overage_count: 0,
-          overage_permitted: false,
-          percent_remaining: 100,
-          quota_id: "chat",
-          quota_remaining: 100,
-          remaining: 100,
-          unlimited: false,
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        quota_reset_date: "2026-06-01",
+        quota_snapshots: {
+          chat: {
+            entitlement: 100,
+            overage_count: 0,
+            overage_permitted: false,
+            percent_remaining: 100,
+            quota_id: "chat",
+            quota_remaining: 100,
+            remaining: 100,
+            unlimited: false,
+          },
         },
-      },
-    } as unknown as typeof defaultUsagePayload)
+      }),
+    )
     const account = makeAccount("missing-premium", "active")
     const manager = makeManager([account])
 
@@ -162,7 +176,7 @@ describe("AccountManager background refresh", () => {
   })
 
   test("keeps no-overage exhausted usage snapshot active with advisory message", async () => {
-    getCopilotUsageMock.mockResolvedValueOnce(makeUsagePayload(0, false))
+    fetchMock.mockResolvedValueOnce(jsonResponse(makeUsagePayload(0, false)))
     const account = makeAccount("no-overage", "active")
     const manager = makeManager([account])
 
@@ -177,7 +191,7 @@ describe("AccountManager background refresh", () => {
   })
 
   test("keeps overage-permitted negative remaining usage active and clears advisory message", async () => {
-    getCopilotUsageMock.mockResolvedValueOnce(makeUsagePayload(-3, true))
+    fetchMock.mockResolvedValueOnce(jsonResponse(makeUsagePayload(-3, true)))
     const account = makeAccount("overage", "active")
     account.statusMessage = "Premium quota exhausted"
     const manager = makeManager([account])
@@ -193,7 +207,7 @@ describe("AccountManager background refresh", () => {
   })
 
   test("recovers stale exhausted status when overage is permitted", async () => {
-    getCopilotUsageMock.mockResolvedValueOnce(makeUsagePayload(-1, true))
+    fetchMock.mockResolvedValueOnce(jsonResponse(makeUsagePayload(-1, true)))
     const account = makeAccount("stale-exhausted", "exhausted")
     account.consecutiveFailures = 2
     account.statusMessage = "Premium quota exhausted"
@@ -229,12 +243,7 @@ describe("AccountManager background refresh", () => {
   })
 
   test("marks account banned when usage endpoint returns 401", async () => {
-    getCopilotUsageMock.mockRejectedValueOnce(
-      new HTTPError(
-        "Failed to get Copilot usage",
-        new Response("", { status: 401 }),
-      ),
-    )
+    fetchMock.mockResolvedValueOnce(new Response("", { status: 401 }))
     const account = makeAccount("usage-401", "active")
     const manager = makeManager([account])
 
