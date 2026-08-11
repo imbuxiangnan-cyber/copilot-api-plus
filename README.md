@@ -119,10 +119,11 @@ npx copilot-api-plus@latest start --account-type enterprise
 
 #### 可用模型
 
+> 默认示例推荐使用 `claude-opus-5`。实际可用模型和上下文长度以 `/v1/models` 返回为准。
+
 | 模型 | ID | 上下文长度 |
 |------|-----|-----------|
-| Claude Sonnet 4 | `claude-sonnet-4` | 200K |
-| Claude Sonnet 4.5 | `claude-sonnet-4.5` | 200K |
+| Claude Opus 5 | `claude-opus-5` | 以 `/v1/models` 返回为准 |
 | GPT-4.1 | `gpt-4.1` | 1M |
 | o4-mini | `o4-mini` | 200K |
 | Gemini 2.5 Pro | `gemini-2.5-pro` | 1M |
@@ -293,7 +294,7 @@ v1.1.0 新增模型名映射和并发控制功能。
 # 通过 API 配置映射
 curl -X PUT http://localhost:4141/api/models/mapping \
   -H "Content-Type: application/json" \
-  -d '{"mapping": {"gpt-4": "claude-sonnet-4", "fast": "gpt-4.1-mini"}}'
+  -d '{"mapping": {"gpt-4": "claude-opus-5", "fast": "gpt-4.1-mini"}}'
 ```
 
 也可以在 Web 管理面板的「模型管理」标签页中可视化编辑。
@@ -305,7 +306,7 @@ curl -X PUT http://localhost:4141/api/models/mapping \
 ```bash
 curl -X PUT http://localhost:4141/api/models/mapping \
   -H "Content-Type: application/json" \
-  -d '{"mapping": {"*": "claude-sonnet-4"}}'
+  -d '{"mapping": {"*": "claude-opus-5"}}'
 ```
 
 ### 并发控制
@@ -316,7 +317,7 @@ curl -X PUT http://localhost:4141/api/models/mapping \
 # 设置并发限制
 curl -X PUT http://localhost:4141/api/models/concurrency \
   -H "Content-Type: application/json" \
-  -d '{"concurrency": {"claude-sonnet-4": 5, "default": 10}}'
+  -d '{"concurrency": {"claude-opus-5": 5, "default": 10}}'
 ```
 
 - `default` 是未指定模型的默认并发数
@@ -443,7 +444,7 @@ npx copilot-api-plus@latest start --claude-code
   "env": {
     "ANTHROPIC_BASE_URL": "http://localhost:4141",
     "ANTHROPIC_AUTH_TOKEN": "dummy",
-    "ANTHROPIC_MODEL": "claude-sonnet-4",
+    "ANTHROPIC_MODEL": "claude-opus-5",
     "ANTHROPIC_SMALL_FAST_MODEL": "gpt-4.1",
     "DISABLE_NON_ESSENTIAL_MODEL_CALLS": "1"
   }
@@ -473,9 +474,9 @@ npx copilot-api-plus@latest start --claude-code
         "baseURL": "http://127.0.0.1:4141/v1"
       },
       "models": {
-        "claude-sonnet-4": {
-          "name": "Claude Sonnet 4",
-          "id": "claude-sonnet-4",
+        "claude-opus-5": {
+          "name": "Claude Opus 5",
+          "id": "claude-opus-5",
           "max_tokens": 64000,
           "profile": "coder",
           "limit": { "context": 200000 }
@@ -535,7 +536,7 @@ copilot-api-plus 会**自动检测** Responses 形态的请求体并转发到 Co
 2. 在 Cursor 的 **Settings → Models → API Keys** 中：
    - **OpenAI Base URL**：`http://localhost:4141/v1`
    - **OpenAI API Key**：任意非空字符串（如果没有启用 `--api-key`，填 `dummy` 即可）
-3. 在模型列表中添加 Copilot 提供的模型名（如 `gpt-5-mini`、`claude-sonnet-4` 等），点击 **Verify**
+3. 在模型列表中添加 `/v1/models` 返回的 Copilot 模型名（如 `gpt-5-mini`、`claude-opus-5` 等），点击 **Verify**
 
 ### Cursor 工作原理
 
@@ -591,7 +592,7 @@ GitHub Copilot 有独立的专用路由：
 curl http://localhost:4141/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "claude-sonnet-4",
+    "model": "claude-opus-5",
     "messages": [{"role": "user", "content": "Hello!"}]
   }'
 
@@ -600,7 +601,7 @@ curl http://localhost:4141/v1/messages \
   -H "Content-Type: application/json" \
   -H "x-api-key: dummy" \
   -d '{
-    "model": "claude-sonnet-4",
+    "model": "claude-opus-5",
     "max_tokens": 1024,
     "messages": [{"role": "user", "content": "Hello!"}]
   }'
@@ -751,12 +752,12 @@ curl http://localhost:4141/api/models/available
 # 设置模型映射
 curl -X PUT http://localhost:4141/api/models/mapping \
   -H "Content-Type: application/json" \
-  -d '{"mapping": {"gpt-4": "claude-sonnet-4", "*": "claude-sonnet-4"}}'
+  -d '{"mapping": {"gpt-4": "claude-opus-5", "*": "claude-opus-5"}}'
 
 # 设置并发限制
 curl -X PUT http://localhost:4141/api/models/concurrency \
   -H "Content-Type: application/json" \
-  -d '{"concurrency": {"claude-sonnet-4": 5, "default": 10}}'
+  -d '{"concurrency": {"claude-opus-5": 5, "default": 10}}'
 ```
 
 ### 运行统计
@@ -791,13 +792,13 @@ npx copilot-api-plus@latest start --api-key key1 --api-key key2
 curl http://localhost:4141/v1/chat/completions \
   -H "Authorization: Bearer my-secret-key" \
   -H "Content-Type: application/json" \
-  -d '{"model": "claude-sonnet-4", "messages": [{"role": "user", "content": "Hello"}]}'
+  -d '{"model": "claude-opus-5", "messages": [{"role": "user", "content": "Hello"}]}'
 
 # Anthropic 格式 - 通过 x-api-key header
 curl http://localhost:4141/v1/messages \
   -H "x-api-key: my-secret-key" \
   -H "Content-Type: application/json" \
-  -d '{"model": "claude-sonnet-4", "max_tokens": 1024, "messages": [{"role": "user", "content": "Hello"}]}'
+  -d '{"model": "claude-opus-5", "max_tokens": 1024, "messages": [{"role": "user", "content": "Hello"}]}'
 ```
 
 在 Claude Code 中使用时，将 `ANTHROPIC_AUTH_TOKEN` 设为你的 API Key 即可。
@@ -824,7 +825,7 @@ Anthropic 格式的模型名（如 `claude-opus-4-6`）和 Copilot 的模型列�
 | Dash → Dot | `claude-opus-4-5` → `claude-opus-4.5` |
 | Dot → Dash | `claude-opus-4.5` → `claude-opus-4-5` |
 
-对于 Anthropic 端点（`/v1/messages`），还会先通过 `translateModelName` 做格式转换（包括旧格式 `claude-3-5-sonnet` → `claude-sonnet-4.5` 的映射），再通过上述策略匹配。
+对于 Anthropic 端点（`/v1/messages`），还会先通过 `translateModelName` 做旧格式/别名转换，再通过上述策略匹配。
 
 ### 请求日志
 

@@ -53,7 +53,7 @@ export function sanitizeForCopilotBackend(
 
   // 3. effort - Copilot backend rejects this Anthropic 2026 field with 400
   //    ("effort: Extra inputs are not permitted"). Strip if present;
-  //    use thinking.budget_tokens to control thinking depth instead.
+  //    adaptive thinking depth is controlled by output_config.effort instead.
   if (payload.effort !== undefined) {
     consola.debug("Stripping effort field (unsupported by Copilot backend)")
     delete payload.effort
@@ -154,20 +154,20 @@ function coerceEnabledToAdaptiveIfRequired(
 }
 
 // ---------------------------------------------------------------------------
-// Maximum thinking budget injection
+// Auto thinking injection
 // ---------------------------------------------------------------------------
 
 /**
  * Pick the highest reasoning effort the model permits.
  *
  * Copilot's `/v1/messages` mirror caps `output_config.effort` to
- * the per-model `supports.reasoning_effort` whitelist. As of 2026-05:
- *   - Opus 4.8/4.7 → ["medium"]              → max we can ask is "medium"
- *   - Sonnet 4.6   → ["low","medium","high"] → "high"
+ * the per-model `supports.reasoning_effort` whitelist returned by `/models`.
+ * The highest allowed value is selected from that data instead of hard-coding
+ * model-specific caps.
  *
  * Anything outside the list returns 400 "not supported by model X;
- * supported values: [...]". `xhigh` and `max` exist in Anthropic's
- * direct API but Copilot does not surface them on any model today.
+ * supported values: [...]". If Copilot later advertises `xhigh` or `max` for
+ * a model, the whitelist-driven ranking below will pick it automatically.
  */
 const EFFORT_RANK: Record<string, number> = {
   low: 1,
@@ -196,8 +196,8 @@ export function pickHighestSupportedEffort(
 }
 
 /**
- * If the client did not specify a `thinking` field, inject the maximum
- * thinking depth the model supports — pulled from Copilot's `/models`
+ * If the client did not specify a `thinking` field, inject a
+ * model-compatible thinking setting pulled from Copilot's `/models`
  * capabilities. Mutates in place.
  *
  *   - Models with `adaptive_thinking: true` (Claude Opus 4.8/4.7,

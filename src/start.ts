@@ -447,7 +447,7 @@ export const start = defineCommand({
       type: "boolean",
       default: true,
       description:
-        "Auto-inject the model's maximum thinking budget when the client doesn't specify one. Default: true. Disable with --no-max-thinking to save tokens (recommended once Copilot switches to per-token billing).",
+        "Auto-inject a model-compatible thinking setting when the client omits thinking. Default: true. Disable with --no-max-thinking to avoid proxy auto-injection and potentially save token quota.",
     },
   },
   run({ args }) {

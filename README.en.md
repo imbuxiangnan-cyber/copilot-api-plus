@@ -118,10 +118,11 @@ npx copilot-api-plus@latest start --account-type enterprise
 
 #### Available Models
 
+> Default examples recommend `claude-opus-5`. Actual model availability and context lengths are determined by `/v1/models`.
+
 | Model | ID | Context Length |
 |-------|-----|---------------|
-| Claude Sonnet 4 | `claude-sonnet-4` | 200K |
-| Claude Sonnet 4.5 | `claude-sonnet-4.5` | 200K |
+| Claude Opus 5 | `claude-opus-5` | Determined by `/v1/models` |
 | GPT-4.1 | `gpt-4.1` | 1M |
 | o4-mini | `o4-mini` | 200K |
 | Gemini 2.5 Pro | `gemini-2.5-pro` | 1M |
@@ -292,7 +293,7 @@ Map model names requested by clients to different models sent to Copilot:
 # Configure mapping via API
 curl -X PUT http://localhost:4141/api/models/mapping \
   -H "Content-Type: application/json" \
-  -d '{"mapping": {"gpt-4": "claude-sonnet-4", "fast": "gpt-4.1-mini"}}'
+  -d '{"mapping": {"gpt-4": "claude-opus-5", "fast": "gpt-4.1-mini"}}'
 ```
 
 You can also edit mappings visually in the Web dashboard under the "Model Management" tab.
@@ -304,7 +305,7 @@ Use `*` as a key to route all unmatched model names to a single model:
 ```bash
 curl -X PUT http://localhost:4141/api/models/mapping \
   -H "Content-Type: application/json" \
-  -d '{"mapping": {"*": "claude-sonnet-4"}}'
+  -d '{"mapping": {"*": "claude-opus-5"}}'
 ```
 
 ### Concurrency Control
@@ -315,7 +316,7 @@ Limit the maximum concurrent requests per model to prevent overload:
 # Set concurrency limits
 curl -X PUT http://localhost:4141/api/models/concurrency \
   -H "Content-Type: application/json" \
-  -d '{"concurrency": {"claude-sonnet-4": 5, "default": 10}}'
+  -d '{"concurrency": {"claude-opus-5": 5, "default": 10}}'
 ```
 
 - `default` is the fallback concurrency limit for unspecified models
@@ -442,7 +443,7 @@ Create `.claude/settings.json` in your project root:
   "env": {
     "ANTHROPIC_BASE_URL": "http://localhost:4141",
     "ANTHROPIC_AUTH_TOKEN": "dummy",
-    "ANTHROPIC_MODEL": "claude-sonnet-4",
+    "ANTHROPIC_MODEL": "claude-opus-5",
     "ANTHROPIC_SMALL_FAST_MODEL": "gpt-4.1",
     "DISABLE_NON_ESSENTIAL_MODEL_CALLS": "1"
   }
@@ -472,9 +473,9 @@ Then start the copilot-api-plus server and run `claude` in that project director
         "baseURL": "http://127.0.0.1:4141/v1"
       },
       "models": {
-        "claude-sonnet-4": {
-          "name": "Claude Sonnet 4",
-          "id": "claude-sonnet-4",
+        "claude-opus-5": {
+          "name": "Claude Opus 5",
+          "id": "claude-opus-5",
           "max_tokens": 64000,
           "profile": "coder",
           "limit": { "context": 200000 }
@@ -536,7 +537,7 @@ copilot-api-plus **auto-detects** Responses-shape bodies and forwards them to Co
 2. In Cursor **Settings → Models → API Keys**:
    - **OpenAI Base URL**: `http://localhost:4141/v1`
    - **OpenAI API Key**: any non-empty string (use `dummy` if `--api-key` is not enabled)
-3. Add the Copilot model names (e.g. `gpt-5-mini`, `claude-sonnet-4`) to the model list and click **Verify**
+3. Add Copilot model names returned by `/v1/models` (e.g. `gpt-5-mini`, `claude-opus-5`) to the model list and click **Verify**
 
 ### How Cursor passthrough works
 
@@ -592,7 +593,7 @@ Each backend has its own dedicated routes:
 curl http://localhost:4141/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "claude-sonnet-4",
+    "model": "claude-opus-5",
     "messages": [{"role": "user", "content": "Hello!"}]
   }'
 
@@ -601,7 +602,7 @@ curl http://localhost:4141/v1/messages \
   -H "Content-Type: application/json" \
   -H "x-api-key: dummy" \
   -d '{
-    "model": "claude-sonnet-4",
+    "model": "claude-opus-5",
     "max_tokens": 1024,
     "messages": [{"role": "user", "content": "Hello!"}]
   }'
@@ -628,13 +629,13 @@ Once enabled, all requests must include an API key:
 curl http://localhost:4141/v1/chat/completions \
   -H "Authorization: Bearer my-secret-key" \
   -H "Content-Type: application/json" \
-  -d '{"model": "claude-sonnet-4", "messages": [{"role": "user", "content": "Hello"}]}'
+  -d '{"model": "claude-opus-5", "messages": [{"role": "user", "content": "Hello"}]}'
 
 # Anthropic format - via x-api-key header
 curl http://localhost:4141/v1/messages \
   -H "x-api-key: my-secret-key" \
   -H "Content-Type: application/json" \
-  -d '{"model": "claude-sonnet-4", "max_tokens": 1024, "messages": [{"role": "user", "content": "Hello"}]}'
+  -d '{"model": "claude-opus-5", "max_tokens": 1024, "messages": [{"role": "user", "content": "Hello"}]}'
 ```
 
 When using with Claude Code, set `ANTHROPIC_AUTH_TOKEN` to your API key.
@@ -661,7 +662,7 @@ Anthropic-format model names (e.g. `claude-opus-4-6`) may differ from Copilot's 
 | Dash → Dot | `claude-opus-4-5` → `claude-opus-4.5` |
 | Dot → Dash | `claude-opus-4.5` → `claude-opus-4-5` |
 
-For Anthropic endpoints (`/v1/messages`), `translateModelName` also handles legacy format conversion (e.g. `claude-3-5-sonnet` → `claude-sonnet-4.5`) before applying the above strategies.
+For Anthropic endpoints (`/v1/messages`), `translateModelName` also handles legacy format and alias conversion before applying the above strategies.
 
 ### Request Logging
 
@@ -827,12 +828,12 @@ curl http://localhost:4141/api/models/available
 # Set model mapping
 curl -X PUT http://localhost:4141/api/models/mapping \
   -H "Content-Type: application/json" \
-  -d '{"mapping": {"gpt-4": "claude-sonnet-4", "*": "claude-sonnet-4"}}'
+  -d '{"mapping": {"gpt-4": "claude-opus-5", "*": "claude-opus-5"}}'
 
 # Set concurrency limits
 curl -X PUT http://localhost:4141/api/models/concurrency \
   -H "Content-Type: application/json" \
-  -d '{"concurrency": {"claude-sonnet-4": 5, "default": 10}}'
+  -d '{"concurrency": {"claude-opus-5": 5, "default": 10}}'
 ```
 
 ### Runtime Statistics
