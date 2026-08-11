@@ -1423,6 +1423,9 @@
             maxThinkingOff: "已关闭",
             maxThinkingSummaryOn: "未指定 thinking 时自动注入",
             maxThinkingSummaryOff: "关闭代理自动注入",
+            thinkingEffortLabel: "Thinking Effort",
+            thinkingEffortHelp: "auto 会选择 adaptive-thinking 模型在 /models 中允许的最高 effort；显式等级会降级到不超过要求的最高可用等级。仅影响 adaptive-thinking 模型，legacy thinking 仍使用预算 token。",
+            thinkingEffortUpdateFailed: "Thinking Effort 更新失败：服务未响应或拒绝请求",
             maxThinkingUpdateFailed: "更新失败：服务未响应或拒绝请求",
             loadingBannerTitle: "正在刷新数据",
             loadingBannerBody: "如果已有旧数据，会保留当前视图，刷新完成后再更新。",
@@ -1647,6 +1650,9 @@
             maxThinkingOff: "Disabled",
             maxThinkingSummaryOn: "Auto-inject when thinking is omitted",
             maxThinkingSummaryOff: "Disable proxy auto-injection",
+            thinkingEffortLabel: "Thinking Effort",
+            thinkingEffortHelp: "auto chooses the highest /models-allowed effort for adaptive-thinking models; explicit levels downgrade to the highest available level not exceeding the request. This only affects adaptive-thinking models; legacy thinking still uses budget tokens.",
+            thinkingEffortUpdateFailed: "Thinking Effort update failed — server did not respond or rejected the request",
             maxThinkingUpdateFailed: "Update failed — server did not respond or rejected the request",
             loadingBannerTitle: "Refreshing data",
             loadingBannerBody: "If a previous snapshot exists, it stays visible until the new request finishes.",
@@ -1850,6 +1856,7 @@
         };
 
         const REFRESH_PRESETS = ["30", "60", "120", "custom"];
+        const THINKING_EFFORTS = ["auto", "low", "medium", "high", "xhigh", "max"];
 
         function readStoredValue(key, fallback = "") {
           try {
@@ -1948,6 +1955,7 @@
           detailsOpen: false,
           activeMainTab: "overview",
           maxThinking: true,
+          thinkingEffort: "auto",
           maxThinkingLoaded: false,
         };
 
@@ -2421,10 +2429,16 @@
                 const res = await fetch(apiBase + "/api/config", { headers: getApiHeaders() });
                 if (!res.ok) return;
                 const cfg = await res.json();
+                let changed = false;
                 if (typeof cfg.maxThinking === "boolean" && cfg.maxThinking !== state.maxThinking) {
                   state.maxThinking = cfg.maxThinking;
-                  renderAll();
+                  changed = true;
                 }
+                if (THINKING_EFFORTS.includes(cfg.thinkingEffort) && cfg.thinkingEffort !== state.thinkingEffort) {
+                  state.thinkingEffort = cfg.thinkingEffort;
+                  changed = true;
+                }
+                if (changed) renderAll();
               } catch {
                 // Server not reachable yet — keep optimistic default and let user toggle later.
               }
@@ -2524,6 +2538,13 @@
                     </label>
                     <span class="pill ${state.maxThinking ? "pill-success" : "pill-neutral"} auto-refresh-summary">${escapeHtml(state.maxThinking ? text("maxThinkingSummaryOn") : text("maxThinkingSummaryOff"))}</span>
                   </div>
+                  <label class="refresh-custom-field" for="thinking-effort-select">
+                    <span class="helper-text">${escapeHtml(text("thinkingEffortLabel"))}</span>
+                    <select id="thinking-effort-select" class="input-field mono">
+                      ${THINKING_EFFORTS.map((effort) => `<option value="${effort}" ${state.thinkingEffort === effort ? "selected" : ""}>${effort}</option>`).join("")}
+                    </select>
+                  </label>
+                  <p class="helper-text">${escapeHtml(text("thinkingEffortHelp"))}</p>
                 </div>
               `,
             },
@@ -2601,6 +2622,30 @@
                 state.maxThinking = previous;
                 renderAll();
                 showToast(text("maxThinkingUpdateFailed"), "error");
+              }
+            });
+          }
+
+          const thinkingEffortSelect = document.getElementById("thinking-effort-select");
+          if (thinkingEffortSelect) {
+            thinkingEffortSelect.addEventListener("change", async (event) => {
+              const desired = event.currentTarget.value;
+              if (!THINKING_EFFORTS.includes(desired)) return;
+              const previous = state.thinkingEffort;
+              state.thinkingEffort = desired;
+              renderAll();
+              try {
+                const apiBase = getApiBaseUrl();
+                const res = await fetch(apiBase + "/api/config", {
+                  method: "PUT",
+                  headers: { ...getApiHeaders(), "Content-Type": "application/json" },
+                  body: JSON.stringify({ thinkingEffort: desired }),
+                });
+                if (!res.ok) throw new Error("HTTP " + res.status);
+              } catch (err) {
+                state.thinkingEffort = previous;
+                renderAll();
+                showToast(text("thinkingEffortUpdateFailed"), "error");
               }
             });
           }

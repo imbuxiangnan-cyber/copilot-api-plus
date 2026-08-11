@@ -1,6 +1,6 @@
 import { Hono } from "hono"
 
-import { state } from "~/lib/state"
+import { state, THINKING_EFFORT_VALUES, type ThinkingEffort } from "~/lib/state"
 
 import { accountRoutes } from "./accounts"
 import { modelAdminRoutes } from "./models"
@@ -22,6 +22,7 @@ adminRoutes.get("/config", (c) => {
     selectedSmallModel: state.selectedSmallModel,
     apiKey: state.apiKeys?.[0] ?? "dummy",
     maxThinking: state.maxThinking,
+    thinkingEffort: state.thinkingEffort,
   })
 })
 
@@ -29,8 +30,10 @@ adminRoutes.get("/config", (c) => {
 // PUT /config — Update mutable runtime toggles
 //
 // Currently supports:
-//   - maxThinking: boolean — auto-inject model max thinking budget when the
+//   - maxThinking: boolean — auto-inject model-compatible thinking when the
 //     client doesn't specify a `thinking` field.
+//   - thinkingEffort: auto | low | medium | high | xhigh | max — adaptive-only
+//     effort preference.
 //
 // Other fields (selectedModel, apiKey, etc.) are intentionally read-only here;
 // they belong to startup config and shouldn't flip at runtime.
@@ -57,6 +60,21 @@ adminRoutes.put("/config", async (c) => {
     }
     state.maxThinking = patch.maxThinking
     updated.maxThinking = patch.maxThinking
+  }
+
+  if ("thinkingEffort" in patch) {
+    if (
+      !THINKING_EFFORT_VALUES.includes(patch.thinkingEffort as ThinkingEffort)
+    ) {
+      return c.json(
+        {
+          error: `thinkingEffort must be one of: ${THINKING_EFFORT_VALUES.join(", ")}`,
+        },
+        400,
+      )
+    }
+    state.thinkingEffort = patch.thinkingEffort as ThinkingEffort
+    updated.thinkingEffort = patch.thinkingEffort
   }
 
   return c.json({ ok: true, updated })

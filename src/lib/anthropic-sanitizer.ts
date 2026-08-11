@@ -16,7 +16,7 @@ import type {
 } from "~/routes/messages/anthropic-types"
 
 import { HTTPError } from "~/lib/error"
-import { state } from "~/lib/state"
+import { state, type ThinkingEffort } from "~/lib/state"
 import { findModel } from "~/lib/utils"
 
 /** Upstream message that triggers the assistant-thinking-strip retry. */
@@ -135,7 +135,7 @@ function coerceEnabledToAdaptiveIfRequired(
   delete thinking.budget_tokens_max
   thinking.type = "adaptive"
 
-  const effort = pickHighestSupportedEffort(supports.reasoning_effort)
+  const effort = pickSupportedEffort(supports.reasoning_effort)
   if (effort !== undefined) {
     const outputConfig = (payload.output_config ?? {}) as {
       effort?: string
@@ -169,7 +169,9 @@ function coerceEnabledToAdaptiveIfRequired(
  * supported values: [...]". If Copilot later advertises `xhigh` or `max` for
  * a model, the whitelist-driven ranking below will pick it automatically.
  */
-const EFFORT_RANK: Record<string, number> = {
+export type ReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max"
+
+const EFFORT_RANK: Record<ReasoningEffort, number> = {
   low: 1,
   medium: 2,
   high: 3,
@@ -177,22 +179,34 @@ const EFFORT_RANK: Record<string, number> = {
   max: 5,
 }
 
-export type ReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max"
+function getEffortRank(value: string): number | undefined {
+  if (!(value in EFFORT_RANK)) return undefined
+  return EFFORT_RANK[value as ReasoningEffort]
+}
 
 export function pickHighestSupportedEffort(
   allowed: ReadonlyArray<string> | undefined,
 ): ReasoningEffort | undefined {
+  return pickSupportedEffort(allowed, "auto")
+}
+
+export function pickSupportedEffort(
+  allowed: ReadonlyArray<string> | undefined,
+  requested: ThinkingEffort = state.thinkingEffort,
+): ReasoningEffort | undefined {
   if (!allowed || allowed.length === 0) return undefined
-  let best: string | undefined
+
+  const requestedRank =
+    requested === "auto" ? Number.POSITIVE_INFINITY : EFFORT_RANK[requested]
+  let best: ReasoningEffort | undefined
   let bestRank = -1
   for (const value of allowed) {
-    const rank = EFFORT_RANK[value] ?? -1
-    if (rank > bestRank) {
-      bestRank = rank
-      best = value
-    }
+    const rank = getEffortRank(value)
+    if (rank === undefined || rank > requestedRank || rank <= bestRank) continue
+    bestRank = rank
+    best = value as ReasoningEffort
   }
-  return best as "low" | "medium" | "high" | "xhigh" | "max" | undefined
+  return best
 }
 
 /**
@@ -227,7 +241,7 @@ export function injectMaxThinkingBudget(
 
   if (supports.adaptive_thinking === true) {
     payload.thinking = { type: "adaptive" }
-    const effort = pickHighestSupportedEffort(supports.reasoning_effort)
+    const effort = pickSupportedEffort(supports.reasoning_effort)
     if (effort !== undefined) {
       const outputConfig = (payload.output_config ?? {}) as {
         effort?: string

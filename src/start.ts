@@ -19,7 +19,7 @@ import { modelRouter } from "./lib/model-router"
 import { ensurePaths } from "./lib/paths"
 import { initProxyFromEnv } from "./lib/proxy"
 import { generateEnvScript } from "./lib/shell"
-import { state } from "./lib/state"
+import { state, THINKING_EFFORT_VALUES, type ThinkingEffort } from "./lib/state"
 import {
   setupCopilotToken,
   setupGitHubToken,
@@ -43,6 +43,7 @@ interface RunServerOptions {
   apiKeys?: Array<string>
   disableAnthropicPassthrough: boolean
   maxThinking: boolean
+  thinkingEffort: ThinkingEffort
   githubBaseUrl?: string
   githubApiBaseUrl?: string
 }
@@ -221,13 +222,26 @@ async function validateGitHubToken(token: string): Promise<void> {
  * Apply the --max-thinking CLI flag to runtime state and log when disabled.
  * Extracted to keep `runServer` under the eslint complexity ceiling.
  */
-function applyMaxThinkingOption(enabled: boolean): void {
+function applyThinkingOptions(
+  enabled: boolean,
+  thinkingEffort: ThinkingEffort,
+): void {
   state.maxThinking = enabled
+  state.thinkingEffort = thinkingEffort
   if (!enabled) {
     consola.info(
       "Max thinking auto-injection DISABLED — clients must specify `thinking` explicitly to enable extended thinking",
     )
   }
+}
+
+function parseThinkingEffort(value: string): ThinkingEffort {
+  if (THINKING_EFFORT_VALUES.includes(value as ThinkingEffort)) {
+    return value as ThinkingEffort
+  }
+  throw new Error(
+    `Invalid --thinking-effort "${value}". Expected one of: ${THINKING_EFFORT_VALUES.join(", ")}`,
+  )
 }
 
 /**
@@ -283,7 +297,7 @@ export async function runServer(options: RunServerOptions): Promise<void> {
     )
   }
 
-  applyMaxThinkingOption(options.maxThinking)
+  applyThinkingOptions(options.maxThinking, options.thinkingEffort)
 
   if (state.apiKeys && state.apiKeys.length > 0) {
     consola.info(
@@ -449,12 +463,20 @@ export const start = defineCommand({
       description:
         "Auto-inject a model-compatible thinking setting when the client omits thinking. Default: true. Disable with --no-max-thinking to avoid proxy auto-injection and potentially save token quota.",
     },
+    "thinking-effort": {
+      type: "string",
+      default: "auto",
+      description:
+        "Adaptive-thinking effort preference: auto, low, medium, high, xhigh, or max. Explicit values downgrade to the nearest model-supported level. Legacy budget-token thinking is unaffected.",
+    },
   },
   run({ args }) {
     const rateLimitRaw = args["rate-limit"]
     const rateLimit =
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       rateLimitRaw === undefined ? undefined : Number.parseInt(rateLimitRaw, 10)
+
+    const thinkingEffort = parseThinkingEffort(args["thinking-effort"])
 
     // Handle multiple API keys - citty may pass a string or array
     const apiKeyRaw = args["api-key"]
@@ -477,6 +499,7 @@ export const start = defineCommand({
       apiKeys,
       disableAnthropicPassthrough: args["disable-anthropic-passthrough"],
       maxThinking: args["max-thinking"],
+      thinkingEffort,
       githubBaseUrl: args["github-base-url"],
       githubApiBaseUrl: args["github-api-base-url"],
     })

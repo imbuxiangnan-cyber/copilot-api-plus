@@ -1,5 +1,16 @@
 import type { ModelsResponse } from "~/services/copilot/get-models"
 
+export const THINKING_EFFORT_VALUES = [
+  "auto",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+] as const
+
+export type ThinkingEffort = (typeof THINKING_EFFORT_VALUES)[number]
+
 export interface State {
   githubToken?: string
   copilotToken?: string
@@ -45,6 +56,16 @@ export interface State {
    */
   maxThinking: boolean
 
+  /**
+   * Effort preference for adaptive-thinking models. "auto" uses the highest
+   * model-whitelisted `output_config.effort`; explicit values are downgraded
+   * to the highest allowed level not exceeding the requested effort.
+   * Legacy budget-token thinking models are not affected.
+   *
+   * Default: "auto".
+   */
+  thinkingEffort: ThinkingEffort
+
   // GitHub Enterprise base URL overrides
   githubBaseUrl?: string
   githubApiBaseUrl?: string
@@ -62,4 +83,5 @@ export const state: State = {
   multiAccountEnabled: false,
   disableAnthropicPassthrough: false,
   maxThinking: true,
+  thinkingEffort: "auto",
 }

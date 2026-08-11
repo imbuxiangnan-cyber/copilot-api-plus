@@ -84,6 +84,11 @@ describe("sanitizeForCopilotBackend", () => {
 })
 
 describe("normalizeAdaptiveThinkingForCopilot", () => {
+  beforeEach(() => {
+    state.models = undefined
+    state.thinkingEffort = "auto"
+  })
+
   test("strips budget_tokens_max from adaptive thinking", () => {
     const payload = basePayload() as AnthropicMessagesPayload & {
       thinking?: Record<string, unknown>
@@ -117,7 +122,23 @@ describe("normalizeAdaptiveThinkingForCopilot", () => {
     expect(payload.output_config?.effort).toBe("medium")
   })
 
+  test("coerce honors explicit thinkingEffort by downgrading to model whitelist", () => {
+    state.thinkingEffort = "high"
+    setModelCapability("claude-opus-4.7", {
+      adaptive_thinking: true,
+      reasoning_effort: ["medium"],
+    })
+    const payload = basePayload({
+      model: "claude-opus-4.7",
+      thinking: { type: "enabled", budget_tokens: 32000 },
+    })
+    normalizeAdaptiveThinkingForCopilot(payload)
+    expect(payload.thinking).toEqual({ type: "adaptive" })
+    expect(payload.output_config?.effort).toBe("medium")
+  })
+
   test("coerce preserves explicit client output_config.effort", () => {
+    state.thinkingEffort = "high"
     setModelCapability("claude-opus-4.7", {
       adaptive_thinking: true,
       reasoning_effort: ["medium"],
@@ -358,6 +379,7 @@ describe("injectMaxThinkingBudget", () => {
   beforeEach(() => {
     state.models = undefined
     state.maxThinking = true
+    state.thinkingEffort = "auto"
   })
 
   test("injects adaptive thinking + highest allowed effort for adaptive-capable model", () => {
@@ -372,7 +394,8 @@ describe("injectMaxThinkingBudget", () => {
     expect(payload.output_config?.effort).toBe("high")
   })
 
-  test("caps adaptive effort at model's whitelist (Opus 4.8 = medium only)", () => {
+  test("explicit high downgrades to medium when model only allows medium", () => {
+    state.thinkingEffort = "high"
     setModelCapability("claude-opus-4.8", {
       max_thinking_budget: 32000,
       adaptive_thinking: true,
@@ -382,6 +405,32 @@ describe("injectMaxThinkingBudget", () => {
     injectMaxThinkingBudget(payload)
     expect(payload.thinking).toEqual({ type: "adaptive" })
     expect(payload.output_config?.effort).toBe("medium")
+  })
+
+  test("explicit xhigh downgrades to high when model allows low through high", () => {
+    state.thinkingEffort = "xhigh"
+    setModelCapability("claude-sonnet-4.6", {
+      max_thinking_budget: 32000,
+      adaptive_thinking: true,
+      reasoning_effort: ["low", "medium", "high"],
+    })
+    const payload = basePayload({ model: "claude-sonnet-4.6" })
+    injectMaxThinkingBudget(payload)
+    expect(payload.thinking).toEqual({ type: "adaptive" })
+    expect(payload.output_config?.effort).toBe("high")
+  })
+
+  test("omits effort when explicit effort is below model whitelist", () => {
+    state.thinkingEffort = "low"
+    setModelCapability("claude-opus-4.8", {
+      max_thinking_budget: 32000,
+      adaptive_thinking: true,
+      reasoning_effort: ["medium"],
+    })
+    const payload = basePayload({ model: "claude-opus-4.8" })
+    injectMaxThinkingBudget(payload)
+    expect(payload.thinking).toEqual({ type: "adaptive" })
+    expect(payload.output_config).toBeUndefined()
   })
 
   test("omits effort when model has no reasoning_effort whitelist", () => {
@@ -425,7 +474,8 @@ describe("injectMaxThinkingBudget", () => {
     expect(payload.output_config?.effort).toBe("low")
   })
 
-  test("injects enabled thinking with max budget for non-adaptive model", () => {
+  test("legacy non-adaptive thinking stays enabled + budget tokens and ignores thinkingEffort", () => {
+    state.thinkingEffort = "max"
     setModelCapability("claude-opus-4.5", {
       max_thinking_budget: 32000,
       adaptive_thinking: false,
@@ -475,8 +525,9 @@ describe("injectMaxThinkingBudget", () => {
     expect(payload.thinking).toBeUndefined()
   })
 
-  test("does nothing when state.maxThinking is false (kill switch)", () => {
+  test("does nothing when state.maxThinking is false even with thinkingEffort", () => {
     state.maxThinking = false
+    state.thinkingEffort = "max"
     setModelCapability("claude-opus-4.7", {
       max_thinking_budget: 32000,
       adaptive_thinking: true,
