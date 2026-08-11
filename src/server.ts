@@ -3,6 +3,7 @@ import { cors } from "hono/cors"
 
 import { apiKeyAuthMiddleware } from "./lib/api-key-auth"
 import { modelLogger } from "./lib/model-logger"
+import { requestInspector } from "./lib/request-inspector"
 import { adminRoutes } from "./routes/admin/route"
 import { completionRoutes } from "./routes/chat-completions/route"
 import { embeddingRoutes } from "./routes/embeddings/route"
@@ -17,6 +18,7 @@ export const server = new Hono()
 server.use(modelLogger())
 server.use(cors())
 server.use(apiKeyAuthMiddleware)
+server.use(requestInspector())
 
 server.get("/", (c) => c.text("Server running"))
 

@@ -4,6 +4,7 @@ import { state, THINKING_EFFORT_VALUES, type ThinkingEffort } from "~/lib/state"
 
 import { accountRoutes } from "./accounts"
 import { modelAdminRoutes } from "./models"
+import { requestAdminRoutes } from "./requests"
 import { statsRoute } from "./stats"
 
 export const adminRoutes = new Hono()
@@ -11,6 +12,7 @@ export const adminRoutes = new Hono()
 adminRoutes.route("/accounts", accountRoutes)
 adminRoutes.route("/models", modelAdminRoutes)
 adminRoutes.route("/stats", statsRoute)
+adminRoutes.route("/requests", requestAdminRoutes)
 
 // ---------------------------------------------------------------------------
 // GET /config — Export-ready config + runtime toggles

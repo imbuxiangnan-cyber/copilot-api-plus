@@ -1050,6 +1050,10 @@
             <span class="inline-icon h-4 w-4" aria-hidden="true" id="tab-icon-statistics"></span>
             <span id="tab-label-statistics"></span>
           </button>
+          <button type="button" class="main-tab-btn" data-main-tab="requests">
+            <span class="inline-icon h-4 w-4" aria-hidden="true" id="tab-icon-requests"></span>
+            <span id="tab-label-requests"></span>
+          </button>
         </nav>
 
         <!-- ══════ Tab 1: Overview (existing content) ══════ -->
@@ -1196,6 +1200,39 @@
               <div id="stats-accounts-content"></div>
             </section>
           </div>
+        </section>
+
+        <!-- ══════ Tab 5: Request Inspector ══════ -->
+        <section id="tab-requests" class="main-tab-section space-y-5">
+          <section class="dashboard-card-strong p-6 sm:p-7">
+            <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div class="max-w-2xl space-y-2">
+                <div class="section-title text-xl text-[var(--text)]">
+                  <span class="section-icon" id="requests-section-icon"></span>
+                  <span id="requests-section-title"></span>
+                </div>
+                <p class="text-sm leading-7 text-[var(--muted)]" id="requests-section-desc"></p>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <button type="button" id="refresh-requests-btn" class="btn btn-secondary btn-sm">
+                  <span class="inline-icon h-4 w-4" aria-hidden="true" id="refresh-requests-icon"></span>
+                  <span id="refresh-requests-text"></span>
+                </button>
+                <button type="button" id="clear-requests-btn" class="btn btn-danger btn-sm">
+                  <span class="inline-icon h-4 w-4" aria-hidden="true" id="clear-requests-icon"></span>
+                  <span id="clear-requests-text"></span>
+                </button>
+              </div>
+            </div>
+          </section>
+          <section class="dashboard-card p-5 sm:p-6">
+            <div class="overflow-x-auto">
+              <table class="admin-table" id="requests-table">
+                <thead><tr id="requests-thead"></tr></thead>
+                <tbody id="requests-body"></tbody>
+              </table>
+            </div>
+          </section>
         </section>
 
         <!-- ── Add Account Modal ── -->
@@ -1490,6 +1527,7 @@
             tabAccounts: "账号管理",
             tabModels: "模型管理",
             tabStatistics: "运行统计",
+            tabRequests: "请求检查",
             // ── Account Management ──
             accountsSectionTitle: "账号列表",
             accountsTotal: "账号总数",
@@ -1591,6 +1629,19 @@
             statsAutoRefresh: "每 5 秒自动刷新",
             statsNoData: "暂无统计数据",
             statsNoDataDesc: "无法获取统计信息，请确认服务已启动。",
+            requestsTitle: "Request Inspector",
+            requestsDesc: "查看最近 100 条 LLM API 请求，敏感 Header 会自动脱敏，便于本地排查模型、状态与请求体预览。",
+            requestsRefresh: "刷新",
+            requestsClear: "清空",
+            requestsTime: "时间",
+            requestsMethod: "方法",
+            requestsPath: "路径",
+            requestsStatus: "状态",
+            requestsDuration: "耗时",
+            requestsModel: "模型",
+            requestsBodyPreview: "请求体预览",
+            requestsNoData: "暂无请求记录",
+            requestsNoDataDesc: "向聊天、Messages、Responses 或 Embeddings 接口发起请求后会显示在这里。",
             // ── API errors ──
             apiError: "API 请求失败",
             apiSuccess: "操作成功",
@@ -1717,6 +1768,7 @@
             tabAccounts: "Accounts",
             tabModels: "Models",
             tabStatistics: "Statistics",
+            tabRequests: "Requests",
             // ── Account Management ──
             accountsSectionTitle: "Account List",
             accountsTotal: "Total Accounts",
@@ -1818,6 +1870,19 @@
             statsAutoRefresh: "Auto-refreshes every 5 seconds",
             statsNoData: "No statistics data",
             statsNoDataDesc: "Unable to fetch statistics. Make sure the service is running.",
+            requestsTitle: "Request Inspector",
+            requestsDesc: "Inspect the latest 100 LLM API requests. Sensitive headers are redacted for safer local debugging of models, status codes, and body previews.",
+            requestsRefresh: "Refresh",
+            requestsClear: "Clear",
+            requestsTime: "Time",
+            requestsMethod: "Method",
+            requestsPath: "Path",
+            requestsStatus: "Status",
+            requestsDuration: "Duration",
+            requestsModel: "Model",
+            requestsBodyPreview: "Body preview",
+            requestsNoData: "No request records",
+            requestsNoDataDesc: "Send a request to Chat, Messages, Responses, or Embeddings and it will appear here.",
             // ── API errors ──
             apiError: "API request failed",
             apiSuccess: "Operation successful",
@@ -2326,8 +2391,8 @@
           refs.endpointCurrent.textContent = text("currentTargetLabel", { endpoint: state.endpoint });
 
           // ── Tab labels and icons ──
-          const tabIconMap = { overview: "chart", accounts: "users", models: "cpu", statistics: "activity" };
-          const tabLabelMap = { overview: "tabOverview", accounts: "tabAccounts", models: "tabModels", statistics: "tabStatistics" };
+          const tabIconMap = { overview: "chart", accounts: "users", models: "cpu", statistics: "activity", requests: "terminal" };
+          const tabLabelMap = { overview: "tabOverview", accounts: "tabAccounts", models: "tabModels", statistics: "tabStatistics", requests: "tabRequests" };
           for (const [key, iconName] of Object.entries(tabIconMap)) {
             const iconEl = document.getElementById(`tab-icon-${key}`);
             const labelEl = document.getElementById(`tab-label-${key}`);
@@ -2377,6 +2442,24 @@
           if (sAcctIcon) sAcctIcon.innerHTML = ICONS.users;
           const sAcctTitle = document.getElementById("stats-acct-title");
           if (sAcctTitle) sAcctTitle.textContent = text("statsAccountDist");
+
+          // ── Request Inspector tab static texts ──
+          const requestsIcon = document.getElementById("requests-section-icon");
+          if (requestsIcon) requestsIcon.innerHTML = ICONS.terminal;
+          const requestsTitle = document.getElementById("requests-section-title");
+          if (requestsTitle) requestsTitle.textContent = text("requestsTitle");
+          const requestsDesc = document.getElementById("requests-section-desc");
+          if (requestsDesc) requestsDesc.textContent = text("requestsDesc");
+          const refreshRequestsIcon = document.getElementById("refresh-requests-icon");
+          if (refreshRequestsIcon) refreshRequestsIcon.innerHTML = ICONS.refresh;
+          const refreshRequestsText = document.getElementById("refresh-requests-text");
+          if (refreshRequestsText) refreshRequestsText.textContent = text("requestsRefresh");
+          const clearRequestsIcon = document.getElementById("clear-requests-icon");
+          if (clearRequestsIcon) clearRequestsIcon.innerHTML = ICONS.trash;
+          const clearRequestsText = document.getElementById("clear-requests-text");
+          if (clearRequestsText) clearRequestsText.textContent = text("requestsClear");
+          const requestsThead = document.getElementById("requests-thead");
+          if (requestsThead) requestsThead.innerHTML = `<th>${escapeHtml(text("requestsTime"))}</th><th>${escapeHtml(text("requestsMethod"))}</th><th>${escapeHtml(text("requestsPath"))}</th><th>${escapeHtml(text("requestsStatus"))}</th><th>${escapeHtml(text("requestsDuration"))}</th><th>${escapeHtml(text("requestsModel"))}</th>`;
 
           // ── Modal static texts ──
           const modalTitle = document.getElementById("modal-title");
@@ -3107,6 +3190,7 @@
           if (tabKey === "accounts") loadAccounts();
           if (tabKey === "models") { loadAvailableModels(); loadModelMapping(); loadModelConcurrency(); }
           if (tabKey === "statistics") { loadStats(); startStatsAutoRefresh(); }
+          if (tabKey === "requests") loadRequests();
           if (tabKey !== "statistics") stopStatsAutoRefresh();
         }
 
@@ -3917,6 +4001,83 @@
         }
 
         // ═══════════════════════════════════════
+        //  Request Inspector
+        // ═══════════════════════════════════════
+        let requestsData = [];
+
+        async function loadRequests() {
+          const body = document.getElementById("requests-body");
+          if (!body) return;
+          body.innerHTML = `<tr><td colspan="6" class="text-center py-6"><span class="loading-spinner"></span></td></tr>`;
+          try {
+            const data = await adminFetch("/api/requests");
+            requestsData = Array.isArray(data?.requests) ? data.requests : [];
+          } catch (err) {
+            requestsData = [];
+            body.innerHTML = `<tr><td colspan="6" class="text-center py-6 text-sm text-[var(--muted)]">${escapeHtml(text("apiError") + ": " + err.message)}</td></tr>`;
+            return;
+          }
+          renderRequestsTable();
+        }
+
+        function renderRequestsTable() {
+          const body = document.getElementById("requests-body");
+          if (!body) return;
+          if (requestsData.length === 0) {
+            body.innerHTML = `
+              <tr>
+                <td colspan="6" class="text-center py-8">
+                  <div class="space-y-2">
+                    <div class="empty-illustration mx-auto">${ICONS.terminal}</div>
+                    <p class="font-bold text-[var(--text)]">${escapeHtml(text("requestsNoData"))}</p>
+                    <p class="text-sm text-[var(--muted)]">${escapeHtml(text("requestsNoDataDesc"))}</p>
+                  </div>
+                </td>
+              </tr>
+            `;
+            return;
+          }
+          body.innerHTML = requestsData.map((req) => {
+            const status = Number(req.status || 0);
+            const statusClass = status >= 500 ? "pill-danger" : status >= 400 ? "pill-warning" : "pill-success";
+            const path = `${req.path || ""}${req.query || ""}`;
+            const bodyPreview = req.bodyPreview || text("jsonEmpty");
+            return `
+              <tr>
+                <td class="mono text-xs whitespace-nowrap">${escapeHtml(formatDateTime(req.timestamp))}</td>
+                <td><span class="pill pill-neutral mono">${escapeHtml(req.method || text("noValue"))}</span></td>
+                <td class="mono text-xs break-all">${escapeHtml(path || text("noValue"))}</td>
+                <td><span class="pill ${statusClass} mono">${escapeHtml(String(status || text("noValue")))}</span></td>
+                <td class="mono whitespace-nowrap">${escapeHtml(String(req.durationMs ?? text("noValue")))}ms</td>
+                <td class="mono text-xs break-all">${escapeHtml(req.model || text("noValue"))}</td>
+              </tr>
+              <tr>
+                <td colspan="6">
+                  <details class="details-panel">
+                    <summary class="flex items-center justify-between gap-3">
+                      <span class="text-sm font-semibold text-[var(--muted)]">${escapeHtml(text("requestsBodyPreview"))}</span>
+                      <span class="pill pill-neutral">${icon("chevron", "details-chevron h-4 w-4")}${escapeHtml(formatNumber(req.requestBytes || 0))} bytes</span>
+                    </summary>
+                    <div class="code-panel"><pre>${escapeHtml(bodyPreview)}</pre></div>
+                  </details>
+                </td>
+              </tr>
+            `;
+          }).join("");
+        }
+
+        async function clearRequests() {
+          try {
+            await adminFetch("/api/requests", { method: "DELETE" });
+            requestsData = [];
+            renderRequestsTable();
+            showToast(text("apiSuccess"));
+          } catch (err) {
+            showToast(text("apiError") + ": " + err.message, "error");
+          }
+        }
+
+        // ═══════════════════════════════════════
         //  Statistics
         // ═══════════════════════════════════════
         let statsRefreshTimer = null;
@@ -4092,7 +4253,7 @@
           });
 
           // ── Restore tab from URL hash on load / back-forward ──
-          const validTabs = ["overview", "accounts", "models", "statistics"];
+          const validTabs = ["overview", "accounts", "models", "statistics", "requests"];
           const hashTab = location.hash.replace("#", "");
           if (validTabs.includes(hashTab)) switchMainTab(hashTab);
           window.addEventListener("hashchange", () => {
@@ -4125,6 +4286,12 @@
           if (saveMappingBtn) saveMappingBtn.addEventListener("click", saveModelMapping);
           const saveConcurrencyBtn = document.getElementById("save-concurrency-btn");
           if (saveConcurrencyBtn) saveConcurrencyBtn.addEventListener("click", saveModelConcurrency);
+
+          // ── Request inspector actions ──
+          const refreshRequestsBtn = document.getElementById("refresh-requests-btn");
+          if (refreshRequestsBtn) refreshRequestsBtn.addEventListener("click", loadRequests);
+          const clearRequestsBtn = document.getElementById("clear-requests-btn");
+          if (clearRequestsBtn) clearRequestsBtn.addEventListener("click", clearRequests);
 
           // ── Keyboard: Escape closes modal (only if not actively polling) ──
           document.addEventListener("keydown", (e) => {
