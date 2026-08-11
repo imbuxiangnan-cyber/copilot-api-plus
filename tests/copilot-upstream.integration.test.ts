@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 
 import type { Model } from "~/services/copilot/get-models"
 
+import { clearRequests } from "~/lib/request-inspector"
 import { clearRouteCache } from "~/lib/route-resolver"
 import { state } from "~/lib/state"
 import { server } from "~/server"
@@ -99,11 +100,13 @@ beforeEach(() => {
   state.manualApprove = false
   state.rateLimitSeconds = undefined
   state.lastRequestTimestamp = undefined
+  clearRequests()
 })
 
 afterEach(() => {
   globalThis.fetch = originalFetch
   clearRouteCache()
+  clearRequests()
   state.models = undefined
 })
 
@@ -203,6 +206,28 @@ describe("mock Copilot upstream integration", () => {
     expect(res.status).toBe(200)
     expect(body.model).toBe("claude-opus-4.8")
     expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    const inspectorPayload = (await (
+      await server.request("http://test/api/requests")
+    ).json()) as {
+      requests: Array<{ trace: Array<{ action: string; detail?: string }> }>
+    }
+    const trace = inspectorPayload.requests[0].trace
+    const traceActions = trace.map((item) => item.action)
+    expect(traceActions).toContain("strip_context_management")
+    expect(traceActions).toContain("strip_effort")
+    expect(traceActions).toContain("strip_temperature")
+    expect(traceActions).toContain("strip_top_p")
+    expect(traceActions).toContain("strip_top_k")
+    expect(traceActions).toContain("flatten_output_config_format_schema")
+    expect(traceActions).toContain("strip_output_config_format_json_schema")
+    expect(traceActions).toContain("strip_output_config_format_name")
+    expect(traceActions).toContain("strip_output_config_format_strict")
+    expect(traceActions).toContain("inject_adaptive_thinking")
+    expect(trace).toContainEqual({
+      action: "set_output_config_effort",
+      detail: "medium",
+    })
   })
 
   test("legacy non-thinking native request keeps sampling parameters", async () => {

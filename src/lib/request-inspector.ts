@@ -1,5 +1,7 @@
 import type { Context, MiddlewareHandler, Next } from "hono"
 
+import { AsyncLocalStorage } from "node:async_hooks"
+
 const MAX_REQUESTS = 100
 const BODY_PREVIEW_LIMIT = 8 * 1024
 const REDACTED = "[redacted]"
@@ -22,6 +24,11 @@ const SENSITIVE_HEADER_NAMES = new Set([
   "set-cookie",
 ])
 
+export type RequestTraceAction = {
+  action: string
+  detail?: string
+}
+
 export type InspectedRequest = {
   id: string
   timestamp: string
@@ -36,6 +43,7 @@ export type InspectedRequest = {
   requestBytes: number
   bodyPreview: string
   headers: Record<string, string>
+  trace: Array<RequestTraceAction>
 }
 
 type RequestBodySummary = {
@@ -45,6 +53,11 @@ type RequestBodySummary = {
   requestBytes: number
 }
 
+type TraceContext = {
+  actions: Array<RequestTraceAction>
+}
+
+const traceStorage = new AsyncLocalStorage<TraceContext>()
 const requests: Array<InspectedRequest> = []
 let nextRequestId = 1
 
@@ -126,6 +139,12 @@ export function clearRequests(): void {
   requests.length = 0
 }
 
+export function addRequestTrace(action: string, detail?: string): void {
+  const context = traceStorage.getStore()
+  if (!context) return
+  context.actions.push(detail === undefined ? { action } : { action, detail })
+}
+
 export function requestInspector(): MiddlewareHandler {
   return async (c: Context, next: Next) => {
     if (!isInspectedPath(c.req.path)) {
@@ -142,7 +161,8 @@ export function requestInspector(): MiddlewareHandler {
     const headers = redactHeaders(c.req.raw.headers)
     const body = await readRequestBody(c)
 
-    await next()
+    const traceContext: TraceContext = { actions: [] }
+    await traceStorage.run(traceContext, next)
 
     addRequest({
       id: String(nextRequestId++),
@@ -158,6 +178,7 @@ export function requestInspector(): MiddlewareHandler {
       requestBytes: body.requestBytes,
       bodyPreview: body.bodyPreview,
       headers,
+      trace: traceContext.actions,
     })
   }
 }

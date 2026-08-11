@@ -16,6 +16,7 @@ import type {
 } from "~/routes/messages/anthropic-types"
 
 import { HTTPError } from "~/lib/error"
+import { addRequestTrace } from "~/lib/request-inspector"
 import { state, type ThinkingEffort } from "~/lib/state"
 import { findModel } from "~/lib/utils"
 
@@ -45,6 +46,7 @@ export function sanitizeForCopilotBackend(
     consola.debug(
       "Stripping context_management (unsupported by Copilot backend)",
     )
+    addRequestTrace("strip_context_management")
     delete extended.context_management
   }
 
@@ -56,6 +58,7 @@ export function sanitizeForCopilotBackend(
   //    adaptive thinking depth is controlled by output_config.effort instead.
   if (payload.effort !== undefined) {
     consola.debug("Stripping effort field (unsupported by Copilot backend)")
+    addRequestTrace("strip_effort")
     delete payload.effort
   }
 
@@ -77,18 +80,21 @@ function sanitizeSamplingParameters(payload: AnthropicMessagesPayload): void {
     consola.debug(
       "Stripping temperature (unsupported for this Anthropic Messages request)",
     )
+    addRequestTrace("strip_temperature")
     delete payload.temperature
   }
   if (payload.top_p !== undefined) {
     consola.debug(
       "Stripping top_p (unsupported for this Anthropic Messages request)",
     )
+    addRequestTrace("strip_top_p")
     delete payload.top_p
   }
   if (payload.top_k !== undefined) {
     consola.debug(
       "Stripping top_k (unsupported for this Anthropic Messages request)",
     )
+    addRequestTrace("strip_top_k")
     delete payload.top_k
   }
 }
@@ -127,19 +133,23 @@ function sanitizeOutputConfigFormat(format: unknown): void {
   const hasNested = isRecord(nested?.schema)
 
   if (!hasFlat && hasNested) {
+    addRequestTrace("flatten_output_config_format_schema")
     format.schema = nested.schema
   }
 
   if ("json_schema" in format) {
     consola.debug("Flattening output_config.format.json_schema → format.schema")
+    addRequestTrace("strip_output_config_format_json_schema")
     delete format.json_schema
   }
   if ("name" in format) {
     consola.debug("Stripping output_config.format.name (Copilot reject)")
+    addRequestTrace("strip_output_config_format_name")
     delete format.name
   }
   if ("strict" in format) {
     consola.debug("Stripping output_config.format.strict (Copilot reject)")
+    addRequestTrace("strip_output_config_format_strict")
     delete format.strict
   }
 }
@@ -178,6 +188,7 @@ export function normalizeAdaptiveThinkingForCopilot(
     consola.debug(
       "Stripping budget_tokens_max from adaptive thinking (Copilot reject)",
     )
+    addRequestTrace("strip_budget_tokens_max")
     delete thinking.budget_tokens_max
   }
 }
@@ -190,9 +201,14 @@ function coerceEnabledToAdaptiveIfRequired(
   const supports = modelInfo?.capabilities.supports
   if (!supports || supports.adaptive_thinking !== true) return
 
+  const strippedBudgetTokens = "budget_tokens" in thinking
+  const strippedBudgetTokensMax = "budget_tokens_max" in thinking
   delete thinking.budget_tokens
   delete thinking.budget_tokens_max
   thinking.type = "adaptive"
+  addRequestTrace("coerce_enabled_thinking_to_adaptive")
+  if (strippedBudgetTokens) addRequestTrace("strip_budget_tokens")
+  if (strippedBudgetTokensMax) addRequestTrace("strip_budget_tokens_max")
 
   const effort = pickSupportedEffort(supports.reasoning_effort)
   if (effort !== undefined) {
@@ -202,6 +218,7 @@ function coerceEnabledToAdaptiveIfRequired(
     }
     if (outputConfig.effort === undefined) {
       outputConfig.effort = effort
+      addRequestTrace("set_output_config_effort", effort)
       payload.output_config =
         outputConfig as AnthropicMessagesPayload["output_config"]
     }
@@ -300,6 +317,7 @@ export function injectMaxThinkingBudget(
 
   if (supports.adaptive_thinking === true) {
     payload.thinking = { type: "adaptive" }
+    addRequestTrace("inject_adaptive_thinking")
     const effort = pickSupportedEffort(supports.reasoning_effort)
     if (effort !== undefined) {
       const outputConfig = (payload.output_config ?? {}) as {
@@ -308,6 +326,7 @@ export function injectMaxThinkingBudget(
       }
       if (outputConfig.effort === undefined) {
         outputConfig.effort = effort
+        addRequestTrace("set_output_config_effort", effort)
         payload.output_config =
           outputConfig as AnthropicMessagesPayload["output_config"]
       }
@@ -322,6 +341,7 @@ export function injectMaxThinkingBudget(
   if (!maxBudget || maxBudget <= 0) return
 
   payload.thinking = { type: "enabled", budget_tokens: maxBudget }
+  addRequestTrace("inject_enabled_thinking", String(maxBudget))
   consola.debug(
     `Injected enabled thinking budget=${maxBudget} for ${payload.model} (no client preference)`,
   )
@@ -377,6 +397,14 @@ export function stripAssistantThinkingBlocks(
       strippedBlocks: 0,
       droppedAssistantMessages: 0,
     }
+  }
+
+  addRequestTrace("strip_assistant_thinking_blocks", String(strippedBlocks))
+  if (droppedAssistantMessages > 0) {
+    addRequestTrace(
+      "drop_empty_assistant_messages",
+      String(droppedAssistantMessages),
+    )
   }
 
   return {

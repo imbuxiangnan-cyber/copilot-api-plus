@@ -1640,6 +1640,8 @@
             requestsDuration: "耗时",
             requestsModel: "模型",
             requestsBodyPreview: "请求体预览",
+            requestsTrace: "处理 trace",
+            requestsNoTrace: "未记录处理动作",
             requestsNoData: "暂无请求记录",
             requestsNoDataDesc: "向聊天、Messages、Responses 或 Embeddings 接口发起请求后会显示在这里。",
             // ── API errors ──
@@ -1881,6 +1883,8 @@
             requestsDuration: "Duration",
             requestsModel: "Model",
             requestsBodyPreview: "Body preview",
+            requestsTrace: "Processing trace",
+            requestsNoTrace: "No processing actions recorded",
             requestsNoData: "No request records",
             requestsNoDataDesc: "Send a request to Chat, Messages, Responses, or Embeddings and it will appear here.",
             // ── API errors ──
@@ -4020,6 +4024,17 @@
           renderRequestsTable();
         }
 
+        function renderRequestTrace(trace) {
+          if (!Array.isArray(trace) || trace.length === 0) {
+            return `<p class="text-sm text-[var(--muted)]">${escapeHtml(text("requestsNoTrace"))}</p>`;
+          }
+          return `<div class="flex flex-wrap gap-2">${trace.map((item) => {
+            const action = item?.action || text("noValue");
+            const detail = item?.detail ? `: ${item.detail}` : "";
+            return `<span class="pill pill-neutral mono">${escapeHtml(action + detail)}</span>`;
+          }).join("")}</div>`;
+        }
+
         function renderRequestsTable() {
           const body = document.getElementById("requests-body");
           if (!body) return;
@@ -4042,6 +4057,7 @@
             const statusClass = status >= 500 ? "pill-danger" : status >= 400 ? "pill-warning" : "pill-success";
             const path = `${req.path || ""}${req.query || ""}`;
             const bodyPreview = req.bodyPreview || text("jsonEmpty");
+            const trace = renderRequestTrace(req.trace);
             return `
               <tr>
                 <td class="mono text-xs whitespace-nowrap">${escapeHtml(formatDateTime(req.timestamp))}</td>
@@ -4058,7 +4074,13 @@
                       <span class="text-sm font-semibold text-[var(--muted)]">${escapeHtml(text("requestsBodyPreview"))}</span>
                       <span class="pill pill-neutral">${icon("chevron", "details-chevron h-4 w-4")}${escapeHtml(formatNumber(req.requestBytes || 0))} bytes</span>
                     </summary>
-                    <div class="code-panel"><pre>${escapeHtml(bodyPreview)}</pre></div>
+                    <div class="space-y-3">
+                      <div>
+                        <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">${escapeHtml(text("requestsTrace"))}</p>
+                        ${trace}
+                      </div>
+                      <div class="code-panel"><pre>${escapeHtml(bodyPreview)}</pre></div>
+                    </div>
                   </details>
                 </td>
               </tr>
