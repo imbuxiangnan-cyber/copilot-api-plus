@@ -21,12 +21,19 @@ describe("anthropic-web-tools detection", () => {
         name: "web_search",
       }),
     ).toBe(true)
+    expect(
+      isAnthropicWebSearchTool({
+        type: "web_search_20260209",
+        name: "web_search",
+      }),
+    ).toBe(true)
     expect(isAnthropicWebSearchTool({ name: "web_search" })).toBe(true)
     expect(isAnthropicWebSearchTool({ name: "my_tool" })).toBe(false)
   })
 
   test("detects web_fetch server tool", () => {
     expect(isAnthropicWebFetchTool({ type: "web_fetch_20250910" })).toBe(true)
+    expect(isAnthropicWebFetchTool({ type: "web_fetch_20260209" })).toBe(true)
     expect(isAnthropicWebFetchTool({ name: "web_fetch" })).toBe(true)
     expect(isAnthropicWebFetchTool({ type: "custom" })).toBe(false)
   })
@@ -37,9 +44,9 @@ describe("anthropic-web-tools detection", () => {
       messages: [],
       max_tokens: 1,
       tools: [
-        { type: "web_search_20250305", name: "web_search" },
+        { type: "web_search_20260209", name: "web_search" },
         { name: "custom", input_schema: {} },
-        { type: "web_fetch_20250910" },
+        { type: "web_fetch_20260209" },
       ],
     } as never
     expect(hasProxyWebTools(payload)).toBe(true)

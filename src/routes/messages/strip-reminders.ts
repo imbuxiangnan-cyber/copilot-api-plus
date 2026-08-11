@@ -78,11 +78,17 @@ export function stripBlocks<B extends AnyContentBlock>(
   content: ReadonlyArray<B>,
 ): ReadonlyArray<B> {
   // Fast path: no block contains a reminder → return as-is.
-  const hasReminder = content.some(
-    (b) =>
-      (b.type === "text" && b.text.includes(REMINDER_OPEN_TAG))
-      || (b.type === "tool_result" && b.content.includes(REMINDER_OPEN_TAG)),
-  )
+  const hasReminder = content.some((b) => {
+    if (b.type === "text") return b.text.includes(REMINDER_OPEN_TAG)
+    if (b.type !== "tool_result") return false
+    if (typeof b.content === "string") {
+      return b.content.includes(REMINDER_OPEN_TAG)
+    }
+    return b.content.some(
+      (block) =>
+        block.type === "text" && block.text.includes(REMINDER_OPEN_TAG),
+    )
+  })
   if (!hasReminder) return content
 
   const out: Array<B> = []
@@ -90,16 +96,31 @@ export function stripBlocks<B extends AnyContentBlock>(
     if (b.type === "tool_result") {
       // tool_result.content may also contain reminders (rare but possible)
       const orig = b.content
-      const stripped = stripText(orig)
-      if (stripped === orig) {
-        out.push(b)
-      } else if (stripped.length === 0) {
-        // Keep the block (tool_result must exist for the tool_use_id), but
-        // replace empty content with a single space placeholder.
-        out.push({ ...b, content: " " } as B)
-      } else {
-        out.push({ ...b, content: stripped } as B)
+      if (typeof orig === "string") {
+        const stripped = stripText(orig)
+        if (stripped === orig) {
+          out.push(b)
+        } else if (stripped.length === 0) {
+          // Keep the block (tool_result must exist for the tool_use_id), but
+          // replace empty content with a single space placeholder.
+          out.push({ ...b, content: " " } as B)
+        } else {
+          out.push({ ...b, content: stripped } as B)
+        }
+        continue
       }
+
+      const strippedBlocks = orig
+        .map((block) => {
+          if (block.type !== "text") return block
+          const text = stripText(block.text)
+          return text.length === 0 ? undefined : { ...block, text }
+        })
+        .filter((block) => block !== undefined)
+      out.push({
+        ...b,
+        content: strippedBlocks.length > 0 ? strippedBlocks : " ",
+      } as B)
       continue
     }
     if (b.type !== "text") {
