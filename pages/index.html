@@ -1600,8 +1600,14 @@
             modelsColName: "模型名称",
             modelsColVendor: "厂商",
             modelsColMaxOutput: "最大输出",
+            modelsColEndpoints: "端点",
+            modelsColCapabilities: "能力",
             modelsColPremium: "Premium",
             modelsColStatus: "状态",
+            modelCapabilityAdaptive: "Adaptive thinking",
+            modelCapabilityEffort: "Effort",
+            modelCapabilityMaxBudget: "Max budget",
+            modelCapabilitySamplingOff: "默认采样",
             modelEnabled: "已启用",
             modelDisabled: "已禁用",
             modelMappingTitle: "模型映射",
@@ -1843,8 +1849,14 @@
             modelsColName: "Model Name",
             modelsColVendor: "Vendor",
             modelsColMaxOutput: "Max Output",
+            modelsColEndpoints: "Endpoints",
+            modelsColCapabilities: "Capabilities",
             modelsColPremium: "Premium",
             modelsColStatus: "Status",
+            modelCapabilityAdaptive: "Adaptive thinking",
+            modelCapabilityEffort: "Effort",
+            modelCapabilityMaxBudget: "Max budget",
+            modelCapabilitySamplingOff: "Default sampling",
             modelEnabled: "Enabled",
             modelDisabled: "Disabled",
             modelMappingTitle: "Model Mapping",
@@ -2431,7 +2443,7 @@
           if (saveConcText) saveConcText.textContent = text("modelConcurrencySave");
           // Model table headers
           const mAvailThead = document.getElementById("models-avail-thead");
-          if (mAvailThead) mAvailThead.innerHTML = `<th>${escapeHtml(text("modelsColName"))}</th><th>${escapeHtml(text("modelsColVendor"))}</th><th>${escapeHtml(text("modelsColMaxOutput"))}</th><th>${escapeHtml(text("modelsColPremium"))}</th><th>${escapeHtml(text("modelsColStatus"))}</th>`;
+          if (mAvailThead) mAvailThead.innerHTML = `<th>${escapeHtml(text("modelsColName"))}</th><th>${escapeHtml(text("modelsColVendor"))}</th><th>${escapeHtml(text("modelsColMaxOutput"))}</th><th>${escapeHtml(text("modelsColEndpoints"))}</th><th>${escapeHtml(text("modelsColCapabilities"))}</th><th>${escapeHtml(text("modelsColPremium"))}</th><th>${escapeHtml(text("modelsColStatus"))}</th>`;
           const mMapThead = document.getElementById("models-map-thead");
           if (mMapThead) mMapThead.innerHTML = `<th>${escapeHtml(text("modelMappingFrom"))}</th><th></th><th>${escapeHtml(text("modelMappingTo"))}</th><th>${escapeHtml(text("modelMappingAction"))}</th>`;
           const mConcThead = document.getElementById("models-conc-thead");
@@ -3778,10 +3790,39 @@
         let modelMappingData = {};
         let modelConcurrencyData = {};
 
+        function renderEndpointPills(endpoints) {
+          if (!Array.isArray(endpoints) || endpoints.length === 0) {
+            return `<span class="pill pill-neutral">-</span>`;
+          }
+          return `<div class="flex flex-wrap gap-1.5">${endpoints.map((endpoint) => `<span class="pill pill-neutral mono">${escapeHtml(String(endpoint))}</span>`).join("")}</div>`;
+        }
+
+        function renderCapabilityPills(model) {
+          const supports = model?.capabilities?.supports || {};
+          const limits = model?.capabilities?.limits || {};
+          const pills = [];
+          if (supports.adaptive_thinking === true) {
+            pills.push(`<span class="pill pill-success">${escapeHtml(text("modelCapabilityAdaptive"))}</span>`);
+          }
+          if (Array.isArray(supports.reasoning_effort) && supports.reasoning_effort.length > 0) {
+            pills.push(`<span class="pill pill-neutral mono">${escapeHtml(text("modelCapabilityEffort") + ": " + supports.reasoning_effort.join(", "))}</span>`);
+          }
+          if (typeof supports.max_thinking_budget === "number" && supports.max_thinking_budget > 0) {
+            pills.push(`<span class="pill pill-neutral mono">${escapeHtml(text("modelCapabilityMaxBudget") + ": " + formatNumber(supports.max_thinking_budget))}</span>`);
+          }
+          if (typeof limits.max_thinking_budget === "number" && limits.max_thinking_budget > 0) {
+            pills.push(`<span class="pill pill-neutral mono">${escapeHtml(text("modelCapabilityMaxBudget") + ": " + formatNumber(limits.max_thinking_budget))}</span>`);
+          }
+          if (supports.sampling_parameters === false || supports.samplingParameters === false) {
+            pills.push(`<span class="pill pill-warning">${escapeHtml(text("modelCapabilitySamplingOff"))}</span>`);
+          }
+          return pills.length > 0 ? `<div class="flex flex-wrap gap-1.5">${pills.join("")}</div>` : `<span class="pill pill-neutral">-</span>`;
+        }
+
         async function loadAvailableModels() {
           const body = document.getElementById("models-available-body");
           if (!body) return;
-          body.innerHTML = `<tr><td colspan="5" class="text-center py-6"><span class="loading-spinner"></span></td></tr>`;
+          body.innerHTML = `<tr><td colspan="7" class="text-center py-6"><span class="loading-spinner"></span></td></tr>`;
           try {
             const data = await adminFetch("/api/models/available");
             const models = Array.isArray(data) ? data : (data && data.data ? data.data : (data && data.models ? (Array.isArray(data.models) ? data.models : data.models.data || []) : []));
@@ -3790,7 +3831,7 @@
             const titleEl = document.getElementById("models-avail-title");
             if (titleEl) titleEl.textContent = text("modelsAvailableTitle") + ` (${models.length})`;
             if (models.length === 0) {
-              body.innerHTML = `<tr><td colspan="5" class="text-center py-6 text-sm text-[var(--muted)]">${escapeHtml(text("modelNoModels"))}</td></tr>`;
+              body.innerHTML = `<tr><td colspan="7" class="text-center py-6 text-sm text-[var(--muted)]">${escapeHtml(text("modelNoModels"))}</td></tr>`;
               return;
             }
             body.innerHTML = models.map((m) => `
@@ -3798,12 +3839,14 @@
                 <td class="font-semibold mono text-sm">${escapeHtml(m.name || m.id || text("noValue"))}</td>
                 <td>${escapeHtml(m.vendor || text("noValue"))}</td>
                 <td class="mono">${escapeHtml(m.capabilities?.limits?.max_output_tokens ? formatNumber(m.capabilities.limits.max_output_tokens) : text("noValue"))}</td>
+                <td>${renderEndpointPills(m.supported_endpoints)}</td>
+                <td>${renderCapabilityPills(m)}</td>
                 <td>${m.billing?.is_premium ? `<span class="pill pill-warning">${escapeHtml(text("modelsColPremium"))}</span>` : `<span class="pill pill-neutral">-</span>`}</td>
                 <td>${m.model_picker_enabled !== false ? `<span class="pill pill-success">${escapeHtml(text("modelEnabled"))}</span>` : `<span class="pill pill-neutral">${escapeHtml(text("modelDisabled"))}</span>`}</td>
               </tr>
             `).join("");
           } catch (err) {
-            body.innerHTML = `<tr><td colspan="5" class="text-center py-6 text-sm text-[var(--muted)]">${escapeHtml(text("modelNoModelsDesc"))}</td></tr>`;
+            body.innerHTML = `<tr><td colspan="7" class="text-center py-6 text-sm text-[var(--muted)]">${escapeHtml(text("modelNoModelsDesc"))}</td></tr>`;
           }
         }
 
