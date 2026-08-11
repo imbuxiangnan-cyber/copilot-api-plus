@@ -58,6 +58,65 @@ export function sanitizeForCopilotBackend(
     consola.debug("Stripping effort field (unsupported by Copilot backend)")
     delete payload.effort
   }
+
+  // 4. sampling parameters - Claude 4.7+ / Claude 5 / Mythos reject
+  //    non-default temperature/top_p/top_k on Messages. Thinking requests also
+  //    require default sampling, so omit these fields after auto-injection.
+  sanitizeSamplingParameters(payload)
+}
+
+function sanitizeSamplingParameters(payload: AnthropicMessagesPayload): void {
+  const modelInfo = findModel(payload.model)
+  const strip =
+    payload.thinking !== undefined
+    || modelRejectsSamplingParameters(payload.model, modelInfo)
+
+  if (!strip) return
+
+  if (payload.temperature !== undefined) {
+    consola.debug(
+      "Stripping temperature (unsupported for this Anthropic Messages request)",
+    )
+    delete payload.temperature
+  }
+  if (payload.top_p !== undefined) {
+    consola.debug(
+      "Stripping top_p (unsupported for this Anthropic Messages request)",
+    )
+    delete payload.top_p
+  }
+  if (payload.top_k !== undefined) {
+    consola.debug(
+      "Stripping top_k (unsupported for this Anthropic Messages request)",
+    )
+    delete payload.top_k
+  }
+}
+
+function modelRejectsSamplingParameters(
+  model: string,
+  modelInfo: ReturnType<typeof findModel>,
+): boolean {
+  const supports = modelInfo?.capabilities.supports as
+    | (Record<string, unknown> & {
+        sampling_parameters?: boolean
+        samplingParameters?: boolean
+      })
+    | undefined
+
+  if (supports?.sampling_parameters === false) return true
+  if (supports?.samplingParameters === false) return true
+
+  return isClaudeModelWithDefaultOnlySampling(modelInfo?.id ?? model)
+}
+
+function isClaudeModelWithDefaultOnlySampling(model: string): boolean {
+  const normalized = model.toLowerCase().replaceAll(".", "-")
+  return (
+    /^claude-(?:opus|sonnet|fable|mythos)-[5-9](?:-|$)/.test(normalized)
+    || /^claude-opus-4-[78](?:-|$)/.test(normalized)
+    || /^claude-mythos(?:-|$)/.test(normalized)
+  )
 }
 
 function sanitizeOutputConfigFormat(format: unknown): void {

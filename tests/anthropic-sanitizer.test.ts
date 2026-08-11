@@ -37,6 +37,10 @@ function buildHTTPError(status: number, body: string): HTTPError {
 }
 
 describe("sanitizeForCopilotBackend", () => {
+  beforeEach(() => {
+    state.models = undefined
+  })
+
   test("strips context_management", () => {
     const payload = basePayload() as AnthropicMessagesPayload & {
       context_management?: unknown
@@ -80,6 +84,45 @@ describe("sanitizeForCopilotBackend", () => {
     const payload = basePayload({ effort: "max" })
     sanitizeForCopilotBackend(payload)
     expect(payload.effort).toBeUndefined()
+  })
+
+  test("strips sampling parameters for Claude 4.7+ native messages models", () => {
+    const payload = basePayload({
+      model: "claude-opus-5",
+      temperature: 0.2,
+      top_p: 0.8,
+      top_k: 50,
+    })
+    sanitizeForCopilotBackend(payload)
+    expect(payload.temperature).toBeUndefined()
+    expect(payload.top_p).toBeUndefined()
+    expect(payload.top_k).toBeUndefined()
+  })
+
+  test("strips sampling parameters when thinking is enabled", () => {
+    const payload = basePayload({
+      temperature: 1,
+      top_p: 0.9,
+      top_k: 40,
+      thinking: { type: "enabled", budget_tokens: 32000 },
+    })
+    sanitizeForCopilotBackend(payload)
+    expect(payload.temperature).toBeUndefined()
+    expect(payload.top_p).toBeUndefined()
+    expect(payload.top_k).toBeUndefined()
+  })
+
+  test("keeps sampling parameters for legacy non-thinking requests", () => {
+    const payload = basePayload({
+      model: "claude-opus-4-5",
+      temperature: 0.2,
+      top_p: 0.8,
+      top_k: 50,
+    })
+    sanitizeForCopilotBackend(payload)
+    expect(payload.temperature).toBe(0.2)
+    expect(payload.top_p).toBe(0.8)
+    expect(payload.top_k).toBe(50)
   })
 })
 
