@@ -59,7 +59,7 @@
 
 ## X-CodeAI 推荐服务
 
-[![X-CodeAI](assets/x-codeai-logo.svg)](https://x-codeai.com/)
+[![X-CodeAI](https://raw.githubusercontent.com/imbuxiangnan-cyber/copilot-api-plus/main/assets/x-codeai-logo.svg)](https://x-codeai.com/)
 
 如果你也在折腾 AI 编程工具，并且觉得官方订阅或 API 成本偏高，可以试试 [X-CodeAI](https://x-codeai.com/)。
 

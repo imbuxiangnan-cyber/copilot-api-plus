@@ -58,7 +58,7 @@ English | [简体中文](README.md)
 
 ## X-CodeAI Recommended Service
 
-[![X-CodeAI](assets/x-codeai-logo.svg)](https://x-codeai.com/)
+[![X-CodeAI](https://raw.githubusercontent.com/imbuxiangnan-cyber/copilot-api-plus/main/assets/x-codeai-logo.svg)](https://x-codeai.com/)
 
 If you are also exploring AI coding tools and want a more flexible, cost-friendly way to access AI models, you may want to try [X-CodeAI](https://x-codeai.com/).
 
