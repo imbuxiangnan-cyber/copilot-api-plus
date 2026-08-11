@@ -14,6 +14,7 @@
 ## 📋 目录
 
 - [功能特点](#-功能特点)
+- [X-CodeAI 推荐服务](#x-codeai-推荐服务)
 - [快速开始](#-快速开始)
 - [详细使用指南](#-详细使用指南)
   - [GitHub Copilot 模式](#1-github-copilot-模式默认)
@@ -53,6 +54,16 @@
 | ✂️ **上下文透传** | 全量透传上下文至上游 API，由客户端（如 Claude Code）自行管理压缩 |
 | 🔍 **智能模型匹配** | 自动处理模型名格式差异（日期后缀、dash/dot 版本号等） |
 | 🧠 **Thinking 思维链** | 自动为支持的模型启用深度思考，提升代码质量 |
+
+---
+
+## X-CodeAI 推荐服务
+
+[![X-CodeAI](assets/x-codeai-logo.svg)](https://x-codeai.com/)
+
+如果你也在折腾 AI 编程工具，并且觉得官方订阅或 API 成本偏高，可以试试 [X-CodeAI](https://x-codeai.com/)。
+
+X-CodeAI 面向开发者和 AI 工具用户，适合 Claude Code、代码助手、自动化脚本以及各类 API 调用场景。
 
 ---
 

@@ -12,6 +12,7 @@ English | [简体中文](README.md)
 ## 📋 Table of Contents
 
 - [Features](#-features)
+- [X-CodeAI Recommended Service](#x-codeai-recommended-service)
 - [Quick Start](#-quick-start)
 - [Usage Guide](#-usage-guide)
   - [GitHub Copilot Mode](#1-github-copilot-mode-default)
@@ -52,6 +53,16 @@ English | [简体中文](README.md)
 | ✂️ **Context Passthrough** | Full context passthrough to upstream API; clients (e.g. Claude Code) manage compression |
 | 🔍 **Smart Model Matching** | Handles model name format differences (date suffixes, dash/dot versions, etc.) |
 | 🧠 **Thinking Chain** | Automatically enables deep thinking for supported models, improving code quality |
+
+---
+
+## X-CodeAI Recommended Service
+
+[![X-CodeAI](assets/x-codeai-logo.svg)](https://x-codeai.com/)
+
+If you are also exploring AI coding tools and want a more flexible, cost-friendly way to access AI models, you may want to try [X-CodeAI](https://x-codeai.com/).
+
+X-CodeAI is built for developers and AI tool users, and works well with Claude Code, coding assistants, automation scripts, and API-based workflows.
 
 ---
 
