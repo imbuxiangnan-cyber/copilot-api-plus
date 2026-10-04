@@ -15,7 +15,10 @@
 import { Hono } from "hono"
 import { streamSSE, type SSEMessage } from "hono/streaming"
 
+import { awaitApproval } from "~/lib/approval"
 import { forwardError } from "~/lib/error"
+import { checkRateLimit } from "~/lib/rate-limit"
+import { state } from "~/lib/state"
 import {
   createNativeResponses,
   type LooseResponsesPayload,
@@ -24,15 +27,28 @@ import {
 export const responsesRoutes = new Hono()
 
 responsesRoutes.post("/", async (c) => {
+  const controller = new AbortController()
+  const signal = AbortSignal.any([c.req.raw.signal, controller.signal])
   try {
+    signal.throwIfAborted()
+    await checkRateLimit(state)
+
     const body = await c.req.json<LooseResponsesPayload>()
-    const result = await createNativeResponses(body)
+    signal.throwIfAborted()
+    if (state.manualApprove) await awaitApproval()
+
+    const result = await createNativeResponses(body, { signal })
 
     if (result.__isStream) {
       const sse = result.stream
       return streamSSE(c, async (stream) => {
-        for await (const chunk of sse) {
-          await stream.writeSSE(chunk as SSEMessage)
+        stream.onAbort(() => controller.abort(new Error("Client disconnected")))
+        try {
+          for await (const chunk of sse) {
+            await stream.writeSSE(chunk as SSEMessage)
+          }
+        } catch (error) {
+          if (!signal.aborted) throw error
         }
       })
     }

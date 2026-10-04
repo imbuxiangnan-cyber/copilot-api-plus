@@ -11,10 +11,10 @@ if not exist node_modules (
 )
 
 echo Starting server...
-echo The usage viewer page will open automatically after the server starts
+echo Open the usage viewer after the server is ready:
+echo https://imbuxiangnan-cyber.github.io/copilot-api-plus?endpoint=http://localhost:4141/usage
 echo.
 
-start "" "https://ericc-ch.github.io/copilot-api?endpoint=http://localhost:4141/usage"
 bun run dev
 
 pause

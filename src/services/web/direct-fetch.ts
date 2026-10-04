@@ -131,16 +131,21 @@ async function readBodyWithLimit(
 
 export async function directFetch(
   rawUrl: string,
-  options?: FetchOptions,
+  options: FetchOptions = {},
 ): Promise<FetchResult> {
+  options.signal?.throwIfAborted()
   const validation = validateFetchUrl(rawUrl)
   if (!validation.ok) {
     throw new Error(`WebFetch refused: ${validation.reason}`)
   }
-  const maxBytes = options?.maxBytes ?? DEFAULT_MAX_BYTES
-  const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS
+  const maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
 
   const controller = new AbortController()
+  const signal =
+    options.signal ?
+      AbortSignal.any([controller.signal, options.signal])
+    : controller.signal
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
     const response = await fetch(rawUrl, {
@@ -152,13 +157,15 @@ export async function directFetch(
         "Accept-Language": "en-US,en;q=0.9",
       },
       redirect: "follow",
-      signal: controller.signal,
+      signal,
     })
+    signal.throwIfAborted()
 
     const contentType =
       response.headers.get("content-type")?.toLowerCase() ?? undefined
 
     const { buffer, truncated } = await readBodyWithLimit(response, maxBytes)
+    signal.throwIfAborted()
     // eslint-disable-next-line unicorn/text-encoding-identifier-case
     const raw = new TextDecoder("utf-8", { fatal: false }).decode(buffer)
     const isHtml =
@@ -173,6 +180,9 @@ export async function directFetch(
       text,
       truncated,
     }
+  } catch (error) {
+    signal.throwIfAborted()
+    throw error
   } finally {
     clearTimeout(timer)
   }

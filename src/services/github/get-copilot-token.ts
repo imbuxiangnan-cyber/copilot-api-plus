@@ -1,5 +1,6 @@
 import consola from "consola"
 
+import { abortableSleep } from "~/lib/abort"
 import { githubApiBaseUrl, githubHeaders } from "~/lib/api-config"
 import { HTTPError } from "~/lib/error"
 import { state } from "~/lib/state"
@@ -12,12 +13,17 @@ import { state } from "~/lib/state"
  *                     **not** mutate global state (so multi-account callers
  *                     stay side-effect-free).
  */
-export const getCopilotToken = async (githubToken?: string) => {
+export const getCopilotToken = async (
+  githubToken?: string,
+  signal?: AbortSignal,
+) => {
+  signal?.throwIfAborted()
   const tokenToUse = githubToken ?? state.githubToken
   const isExplicitToken = githubToken !== undefined
 
   const url = `${githubApiBaseUrl()}/copilot_internal/v2/token`
   const fetchOptions: RequestInit = {
+    signal,
     headers: githubHeaders({
       ...state,
       githubToken: tokenToUse,
@@ -31,9 +37,12 @@ export const getCopilotToken = async (githubToken?: string) => {
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
+      signal?.throwIfAborted()
       response = await fetch(url, fetchOptions)
+      signal?.throwIfAborted()
       break
     } catch (error: unknown) {
+      signal?.throwIfAborted()
       lastError = error
       if (attempt < maxRetries) {
         const delay = 1000 * (attempt + 1)
@@ -41,7 +50,7 @@ export const getCopilotToken = async (githubToken?: string) => {
           `Token fetch error on attempt ${attempt + 1}/${maxRetries + 1}, retrying in ${delay}ms:`,
           error instanceof Error ? error.message : error,
         )
-        await new Promise((r) => setTimeout(r, delay))
+        await abortableSleep(delay, signal)
       }
     }
   }
@@ -53,6 +62,7 @@ export const getCopilotToken = async (githubToken?: string) => {
   if (!response.ok) throw new HTTPError("Failed to get Copilot token", response)
 
   const data = (await response.json()) as GetCopilotTokenResponse
+  signal?.throwIfAborted()
 
   // Only write to global state when using the default token (single-account mode).
   // When an explicit githubToken is provided (multi-account), the caller is

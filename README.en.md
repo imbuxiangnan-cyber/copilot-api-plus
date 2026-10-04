@@ -90,6 +90,19 @@ npx copilot-api-plus@latest start --claude-code
 
 The server listens on `http://localhost:4141` by default.
 
+### Run from Source
+
+```bash
+bun install --frozen-lockfile
+bun run dev
+
+# Build and start
+bun run build
+bun run start
+```
+
+The `dev` and `start` scripts already include the CLI `start` command. Append server options directly, for example `bun run dev --port 4142`. On Windows, you can also run `start.bat`, then open the usage viewer link from the logs once the server is ready.
+
 ---
 
 ## 📖 Usage Guide
@@ -283,7 +296,7 @@ Edit `~/.local/share/copilot-api-plus/accounts.json` and add a `proxy` field to 
 You can also specify the proxy when adding an account via API:
 
 ```bash
-curl -X POST http://localhost:4141/admin/accounts \
+curl -X POST http://localhost:4141/api/accounts \
   -H "Content-Type: application/json" \
   -d '{"githubToken": "ghu_xxx", "label": "Account 1", "proxy": "http://127.0.0.1:7891"}'
 ```
@@ -572,6 +585,7 @@ The server listens on `http://localhost:4141` by default.
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/v1/chat/completions` | POST | Chat completions (streaming supported) |
+| `/v1/responses` | POST | Responses API (streaming supported) |
 | `/v1/models` | GET | Model list |
 | `/v1/embeddings` | POST | Text embeddings (Copilot only) |
 
@@ -582,13 +596,9 @@ The server listens on `http://localhost:4141` by default.
 | `/v1/messages` | POST | Messages API (streaming supported) |
 | `/v1/messages/count_tokens` | POST | Token counting |
 
-### Dedicated Endpoints
+### Route Aliases
 
-Each backend has its own dedicated routes:
-
-| Route Prefix | Description |
-|--------------|-------------|
-| `/copilot/v1/*` | GitHub Copilot |
+OpenAI-compatible endpoints also work without the `/v1` prefix: `/chat/completions`, `/responses`, `/models`, and `/embeddings`. Anthropic endpoints use `/v1/messages` and `/v1/messages/count_tokens`. Account management endpoints are under `/api/accounts`.
 
 ### Monitoring Endpoints
 
@@ -870,6 +880,8 @@ docker run -p 4141:4141 \
   -v ./copilot-data:/root/.local/share/copilot-api-plus \
   ghcr.io/imbuxiangnan-cyber/copilot-api-plus
 ```
+
+With no command, the container starts the server. You can also pass `start` explicitly or pass server options directly (for example, `--port 4142`). Other CLI commands such as `auth`, `check-usage`, and `debug` run directly; the legacy `--auth` form remains supported. A non-empty `GH_TOKEN` supplies the default GitHub token only when starting the server; an explicit `--github-token` / `-g` takes precedence.
 
 ### Build from Source
 

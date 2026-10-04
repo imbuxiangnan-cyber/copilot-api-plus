@@ -1,5 +1,5 @@
 /* eslint-disable max-lines */
-import { test, expect, mock } from "bun:test"
+import { afterEach, beforeEach, test, expect, mock } from "bun:test"
 
 import type { ChatCompletionsPayload } from "../src/services/copilot/create-chat-completions"
 
@@ -10,10 +10,8 @@ import {
   responsesToChatResponse,
 } from "../src/services/copilot/responses-translator"
 
-// Mock state
-state.copilotToken = "test-token"
-state.vsCodeVersion = "1.0.0"
-state.accountType = "individual"
+let originalState: typeof state
+let originalFetch: typeof fetch
 
 // Helper to mock fetch
 const fetchMock = mock(
@@ -25,8 +23,28 @@ const fetchMock = mock(
     }
   },
 )
-// @ts-expect-error - Mock fetch doesn't implement all fetch properties
-;(globalThis as unknown as { fetch: typeof fetch }).fetch = fetchMock
+beforeEach(() => {
+  originalState = { ...state }
+  originalFetch = globalThis.fetch
+  Object.assign(state, {
+    copilotToken: "test-token",
+    copilotApiEndpoint: undefined,
+    vsCodeVersion: "1.0.0",
+    accountType: "individual",
+    multiAccountEnabled: false,
+    models: undefined,
+  })
+  fetchMock.mockClear()
+  globalThis.fetch = fetchMock as unknown as typeof fetch
+})
+
+afterEach(() => {
+  globalThis.fetch = originalFetch
+  for (const key of Object.keys(state)) {
+    if (!Object.hasOwn(originalState, key)) Reflect.deleteProperty(state, key)
+  }
+  Object.assign(state, originalState)
+})
 
 test("sets X-Initiator to agent if tool/assistant present", async () => {
   const payload: ChatCompletionsPayload = {
@@ -37,7 +55,7 @@ test("sets X-Initiator to agent if tool/assistant present", async () => {
     model: "gpt-test",
   }
   await createChatCompletions(payload)
-  expect(fetchMock).toHaveBeenCalled()
+  expect(fetchMock).toHaveBeenCalledTimes(1)
   const headers = (
     fetchMock.mock.calls[0][1] as { headers: Record<string, string> }
   ).headers
@@ -53,9 +71,9 @@ test("sets X-Initiator to user if only user present", async () => {
     model: "gpt-test",
   }
   await createChatCompletions(payload)
-  expect(fetchMock).toHaveBeenCalled()
+  expect(fetchMock).toHaveBeenCalledTimes(1)
   const headers = (
-    fetchMock.mock.calls[1][1] as { headers: Record<string, string> }
+    fetchMock.mock.calls[0][1] as { headers: Record<string, string> }
   ).headers
   expect(headers["X-Initiator"]).toBe("user")
 })

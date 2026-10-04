@@ -46,9 +46,13 @@ function applyMaxTokens(
 }
 
 export async function handleCompletion(c: Context) {
+  const controller = new AbortController()
+  const signal = AbortSignal.any([c.req.raw.signal, controller.signal])
+  signal.throwIfAborted()
   await checkRateLimit(state)
 
   const rawPayload = await c.req.json<unknown>()
+  signal.throwIfAborted()
   consola.debug("Request payload:", JSON.stringify(rawPayload).slice(-400))
 
   // Some clients (e.g. Cursor) POST OpenAI **Responses API** bodies
@@ -60,8 +64,8 @@ export async function handleCompletion(c: Context) {
       "Detected Responses-shape body on /chat/completions — forwarding to /v1/responses",
     )
     if (state.manualApprove) await awaitApproval()
-    const response = await forwardResponsesAsChat(rawPayload)
-    return respondWithResult(c, response)
+    const response = await forwardResponsesAsChat(rawPayload, { signal })
+    return respondWithResult(c, response, { controller, signal })
   }
 
   const payload = applyMaxTokens(
@@ -74,14 +78,15 @@ export async function handleCompletion(c: Context) {
 
   if (state.manualApprove) await awaitApproval()
 
-  const response = await createChatCompletions(payload)
+  const response = await createChatCompletions(payload, { signal })
 
-  return respondWithResult(c, response)
+  return respondWithResult(c, response, { controller, signal })
 }
 
 function respondWithResult(
   c: Context,
   response: Awaited<ReturnType<typeof createChatCompletions>>,
+  { controller, signal }: { controller: AbortController; signal: AbortSignal },
 ) {
   if (isNonStreaming(response)) {
     // Map reasoning_text to reasoning_content for OpenAI-compatible clients
@@ -92,15 +97,18 @@ function respondWithResult(
 
   consola.debug("Streaming response")
   return streamSSE(c, async (stream) => {
+    stream.onAbort(() => controller.abort(new Error("Client disconnected")))
     try {
       for await (const chunk of response) {
         consola.debug("Streaming chunk:", JSON.stringify(chunk))
         await stream.writeSSE(chunk as SSEMessage)
       }
     } catch (error) {
-      const message = (error as Error).message || String(error)
-      consola.warn(`SSE stream interrupted: ${message}`)
-      resetConnections()
+      if (!signal.aborted) {
+        const message = (error as Error).message || String(error)
+        consola.warn(`SSE stream interrupted: ${message}`)
+        resetConnections()
+      }
     }
   })
 }

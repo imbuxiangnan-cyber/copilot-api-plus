@@ -91,6 +91,19 @@ npx copilot-api-plus@latest start --claude-code
 
 服务器启动后，默认监听 `http://localhost:4141`。
 
+### 从源码运行
+
+```bash
+bun install --frozen-lockfile
+bun run dev
+
+# 构建后启动
+bun run build
+bun run start
+```
+
+`dev` 和 `start` 脚本已包含 CLI 的 `start` 子命令；添加服务参数时直接使用 `bun run dev --port 4142`。Windows 也可以运行 `start.bat`，服务就绪后再打开日志中的使用量查看器链接。
+
 ---
 
 ## 📖 详细使用指南
@@ -284,7 +297,7 @@ v1.2.18 新增。多账号模式下自动启用反关联措施，防止 GitHub �
 也可以在添加账号时通过 API 指定：
 
 ```bash
-curl -X POST http://localhost:4141/admin/accounts \
+curl -X POST http://localhost:4141/api/accounts \
   -H "Content-Type: application/json" \
   -d '{"githubToken": "ghu_xxx", "label": "账号1", "proxy": "http://127.0.0.1:7891"}'
 ```
@@ -571,6 +584,7 @@ copilot-api-plus 会**自动检测** Responses 形态的请求体并转发到 Co
 | 端点 | 方法 | 说明 |
 |------|------|------|
 | `/v1/chat/completions` | POST | 聊天补全（支持流式） |
+| `/v1/responses` | POST | Responses API（支持流式） |
 | `/v1/models` | GET | 模型列表 |
 | `/v1/embeddings` | POST | 文本嵌入（仅 Copilot） |
 
@@ -581,13 +595,9 @@ copilot-api-plus 会**自动检测** Responses 形态的请求体并转发到 Co
 | `/v1/messages` | POST | 消息 API（支持流式） |
 | `/v1/messages/count_tokens` | POST | Token 计数 |
 
-### 专用端点
+### 路由别名
 
-GitHub Copilot 有独立的专用路由：
-
-| 路由前缀 | 说明 |
-|----------|------|
-| `/copilot/v1/*` | GitHub Copilot 专用 |
+OpenAI 兼容端点也支持省略 `/v1` 前缀：`/chat/completions`、`/responses`、`/models` 和 `/embeddings`。Anthropic 端点使用 `/v1/messages` 和 `/v1/messages/count_tokens`。账号管理端点位于 `/api/accounts`。
 
 ### 监控端点
 
@@ -869,6 +879,8 @@ docker run -p 4141:4141 \
   -v ./copilot-data:/root/.local/share/copilot-api-plus \
   ghcr.io/imbuxiangnan-cyber/copilot-api-plus
 ```
+
+不传命令时默认启动服务，也支持显式传入 `start` 或直接传服务参数（如 `--port 4142`）。`auth`、`check-usage`、`debug` 等其他 CLI 子命令会直接执行，旧的 `--auth` 写法仍兼容。非空 `GH_TOKEN` 仅作为服务启动时的默认 GitHub Token；显式的 `--github-token` / `-g` 优先。
 
 ### 自行构建
 

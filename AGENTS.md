@@ -13,7 +13,7 @@
 - **Test all:**  
    `bun test`
 - **Test single file:**  
-   `bun test tests/claude-request.test.ts`
+   `bun test tests/anthropic-request.test.ts`
 - **Start (prod):**  
   `bun run start`
 

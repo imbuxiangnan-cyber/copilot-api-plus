@@ -23,11 +23,12 @@ import {
 } from "~/lib/api-config"
 import { HTTPError } from "~/lib/error"
 import { modelRouter } from "~/lib/model-router"
+import { runWithModelSlot } from "~/lib/model-slot"
 import { type StreamAccountInfo } from "~/lib/proxy"
+import { type RequestOptions } from "~/lib/request-options"
 import { state } from "~/lib/state"
 import { refreshCopilotToken } from "~/lib/token"
-
-import { fetchWithRetry, fetchWithTimeout } from "./create-chat-completions"
+import { fetchWithRetry, fetchWithTimeout } from "~/lib/upstream-fetch"
 
 /**
  * Loose shape of a Responses-API request body. We intentionally don't
@@ -93,11 +94,12 @@ function detectVision(input: Array<unknown>): boolean {
  */
 export async function createNativeResponses(
   body: LooseResponsesPayload,
+  options: RequestOptions = {},
 ): Promise<NativeResponsesResult> {
-  if (!state.copilotToken) throw new Error("Copilot token not found")
-
+  options.signal?.throwIfAborted()
   const requestedModel = body.model
-  const resolvedModel = modelRouter.resolveModel(requestedModel)
+  const resolvedModel =
+    options.resolvedModel ?? modelRouter.resolveModel(requestedModel)
   if (resolvedModel !== requestedModel) {
     consola.debug(`Model routed: ${requestedModel} → ${resolvedModel}`)
   }
@@ -118,25 +120,43 @@ export async function createNativeResponses(
     }
   }
 
-  if (state.multiAccountEnabled && accountManager.hasAccounts()) {
-    return runWithAccountRotation<LooseResponsesPayload, NativeResponsesResult>(
-      {
-        label: "responses-native",
-        payload: upstreamBody,
-        transport: (p, tokenSource, accountId) =>
-          doNativeFetch(p, { source: tokenSource, accountId }),
-      },
-    )
-  }
-
-  return doNativeFetch(upstreamBody, { source: state })
+  return runWithModelSlot(
+    resolvedModel,
+    () => {
+      if (state.multiAccountEnabled && accountManager.hasAccounts()) {
+        return runWithAccountRotation<
+          LooseResponsesPayload,
+          NativeResponsesResult
+        >({
+          label: "responses-native",
+          payload: upstreamBody,
+          signal: options.signal,
+          transport: (p, tokenSource, accountId) =>
+            doNativeFetch(p, {
+              source: tokenSource,
+              accountId,
+              signal: options.signal,
+            }),
+        })
+      }
+      return doNativeFetch(upstreamBody, {
+        source: state,
+        signal: options.signal,
+      })
+    },
+    (result) => (result.__isStream ? result.stream : undefined),
+    options.signal,
+  )
 }
 
 async function doNativeFetch(
   upstreamBody: LooseResponsesPayload,
-  ctx: { source: TokenSource; accountId?: string },
+  ctx: { source: TokenSource; accountId?: string; signal?: AbortSignal },
 ): Promise<NativeResponsesResult> {
-  const { source, accountId } = ctx
+  const { source, accountId, signal } = ctx
+  signal?.throwIfAborted()
+  if (!source.copilotToken) throw new Error("Copilot token not found")
+
   const enableVision = detectVision(upstreamBody.input)
   const isAgentCall = detectAgentCall(upstreamBody.input)
 
@@ -161,6 +181,7 @@ async function doNativeFetch(
       method: "POST",
       headers: buildHeaders(),
       body: bodyString,
+      signal,
     }),
     { accountId, accountProxy: source.proxy },
   )
@@ -168,13 +189,17 @@ async function doNativeFetch(
   if (response.status === 401 && !accountId) {
     consola.warn("Copilot token expired, refreshing and retrying...")
     try {
-      await refreshCopilotToken()
+      signal?.throwIfAborted()
+      await refreshCopilotToken(signal)
+      signal?.throwIfAborted()
       response = await fetchWithTimeout(url, {
         method: "POST",
         headers: buildHeaders(),
         body: bodyString,
+        signal,
       })
     } catch {
+      signal?.throwIfAborted()
       // fall through
     }
   }
@@ -197,7 +222,11 @@ async function doNativeFetch(
     const tagged = sse as AsyncGenerator<ServerSentEventMessage> & {
       __accountInfo?: StreamAccountInfo
     }
-    tagged.__accountInfo = { apiBaseUrl: copilotBaseUrl(source) }
+    tagged.__accountInfo = {
+      accountId,
+      accountProxy: source.proxy,
+      apiBaseUrl: copilotBaseUrl(source),
+    }
     return { __isStream: true, stream: tagged }
   }
 

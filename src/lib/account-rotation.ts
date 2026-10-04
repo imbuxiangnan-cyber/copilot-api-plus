@@ -25,6 +25,7 @@
 
 import consola from "consola"
 
+import { abortableSleep } from "~/lib/abort"
 import { accountManager, type Account } from "~/lib/account-manager"
 import { copilotBaseUrl, type TokenSource } from "~/lib/api-config"
 import { HTTPError } from "~/lib/error"
@@ -83,7 +84,7 @@ export function recordBreakerSuccess(): void {
 
 export function recordBreakerFailure(reason: string): void {
   breaker.failures += 1
-  if (breaker.failures >= CB_THRESHOLD && breaker.openedAt === 0) {
+  if (breaker.failures >= CB_THRESHOLD && breakerOpenRemainingMs() === 0) {
     breaker.openedAt = Date.now()
     consola.warn(
       `Circuit breaker OPEN for ${CB_OPEN_MS / 1000}s after ${breaker.failures} consecutive failures (last: ${reason})`,
@@ -128,7 +129,27 @@ export function throwIfBreakerOpen(): void {
  */
 type Taggable = AsyncGenerator & { __accountInfo?: StreamAccountInfo }
 
+function tagResultWithAccount<TResult>(
+  result: TResult,
+  account: Account,
+  tokenSource: TokenSource,
+): TResult {
+  if (
+    typeof result === "object"
+    && result !== null
+    && Symbol.asyncIterator in result
+  ) {
+    ;(result as unknown as Taggable).__accountInfo = {
+      accountId: account.id,
+      accountProxy: account.proxy,
+      apiBaseUrl: copilotBaseUrl(tokenSource),
+    }
+  }
+  return result
+}
+
 interface HandleErrorContext<TPayload, TResult> {
+  signal?: AbortSignal
   payload: TPayload
   tokenSource: TokenSource
   hasOtherAccount: boolean
@@ -141,6 +162,8 @@ interface HandleErrorContext<TPayload, TResult> {
 }
 
 export interface RunWithAccountRotationOptions<TPayload, TResult> {
+  /** Cancel selection, retry delays and recovery for a disconnected caller. */
+  signal?: AbortSignal
   /** A short label for logs (e.g. `"chat"`, `"responses-passthrough"`). */
   label: string
 
@@ -181,6 +204,7 @@ export interface RunWithAccountRotationOptions<TPayload, TResult> {
 export async function runWithAccountRotation<TPayload, TResult>(
   opts: RunWithAccountRotationOptions<TPayload, TResult>,
 ): Promise<TResult> {
+  opts.signal?.throwIfAborted()
   throwIfBreakerOpen()
 
   const triedAccountIds = new Set<string>()
@@ -191,8 +215,9 @@ export async function runWithAccountRotation<TPayload, TResult>(
 
   // Try up to 3 different accounts
   for (let attempt = 0; attempt < 3; attempt++) {
-    const account = accountManager.getActiveAccount()
-    if (!account || triedAccountIds.has(account.id)) {
+    opts.signal?.throwIfAborted()
+    const account = accountManager.getActiveAccount(triedAccountIds)
+    if (!account) {
       // No more untried accounts available
       break
     }
@@ -202,7 +227,8 @@ export async function runWithAccountRotation<TPayload, TResult>(
       consola.debug(
         `Account ${account.label} has no copilot token, refreshing...`,
       )
-      await accountManager.refreshAccountToken(account)
+      await accountManager.refreshAccountToken(account, opts.signal)
+      opts.signal?.throwIfAborted()
 
       if (!account.copilotToken) {
         consola.warn(`Account ${account.label}: token refresh failed, skipping`)
@@ -231,8 +257,9 @@ export async function runWithAccountRotation<TPayload, TResult>(
       if (account.lastRequestAt) {
         const elapsed = Date.now() - account.lastRequestAt
         if (elapsed < MIN_SAME_ACCOUNT_INTERVAL_MS) {
-          await new Promise((r) =>
-            setTimeout(r, MIN_SAME_ACCOUNT_INTERVAL_MS - elapsed),
+          await abortableSleep(
+            MIN_SAME_ACCOUNT_INTERVAL_MS - elapsed,
+            opts.signal,
           )
         }
       }
@@ -246,41 +273,40 @@ export async function runWithAccountRotation<TPayload, TResult>(
         consola.debug(
           `[${opts.label}] Account switch jitter: ${Math.round(jitter)}ms (${lastUsedAccountId.slice(0, 8)} → ${account.id.slice(0, 8)})`,
         )
-        await new Promise((r) => setTimeout(r, jitter))
+        await abortableSleep(jitter, opts.signal)
       }
+      opts.signal?.throwIfAborted()
       // eslint-disable-next-line require-atomic-updates
       lastUsedAccountId = account.id
 
-      const result = await opts.transport(opts.payload, tokenSource, account.id)
+      const result = await transportWithTokenRefresh(opts, account, tokenSource)
+      opts.signal?.throwIfAborted()
       account.lastRequestAt = Date.now()
       accountManager.markAccountSuccess(account.id)
       recordBreakerSuccess()
 
-      // Tag streaming results with account info for keepalive targeting
-      if (
-        typeof result === "object"
-        && result !== null
-        && Symbol.asyncIterator in (result as object)
-      ) {
-        ;(result as unknown as Taggable).__accountInfo = {
-          accountId: account.id,
-          accountProxy: account.proxy,
-          apiBaseUrl: copilotBaseUrl(tokenSource),
-        }
-      }
-      return result
+      return tagResultWithAccount(result, account, tokenSource)
     } catch (error) {
+      opts.signal?.throwIfAborted()
       lastError = error
 
       if (error instanceof HTTPError) {
         const retryResult = await handleHttpError(error, account, {
+          signal: opts.signal,
           payload: opts.payload,
           tokenSource,
           hasOtherAccount: hasAnotherAccountToTry(triedAccountIds),
-          redoTransport: opts.transport,
+          redoTransport: (payload, source, accountId) => {
+            opts.signal?.throwIfAborted()
+            return opts.transport(payload, source, accountId)
+          },
           on400: opts.on400,
         })
-        if (retryResult !== null) return retryResult
+        opts.signal?.throwIfAborted()
+        if (retryResult !== null) {
+          recordBreakerSuccess()
+          return tagResultWithAccount(retryResult, account, tokenSource)
+        }
         // Non-account error — stop rotating, propagate to client.
         if (
           (error as HTTPError & { __nonAccountError?: boolean })
@@ -327,12 +353,10 @@ export async function runWithAccountRotation<TPayload, TResult>(
 }
 
 /**
- * Peek at whether `getActiveAccount()` would return an untried account on
- * the next iteration. Used purely for honest log messaging.
+ * Check whether an eligible, untried account remains for recovery and logging.
  */
 function hasAnotherAccountToTry(triedAccountIds: Set<string>): boolean {
-  const next = accountManager.getActiveAccount()
-  return next !== undefined && !triedAccountIds.has(next.id)
+  return accountManager.getActiveAccount(triedAccountIds) !== undefined
 }
 
 // ---------------------------------------------------------------------------
@@ -340,30 +364,28 @@ function hasAnotherAccountToTry(triedAccountIds: Set<string>): boolean {
 // ---------------------------------------------------------------------------
 
 /**
- * Try to refresh the account's token and retry the transport once.
- * Returns the success result or null on failure.
+ * Refresh a rejected token once, then let the normal error handler classify
+ * the recovery request's actual result instead of masking it as the first 401.
  */
-async function tryRefreshAndRetry<TPayload, TResult>(
+async function transportWithTokenRefresh<TPayload, TResult>(
+  opts: RunWithAccountRotationOptions<TPayload, TResult>,
   account: Account,
-  ctx: HandleErrorContext<TPayload, TResult>,
-): Promise<TResult | null> {
+  tokenSource: TokenSource,
+): Promise<TResult> {
   try {
-    await accountManager.refreshAccountToken(account)
-    ctx.tokenSource.copilotToken = account.copilotToken
-    const result = await ctx.redoTransport(
-      ctx.payload,
-      ctx.tokenSource,
-      account.id,
-    )
-    accountManager.markAccountSuccess(account.id)
-    return result
-  } catch {
-    accountManager.markAccountStatus(
-      account.id,
-      "error",
-      "Token refresh failed",
-    )
-    return null
+    return await opts.transport(opts.payload, tokenSource, account.id)
+  } catch (error) {
+    opts.signal?.throwIfAborted()
+    if (!(error instanceof HTTPError) || error.response.status !== 401) {
+      throw error
+    }
+    consola.warn(`Account ${account.label}: 401, refreshing token...`)
+    await accountManager.refreshAccountToken(account, opts.signal)
+    opts.signal?.throwIfAborted()
+    if (account.status === "banned" || !account.copilotToken) throw error
+    tokenSource.copilotToken = account.copilotToken
+    tokenSource.copilotApiEndpoint = account.copilotApiEndpoint
+    return await opts.transport(opts.payload, tokenSource, account.id)
   }
 }
 
@@ -375,7 +397,7 @@ async function tryRefreshAndRetry<TPayload, TResult>(
 async function handle429(
   error: HTTPError,
   account: Account,
-  hasOtherAccount: boolean,
+  ctx: { hasOtherAccount: boolean; signal?: AbortSignal },
 ): Promise<null> {
   let body: string
   try {
@@ -383,6 +405,7 @@ async function handle429(
   } catch {
     body = error.message || ""
   }
+  ctx.signal?.throwIfAborted()
   const isCopilotSessionLimit = body.includes(
     "user_global_rate_limited:pro_plus",
   )
@@ -394,7 +417,7 @@ async function handle429(
   }
   void accountManager.refreshGithubRateLimit(account)
 
-  if (!hasOtherAccount) {
+  if (!ctx.hasOtherAccount) {
     consola.warn(
       `Account ${account.label}: 429 — only account, propagating to client without marking`,
     )
@@ -417,10 +440,22 @@ async function handleHttpError<TPayload, TResult>(
     on400?: RunWithAccountRotationOptions<TPayload, TResult>["on400"]
   },
 ): Promise<TResult | null> {
+  ctx.signal?.throwIfAborted()
+  if (
+    (error as HTTPError & { __nonAccountError?: boolean }).__nonAccountError
+  ) {
+    return null
+  }
   switch (error.response.status) {
     case 401: {
-      consola.warn(`Account ${account.label}: 401, refreshing token...`)
-      return tryRefreshAndRetry(account, ctx)
+      if (account.status !== "banned") {
+        accountManager.markAccountStatus(
+          account.id,
+          "error",
+          "Copilot authentication failed after token refresh",
+        )
+      }
+      return null
     }
     case 403: {
       // Single-account guard: marking the only account as banned would
@@ -438,7 +473,7 @@ async function handleHttpError<TPayload, TResult>(
       return null
     }
     case 429: {
-      return handle429(error, account, ctx.hasOtherAccount)
+      return handle429(error, account, ctx)
     }
     case 408: {
       // 408 Request Timeout: the upstream timed out reading our request body.

@@ -13,6 +13,7 @@ export interface SearchResult {
 }
 
 export interface SearchOptions {
+  signal?: AbortSignal
   /** Optional max results cap. Backend may return fewer. */
   maxResults?: number
 }
@@ -31,6 +32,7 @@ export interface FetchResult {
 }
 
 export interface FetchOptions {
+  signal?: AbortSignal
   /** Maximum response bytes to read. Default ~512 KiB. */
   maxBytes?: number
   /** Whole-request timeout (ms). Default 15s. */

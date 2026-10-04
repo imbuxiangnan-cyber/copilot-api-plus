@@ -12,115 +12,21 @@ import {
 } from "~/lib/api-config"
 import { HTTPError } from "~/lib/error"
 import { modelRouter } from "~/lib/model-router"
+import { releaseWhenStreamEnds } from "~/lib/model-slot"
 import {
-  getAccountDispatcher,
   notifyStreamEnd,
   notifyStreamStart,
   resetAccountConnections,
   resetConnections,
   type StreamAccountInfo,
 } from "~/lib/proxy"
+import { type RequestOptions } from "~/lib/request-options"
 import { state } from "~/lib/state"
 import { refreshCopilotToken } from "~/lib/token"
+import { fetchWithRetry, fetchWithTimeout } from "~/lib/upstream-fetch"
 import { findModel, rootCause } from "~/lib/utils"
 
-// ---------------------------------------------------------------------------
-// Fetch with timeout helper
-// ---------------------------------------------------------------------------
-
-/**
- * Timeout for the initial HTTP connection + headers (not the body/stream).
- * Copilot's slow models (e.g. claude-opus with thinking) can take up to
- * ~120s to start streaming, so we give a generous timeout for headers.
- */
-const FETCH_TIMEOUT_MS = 120_000
-
-/**
- * Wrapper around `fetch()` that aborts if the server doesn't respond within
- * `timeoutMs`.  The timeout only covers the period until the response headers
- * arrive – once the body starts streaming, the timeout is cleared so that
- * long SSE responses are not interrupted.
- */
-export async function fetchWithTimeout(
-  url: string,
-  init: RequestInit,
-  {
-    timeoutMs = FETCH_TIMEOUT_MS,
-    accountId,
-    accountProxy,
-  }: {
-    timeoutMs?: number
-    accountId?: string
-    accountProxy?: string
-  } = {},
-): Promise<Response> {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
-
-  try {
-    // Use per-account connection pool when in multi-account mode
-    const fetchOptions: RequestInit & { dispatcher?: unknown } = {
-      ...init,
-      signal: controller.signal,
-    }
-    if (accountId) {
-      ;(fetchOptions as { dispatcher?: unknown }).dispatcher =
-        getAccountDispatcher(accountId, accountProxy)
-    }
-    const response = await fetch(url, fetchOptions)
-    return response
-  } catch (error: unknown) {
-    if (error instanceof DOMException && error.name === "AbortError") {
-      throw new Error(`Request timed out after ${timeoutMs}ms`)
-    }
-    throw error
-  } finally {
-    clearTimeout(timer)
-  }
-}
-
-/**
- * Single-attempt fetch with connection pool reset on network errors.
- *
- * Retries are intentionally disabled — each Copilot request consumes a
- * credit, and the caller (e.g. Claude Code) already retries at the
- * application level.  Our retry + caller retry created a request cascade
- * that caused account bans (367 requests in 52 minutes).
- *
- * On network failure (NOT timeout), the pooled connections are destroyed
- * so that the caller's next attempt gets a fresh socket instantly.
- */
-export async function fetchWithRetry(
-  url: string,
-  buildInit: () => RequestInit,
-  {
-    accountId,
-    accountProxy,
-  }: { accountId?: string; accountProxy?: string } = {},
-): Promise<Response> {
-  try {
-    return await fetchWithTimeout(url, buildInit(), {
-      timeoutMs: FETCH_TIMEOUT_MS,
-      accountId,
-      accountProxy,
-    })
-  } catch (error: unknown) {
-    // Timeout errors mean the request likely reached Copilot (credit
-    // already consumed) or the upstream is genuinely slow — don't reset
-    // the pool, just propagate.
-    const msg = error instanceof Error ? error.message : String(error)
-    if (!msg.includes("timed out")) {
-      // Network error: destroy pooled connections so the caller's next
-      // attempt uses fresh sockets instead of stale ones.
-      if (accountId) {
-        resetAccountConnections(accountId)
-      } else {
-        resetConnections()
-      }
-    }
-    throw error
-  }
-}
+export { fetchWithRetry, fetchWithTimeout } from "~/lib/upstream-fetch"
 
 // ---------------------------------------------------------------------------
 // Streaming slot release wrapper
@@ -131,10 +37,23 @@ export async function fetchWithRetry(
  * finishes (return or throw), not when the outer function returns.
  * Also tracks active streams for the proxy-tunnel keepalive mechanism.
  */
-async function* wrapGeneratorWithRelease(
+function wrapGeneratorWithRelease(
   gen: AsyncGenerator,
   releaseSlot: () => void,
+  {
+    accountInfo,
+    signal,
+  }: { accountInfo?: StreamAccountInfo; signal?: AbortSignal },
+): AsyncGenerator {
+  const stream = trackUpstreamStream(gen, accountInfo, signal)
+  releaseWhenStreamEnds(stream, releaseSlot, signal)
+  return stream
+}
+
+async function* trackUpstreamStream(
+  gen: AsyncGenerator,
   accountInfo?: StreamAccountInfo,
+  signal?: AbortSignal,
 ): AsyncGenerator {
   notifyStreamStart(accountInfo)
   let streamError = false
@@ -145,11 +64,10 @@ async function* wrapGeneratorWithRelease(
     throw error
   } finally {
     notifyStreamEnd(accountInfo)
-    releaseSlot()
     // After a stream error, destroy all pooled connections so the next
     // request from the client gets a fresh socket instantly instead of
     // waiting ~60s on a stale one.
-    if (streamError) {
+    if (streamError && !signal?.aborted) {
       if (accountInfo?.accountId) {
         resetAccountConnections(accountInfo.accountId)
       } else {
@@ -401,9 +319,12 @@ function isLikelyResponsesOnly(model: string): boolean {
   return RESPONSES_ONLY_MODEL_HINTS.some((re) => re.test(model))
 }
 
+// eslint-disable-next-line complexity -- Keep cancellation guards beside the protocol recovery branches.
 export const createChatCompletions = async (
   payload: ChatCompletionsPayload,
+  options: RequestOptions = {},
 ) => {
+  options.signal?.throwIfAborted()
   // Guard: every code path below assumes `messages` is an array
   // (`.some(...)`, `.flatMap(...)`, etc.). If a caller / client hands us
   // a malformed body — e.g. a Responses-API-shape payload that escaped
@@ -418,7 +339,8 @@ export const createChatCompletions = async (
   }
 
   // Apply model routing
-  const resolvedModel = modelRouter.resolveModel(payload.model)
+  const resolvedModel =
+    options.resolvedModel ?? modelRouter.resolveModel(payload.model)
   const routedPayload =
     resolvedModel !== payload.model ?
       { ...payload, model: resolvedModel }
@@ -437,25 +359,30 @@ export const createChatCompletions = async (
 
   logThinkingInjection(routedPayload, thinkingPayload, resolvedModel)
 
-  // Short-circuit: if we've already learned this model is Responses-only
-  // (e.g. gpt-5.5), skip the failing /chat/completions attempt. Use the
-  // thinking-injected payload so Responses-only models still get max effort.
-  if (
+  // Skip the failing Chat endpoint for known Responses-only models, while
+  // retaining the same concurrency slot and stream lifecycle below.
+  const useResponsesApi =
     responsesApiOnlyModels.has(resolvedModel)
     || isLikelyResponsesOnly(resolvedModel)
-  ) {
+  if (useResponsesApi) {
     consola.debug(
       `Model "${resolvedModel}" is Responses-only — using /v1/responses`,
     )
     responsesApiOnlyModels.add(resolvedModel)
-    return createResponsesAsChat(thinkingPayload)
   }
 
   // Acquire concurrency slot
-  const releaseSlot = await modelRouter.acquireSlot(resolvedModel)
+  const releaseSlot = await modelRouter.acquireSlot(
+    resolvedModel,
+    options.signal,
+  )
 
   try {
-    const result = await dispatchRequest(thinkingPayload)
+    options.signal?.throwIfAborted()
+    const result = await (useResponsesApi ?
+      createResponsesAsChat(thinkingPayload, { ...options, resolvedModel })
+    : dispatchRequest(thinkingPayload, options.signal))
+    options.signal?.throwIfAborted()
 
     // For streaming responses, wrap the generator so the slot is released
     // when the stream ends (not when this function returns).
@@ -465,7 +392,10 @@ export const createChatCompletions = async (
           __accountInfo?: StreamAccountInfo
         }
       ).__accountInfo
-      const wrapped = wrapGeneratorWithRelease(result, releaseSlot, accountInfo)
+      const wrapped = wrapGeneratorWithRelease(result, releaseSlot, {
+        accountInfo,
+        signal: options.signal,
+      })
       // Propagate accountInfo so handler.ts can determine proxy status
       ;(
         wrapped as AsyncGenerator & {
@@ -479,24 +409,40 @@ export const createChatCompletions = async (
     releaseSlot()
     return result
   } catch (error) {
+    if (options.signal?.aborted) {
+      releaseSlot()
+      throw options.signal.reason
+    }
+    // Responses errors must not enter Chat-specific parameter/API retries.
+    if (useResponsesApi) {
+      releaseSlot()
+      throw error
+    }
+
     // Responses-API-only models: cache + retry via /v1/responses.
     const responsesRetry = handle400UnsupportedApiError(
       error,
-      { resolvedModel, routedPayload },
+      { resolvedModel, routedPayload, signal: options.signal },
       releaseSlot,
     )
     if (responsesRetry !== undefined) return responsesRetry
 
     const maxTokensRetry = handle400MaxTokensError(
       error,
-      { resolvedModel, routedPayload: thinkingPayload },
+      { resolvedModel, routedPayload: thinkingPayload, signal: options.signal },
       releaseSlot,
     )
     if (maxTokensRetry !== undefined) return maxTokensRetry
 
     const retryResult = handle400ReasoningError(
       error,
-      { resolvedModel, thinkingPayload, routedPayload, wasInjected },
+      {
+        resolvedModel,
+        thinkingPayload,
+        routedPayload,
+        wasInjected,
+        signal: options.signal,
+      },
       releaseSlot,
     )
     if (retryResult !== undefined) return retryResult
@@ -514,9 +460,14 @@ export const createChatCompletions = async (
  */
 function handle400UnsupportedApiError(
   error: unknown,
-  ctx: { resolvedModel: string; routedPayload: ChatCompletionsPayload },
+  ctx: {
+    resolvedModel: string
+    routedPayload: ChatCompletionsPayload
+    signal?: AbortSignal
+  },
   releaseSlot: () => void,
 ): Promise<AsyncGenerator | ChatCompletionResponse> | undefined {
+  const { signal } = ctx
   if (!(error instanceof HTTPError) || error.response.status !== 400)
     return undefined
   const errMsg = error.message
@@ -533,7 +484,11 @@ function handle400UnsupportedApiError(
 
   return (async () => {
     try {
-      const result = await createResponsesAsChat(ctx.routedPayload)
+      signal?.throwIfAborted()
+      const result = await createResponsesAsChat(ctx.routedPayload, {
+        signal,
+        resolvedModel: ctx.resolvedModel,
+      })
       if (Symbol.asyncIterator in result) {
         const accountInfo = (
           result as AsyncGenerator & { __accountInfo?: StreamAccountInfo }
@@ -541,7 +496,7 @@ function handle400UnsupportedApiError(
         const wrapped = wrapGeneratorWithRelease(
           result as AsyncGenerator,
           releaseSlot,
-          accountInfo,
+          { accountInfo, signal },
         )
         ;(
           wrapped as AsyncGenerator & { __accountInfo?: StreamAccountInfo }
@@ -568,9 +523,11 @@ function handle400MaxTokensError(
   ctx: {
     resolvedModel: string
     routedPayload: ChatCompletionsPayload
+    signal?: AbortSignal
   },
   releaseSlot: () => void,
 ): Promise<AsyncGenerator | ChatCompletionResponse> | undefined {
+  const { signal } = ctx
   if (!(error instanceof HTTPError) || error.response.status !== 400)
     return undefined
   // Copilot error message contains both field names when rejecting max_tokens
@@ -590,12 +547,13 @@ function handle400MaxTokensError(
     ctx.routedPayload.max_tokens === null
     || ctx.routedPayload.max_tokens === undefined
   )
-    return retryWithModifiedPayload(ctx.routedPayload, releaseSlot)
+    return retryWithModifiedPayload(ctx.routedPayload, releaseSlot, signal)
 
   const { max_tokens, ...rest } = ctx.routedPayload
   return retryWithModifiedPayload(
     { ...rest, max_completion_tokens: max_tokens } as ChatCompletionsPayload,
     releaseSlot,
+    signal,
   )
 }
 
@@ -610,9 +568,11 @@ function handle400ReasoningError(
     thinkingPayload: ChatCompletionsPayload
     routedPayload: ChatCompletionsPayload
     wasInjected: boolean
+    signal?: AbortSignal
   },
   releaseSlot: () => void,
 ): Promise<AsyncGenerator | ChatCompletionResponse> | undefined {
+  const { signal } = ctx
   if (!(error instanceof HTTPError) || error.response.status !== 400)
     return undefined
   const errMsg = error.message
@@ -636,6 +596,7 @@ function handle400ReasoningError(
       return retryWithModifiedPayload(
         { ...ctx.routedPayload, reasoning_effort: "medium" as const },
         releaseSlot,
+        signal,
       )
     }
   }
@@ -651,7 +612,7 @@ function handle400ReasoningError(
     consola.debug(
       `Model "${ctx.resolvedModel}" does not support reasoning_effort — disabled for future requests`,
     )
-    return retryWithModifiedPayload(ctx.routedPayload, releaseSlot)
+    return retryWithModifiedPayload(ctx.routedPayload, releaseSlot, signal)
   }
 
   // Case 3: Model rejects reasoning_effort when tools are present
@@ -667,7 +628,7 @@ function handle400ReasoningError(
     const stripped = { ...ctx.routedPayload }
     delete stripped.reasoning_effort
     delete stripped.thinking_budget
-    return retryWithModifiedPayload(stripped, releaseSlot)
+    return retryWithModifiedPayload(stripped, releaseSlot, signal)
   }
 
   return undefined
@@ -681,16 +642,21 @@ function handle400ReasoningError(
 async function retryWithModifiedPayload(
   payload: ChatCompletionsPayload,
   releaseSlot: () => void,
+  signal?: AbortSignal,
 ) {
   try {
-    const result = await dispatchRequest(payload)
+    signal?.throwIfAborted()
+    const result = await dispatchRequest(payload, signal)
     if (Symbol.asyncIterator in result) {
       const accountInfo = (
         result as AsyncGenerator & {
           __accountInfo?: StreamAccountInfo
         }
       ).__accountInfo
-      const wrapped = wrapGeneratorWithRelease(result, releaseSlot, accountInfo)
+      const wrapped = wrapGeneratorWithRelease(result, releaseSlot, {
+        accountInfo,
+        signal,
+      })
       // Propagate accountInfo so handler.ts can determine proxy status
       ;(
         wrapped as AsyncGenerator & {
@@ -710,17 +676,25 @@ async function retryWithModifiedPayload(
 /**
  * Dispatch request to either single-account or multi-account path.
  */
-function dispatchRequest(payload: ChatCompletionsPayload) {
+function dispatchRequest(
+  payload: ChatCompletionsPayload,
+  signal?: AbortSignal,
+) {
   return state.multiAccountEnabled && accountManager.hasAccounts() ?
-      createWithMultiAccount(payload)
-    : createWithSingleAccount(payload)
+      createWithMultiAccount(payload, signal)
+    : createWithSingleAccount(payload, signal)
 }
 
 // ---------------------------------------------------------------------------
 // Single-account path (original behaviour, unchanged)
 // ---------------------------------------------------------------------------
 
-async function createWithSingleAccount(payload: ChatCompletionsPayload) {
+// eslint-disable-next-line complexity -- Cancellation must be checked around token refresh as well as fetch.
+async function createWithSingleAccount(
+  payload: ChatCompletionsPayload,
+  signal?: AbortSignal,
+) {
+  signal?.throwIfAborted()
   if (!state.copilotToken) throw new Error("Copilot token not found")
 
   const enableVision = payload.messages.some(
@@ -759,24 +733,24 @@ async function createWithSingleAccount(payload: ChatCompletionsPayload) {
 
   const bodyString = JSON.stringify(body)
 
-  // Fetch with timeout + exponential back-off retries
-  let response = await fetchWithRetry(url, () => ({
+  const buildInit = (): RequestInit => ({
     method: "POST",
     headers: buildHeaders(),
     body: bodyString,
-  }))
+    signal,
+  })
+  let response = await fetchWithRetry(url, buildInit)
 
   // On 401 (token expired), refresh the Copilot token and retry once
   if (response.status === 401) {
     consola.warn("Copilot token expired, refreshing and retrying...")
     try {
-      await refreshCopilotToken()
-      response = await fetchWithTimeout(url, {
-        method: "POST",
-        headers: buildHeaders(),
-        body: bodyString,
-      })
+      signal?.throwIfAborted()
+      await refreshCopilotToken(signal)
+      signal?.throwIfAborted()
+      response = await fetchWithTimeout(url, buildInit())
     } catch (refreshError) {
+      signal?.throwIfAborted()
       consola.warn(`Failed to refresh token: ${rootCause(refreshError)}`)
       consola.debug("Failed to refresh token:", refreshError)
       // Fall through to the error handling below
@@ -855,6 +829,7 @@ async function tryDowngradeReasoningEffort(
     payload: ChatCompletionsPayload
     tokenSource: TokenSource
     accountId: string
+    signal?: AbortSignal
   },
 ): Promise<AsyncGenerator | ChatCompletionResponse | null> {
   const isEffortRejection =
@@ -873,8 +848,13 @@ async function tryDowngradeReasoningEffort(
     reasoning_effort: "medium" as const,
   }
   try {
-    return await doFetch(downgraded, ctx.tokenSource, ctx.accountId)
+    ctx.signal?.throwIfAborted()
+    return await doFetch(downgraded, ctx.tokenSource, {
+      accountId: ctx.accountId,
+      signal: ctx.signal,
+    })
   } catch {
+    ctx.signal?.throwIfAborted()
     return null
   }
 }
@@ -886,6 +866,7 @@ async function tryStripReasoningForTools(
     payload: ChatCompletionsPayload
     tokenSource: TokenSource
     accountId: string
+    signal?: AbortSignal
   },
 ): Promise<AsyncGenerator | ChatCompletionResponse | null> {
   if (
@@ -902,32 +883,43 @@ async function tryStripReasoningForTools(
   delete stripped.reasoning_effort
   delete stripped.thinking_budget
   try {
-    return await doFetch(stripped, ctx.tokenSource, ctx.accountId)
+    ctx.signal?.throwIfAborted()
+    return await doFetch(stripped, ctx.tokenSource, {
+      accountId: ctx.accountId,
+      signal: ctx.signal,
+    })
   } catch {
+    ctx.signal?.throwIfAborted()
     return null
   }
 }
 
-async function createWithMultiAccount(payload: ChatCompletionsPayload) {
+async function createWithMultiAccount(
+  payload: ChatCompletionsPayload,
+  signal?: AbortSignal,
+) {
   return runWithAccountRotation<
     ChatCompletionsPayload,
     AsyncGenerator | ChatCompletionResponse
   >({
     label: "chat",
     payload,
+    signal,
     transport: (p, tokenSource, accountId) =>
-      doFetch(p, tokenSource, accountId),
+      doFetch(p, tokenSource, { accountId, signal }),
     on400: async (error, ctx, account) => {
       const downgraded = await tryDowngradeReasoningEffort(error.message, {
         payload: ctx.payload,
         tokenSource: ctx.tokenSource,
         accountId: account.id,
+        signal,
       })
       if (downgraded !== null) return downgraded
       return tryStripReasoningForTools(error.message, {
         payload: ctx.payload,
         tokenSource: ctx.tokenSource,
         accountId: account.id,
+        signal,
       })
     },
   })
@@ -947,8 +939,9 @@ async function createWithMultiAccount(payload: ChatCompletionsPayload) {
 async function doFetch(
   payload: ChatCompletionsPayload,
   source: TokenSource,
-  accountId?: string,
+  { accountId, signal }: { accountId?: string; signal?: AbortSignal } = {},
 ): Promise<AsyncGenerator | ChatCompletionResponse> {
+  signal?.throwIfAborted()
   const enableVision = payload.messages.some(
     (msg) =>
       typeof msg.content !== "string"
@@ -988,6 +981,7 @@ async function doFetch(
       method: "POST",
       headers: buildHeaders(),
       body: bodyString,
+      signal,
     }),
     { accountId, accountProxy: source.proxy },
   )

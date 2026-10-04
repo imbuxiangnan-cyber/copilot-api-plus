@@ -1,0 +1,2 @@
+# Keep container entrypoints executable when checked out on Windows.
+*.sh text eol=lf

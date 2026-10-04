@@ -13,8 +13,7 @@
  * `responsesToChatResponse` / `responsesStreamToChatChunks`), so the
  * client sees the response format it expects on `/chat/completions`.
  *
- * Scope: single-account path. Multi-account routing for this passthrough
- * can be added later if needed.
+ * Supports single-account token refresh and shared multi-account rotation.
  */
 
 import consola from "consola"
@@ -29,14 +28,13 @@ import {
 } from "~/lib/api-config"
 import { HTTPError } from "~/lib/error"
 import { modelRouter } from "~/lib/model-router"
+import { runWithModelSlot } from "~/lib/model-slot"
 import { type StreamAccountInfo } from "~/lib/proxy"
+import { type RequestOptions } from "~/lib/request-options"
 import { state } from "~/lib/state"
 import { refreshCopilotToken } from "~/lib/token"
-import {
-  fetchWithRetry,
-  fetchWithTimeout,
-  type ChatCompletionResponse,
-} from "~/services/copilot/create-chat-completions"
+import { fetchWithRetry, fetchWithTimeout } from "~/lib/upstream-fetch"
+import { type ChatCompletionResponse } from "~/services/copilot/create-chat-completions"
 import {
   responsesStreamToChatChunks,
   responsesToChatResponse,
@@ -137,12 +135,13 @@ function detectVision(input: Array<unknown>): boolean {
  */
 export async function forwardResponsesAsChat(
   body: LooseResponsesPayload,
+  options: RequestOptions = {},
 ): Promise<AsyncGenerator<ServerSentEventMessage> | ChatCompletionResponse> {
-  if (!state.copilotToken) throw new Error("Copilot token not found")
-
+  options.signal?.throwIfAborted()
   // Apply model routing (same as the chat-completions path).
   const requestedModel = body.model
-  const resolvedModel = modelRouter.resolveModel(requestedModel)
+  const resolvedModel =
+    options.resolvedModel ?? modelRouter.resolveModel(requestedModel)
   if (resolvedModel !== requestedModel) {
     consola.debug(`Model routed: ${requestedModel} → ${resolvedModel}`)
   }
@@ -165,23 +164,35 @@ export async function forwardResponsesAsChat(
     }
   }
 
-  if (state.multiAccountEnabled && accountManager.hasAccounts()) {
-    return runWithAccountRotation<
-      LooseResponsesPayload,
-      AsyncGenerator<ServerSentEventMessage> | ChatCompletionResponse
-    >({
-      label: "responses-passthrough",
-      payload: upstreamBody,
-      transport: (p, tokenSource, accountId) =>
-        doResponsesFetch(p, requestedModel, { source: tokenSource, accountId }),
-      // No `on400` hook: the Chat-specific reasoning_effort 400 retries
-      // don't translate to Responses-shape errors (`reasoning: {effort}`
-      // is a different field; upstream returns different messages).
-      // Non-account 400s are still handled by the generic isNonAccountError.
-    })
-  }
-
-  return doResponsesFetch(upstreamBody, requestedModel, { source: state })
+  return runWithModelSlot(
+    resolvedModel,
+    () => {
+      if (state.multiAccountEnabled && accountManager.hasAccounts()) {
+        return runWithAccountRotation<
+          LooseResponsesPayload,
+          AsyncGenerator<ServerSentEventMessage> | ChatCompletionResponse
+        >({
+          label: "responses-passthrough",
+          payload: upstreamBody,
+          signal: options.signal,
+          transport: (p, tokenSource, accountId) =>
+            doResponsesFetch(p, requestedModel, {
+              source: tokenSource,
+              accountId,
+              signal: options.signal,
+            }),
+          // Chat-specific reasoning_effort 400 hooks do not apply to the
+          // Responses reasoning object; generic error handling still applies.
+        })
+      }
+      return doResponsesFetch(upstreamBody, requestedModel, {
+        source: state,
+        signal: options.signal,
+      })
+    },
+    (result) => (Symbol.asyncIterator in result ? result : undefined),
+    options.signal,
+  )
 }
 
 /**
@@ -197,9 +208,12 @@ export async function forwardResponsesAsChat(
 async function doResponsesFetch(
   upstreamBody: LooseResponsesPayload,
   requestedModel: string,
-  ctx: { source: TokenSource; accountId?: string },
+  ctx: { source: TokenSource; accountId?: string; signal?: AbortSignal },
 ): Promise<AsyncGenerator<ServerSentEventMessage> | ChatCompletionResponse> {
-  const { source, accountId } = ctx
+  const { source, accountId, signal } = ctx
+  signal?.throwIfAborted()
+  if (!source.copilotToken) throw new Error("Copilot token not found")
+
   const enableVision = detectVision(upstreamBody.input)
   const isAgentCall = detectAgentCall(upstreamBody.input)
 
@@ -224,6 +238,7 @@ async function doResponsesFetch(
       method: "POST",
       headers: buildHeaders(),
       body: bodyString,
+      signal,
     }),
     { accountId, accountProxy: source.proxy },
   )
@@ -235,13 +250,17 @@ async function doResponsesFetch(
   if (response.status === 401 && !accountId) {
     consola.warn("Copilot token expired, refreshing and retrying...")
     try {
-      await refreshCopilotToken()
+      signal?.throwIfAborted()
+      await refreshCopilotToken(signal)
+      signal?.throwIfAborted()
       response = await fetchWithTimeout(url, {
         method: "POST",
         headers: buildHeaders(),
         body: bodyString,
+        signal,
       })
     } catch {
+      signal?.throwIfAborted()
       // fall through
     }
   }

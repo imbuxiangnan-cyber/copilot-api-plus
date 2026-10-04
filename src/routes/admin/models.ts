@@ -1,5 +1,5 @@
 import consola from "consola"
-import { Hono } from "hono"
+import { Hono, type Context } from "hono"
 
 import { saveModelMappingConfig } from "~/lib/config"
 import { modelRouter } from "~/lib/model-router"
@@ -7,6 +7,26 @@ import { state } from "~/lib/state"
 import { rootCause } from "~/lib/utils"
 
 export const modelAdminRoutes = new Hono()
+
+function isConfigObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+async function readConfigField(
+  c: Context,
+  field: string,
+): Promise<Record<string, unknown> | Response> {
+  let body: unknown
+  try {
+    body = await c.req.json()
+  } catch {
+    return c.json({ error: "Invalid JSON body" }, 400)
+  }
+  if (!isConfigObject(body) || !isConfigObject(body[field])) {
+    return c.json({ error: `${field} object is required` }, 400)
+  }
+  return body[field]
+}
 
 // ---------------------------------------------------------------------------
 // GET /available — List all models from Copilot
@@ -42,15 +62,12 @@ modelAdminRoutes.get("/mapping", (c) => {
 // ---------------------------------------------------------------------------
 
 modelAdminRoutes.put("/mapping", async (c) => {
+  const mapping = await readConfigField(c, "mapping")
+  if (mapping instanceof Response) return mapping
+
   try {
-    const body = await c.req.json<{ mapping?: Record<string, string> }>()
-
-    if (!body.mapping || typeof body.mapping !== "object") {
-      return c.json({ error: "mapping object is required" }, 400)
-    }
-
     // Validate that all mapping values are non-empty strings
-    for (const [key, value] of Object.entries(body.mapping)) {
+    for (const [key, value] of Object.entries(mapping)) {
       if (typeof value !== "string" || value.trim() === "") {
         return c.json(
           {
@@ -61,8 +78,10 @@ modelAdminRoutes.put("/mapping", async (c) => {
       }
     }
 
-    modelRouter.updateMapping(body.mapping)
-    await saveModelMappingConfig(modelRouter.getConfig())
+    const validatedMapping = mapping as Record<string, string>
+    await saveModelMappingConfig({ mapping: validatedMapping }, () => {
+      modelRouter.updateMapping(validatedMapping)
+    })
 
     return c.json(modelRouter.getConfig())
   } catch (error) {
@@ -91,15 +110,12 @@ modelAdminRoutes.get("/concurrency", (c) => {
 // ---------------------------------------------------------------------------
 
 modelAdminRoutes.put("/concurrency", async (c) => {
+  const concurrency = await readConfigField(c, "concurrency")
+  if (concurrency instanceof Response) return concurrency
+
   try {
-    const body = await c.req.json<{ concurrency?: Record<string, number> }>()
-
-    if (!body.concurrency || typeof body.concurrency !== "object") {
-      return c.json({ error: "concurrency object is required" }, 400)
-    }
-
     // Validate that all concurrency values are positive integers
-    for (const [key, value] of Object.entries(body.concurrency)) {
+    for (const [key, value] of Object.entries(concurrency)) {
       if (typeof value !== "number" || value < 1 || !Number.isInteger(value)) {
         return c.json(
           {
@@ -110,8 +126,10 @@ modelAdminRoutes.put("/concurrency", async (c) => {
       }
     }
 
-    modelRouter.updateConcurrency(body.concurrency)
-    await saveModelMappingConfig(modelRouter.getConfig())
+    const validatedConcurrency = concurrency as Record<string, number>
+    await saveModelMappingConfig({ concurrency: validatedConcurrency }, () => {
+      modelRouter.updateConcurrency(validatedConcurrency)
+    })
 
     return c.json({ concurrency: modelRouter.getConfig().concurrency })
   } catch (error) {

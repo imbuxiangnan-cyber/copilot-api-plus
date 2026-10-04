@@ -49,18 +49,18 @@ adminRoutes.put("/config", async (c) => {
     return c.json({ error: "Invalid JSON body" }, 400)
   }
 
-  if (typeof body !== "object" || body === null) {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
     return c.json({ error: "Body must be a JSON object" }, 400)
   }
 
   const patch = body as Record<string, unknown>
-  const updated: Record<string, unknown> = {}
+  const updated: Partial<Pick<typeof state, "maxThinking" | "thinkingEffort">> =
+    {}
 
   if ("maxThinking" in patch) {
     if (typeof patch.maxThinking !== "boolean") {
       return c.json({ error: "maxThinking must be a boolean" }, 400)
     }
-    state.maxThinking = patch.maxThinking
     updated.maxThinking = patch.maxThinking
   }
 
@@ -75,9 +75,9 @@ adminRoutes.put("/config", async (c) => {
         400,
       )
     }
-    state.thinkingEffort = patch.thinkingEffort as ThinkingEffort
-    updated.thinkingEffort = patch.thinkingEffort
+    updated.thinkingEffort = patch.thinkingEffort as ThinkingEffort
   }
 
+  Object.assign(state, updated)
   return c.json({ ok: true, updated })
 })

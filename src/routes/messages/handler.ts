@@ -10,6 +10,7 @@ import {
 } from "~/lib/anthropic-sanitizer"
 import { isUnsupportedWebToolError } from "~/lib/anthropic-web-tools"
 import { awaitApproval } from "~/lib/approval"
+import { modelRouter } from "~/lib/model-router"
 import {
   isAccountProxied,
   isProxyActive,
@@ -37,6 +38,7 @@ import {
 } from "./anthropic-types"
 import { injectIntoAnthropicPayload } from "./inject-system-override"
 import {
+  translateModelName,
   translateToAnthropic,
   translateToOpenAI,
 } from "./non-stream-translation"
@@ -68,6 +70,14 @@ const HEARTBEAT = Symbol("heartbeat")
 /** Simple non-cancellable sleep that resolves to a sentinel. */
 function heartbeatDelay(ms: number): Promise<typeof HEARTBEAT> {
   return new Promise((resolve) => setTimeout(() => resolve(HEARTBEAT), ms))
+}
+
+function readStreamNext(iter: AsyncIterator<unknown>) {
+  const pending = iter.next()
+  // A disconnect can reject this prefetch while downstream writeSSE is still
+  // pending. Observe it immediately; the main loop still receives the error.
+  void pending.catch(() => {})
+  return pending
 }
 
 // ---------------------------------------------------------------------------
@@ -137,11 +147,12 @@ async function consumeStreamWithHeartbeat(
     heartbeatMs: number
     upstreamTimeoutMs: number
     abortSignal?: AbortSignal
+    requestedModel?: string
   },
 ): Promise<void> {
   const { streamState, heartbeatMs, upstreamTimeoutMs, abortSignal } = opts
   const iter = response[Symbol.asyncIterator]()
-  let pendingNext = iter.next()
+  let pendingNext = readStreamNext(iter)
   let lastDataAt = Date.now()
 
   try {
@@ -182,7 +193,7 @@ async function consumeStreamWithHeartbeat(
 
       lastDataAt = Date.now()
       // Create next promise AFTER consuming current value
-      pendingNext = iter.next()
+      pendingNext = readStreamNext(iter)
 
       const rawEvent = iterResult.value as { data?: string }
       if (rawEvent.data === "[DONE]") break
@@ -191,6 +202,7 @@ async function consumeStreamWithHeartbeat(
       let chunk: ChatCompletionChunk
       try {
         chunk = JSON.parse(rawEvent.data) as ChatCompletionChunk
+        if (opts.requestedModel) chunk.model = opts.requestedModel
       } catch {
         consola.debug("Skipping malformed SSE chunk")
         continue
@@ -236,13 +248,29 @@ export async function handleCompletion(c: Context) {
     await awaitApproval()
   }
 
-  const route = resolveAnthropicRoute(anthropicPayload.model)
+  const resolvedModel = translateModelName(
+    modelRouter.resolveModel(anthropicPayload.model),
+  )
+  const abortController = new AbortController()
+  const control: RequestControl = {
+    resolvedModel,
+    abortController,
+    signal: AbortSignal.any([c.req.raw.signal, abortController.signal]),
+  }
+  control.signal.throwIfAborted()
+  const route = resolveAnthropicRoute(resolvedModel)
   consola.debug(`Anthropic route resolved: ${route}`)
 
   if (route === "native-anthropic") {
-    return handleNativePassthrough(c, anthropicPayload)
+    return handleNativePassthrough(c, anthropicPayload, control)
   }
-  return handleTranslatedCompletion(c, anthropicPayload)
+  return handleTranslatedCompletion(c, anthropicPayload, control)
+}
+
+interface RequestControl {
+  resolvedModel: string
+  signal: AbortSignal
+  abortController: AbortController
 }
 
 // ---------------------------------------------------------------------------
@@ -252,16 +280,23 @@ export async function handleCompletion(c: Context) {
 async function handleNativePassthrough(
   c: Context,
   anthropicPayload: AnthropicMessagesPayload,
+  control: RequestControl,
 ): Promise<Response> {
   const anthropicBeta = c.req.header("anthropic-beta")
   const sanitized = injectIntoAnthropicPayload(
     stripSystemReminders(anthropicPayload),
   )
+  const options = {
+    anthropicBeta,
+    signal: control.signal,
+    resolvedModel: control.resolvedModel,
+  }
 
   let result: AnthropicMessagesResult
   try {
-    result = await createAnthropicMessages(sanitized, { anthropicBeta })
+    result = await createAnthropicMessages(sanitized, options)
   } catch (error) {
+    control.signal.throwIfAborted()
     const message = (error as Error).message || String(error)
     // Vertex AI org policy violation: Copilot load-balances /v1/messages
     // between Vertex and Anthropic-direct backends. Vertex's GCP project
@@ -278,8 +313,9 @@ async function handleNativePassthrough(
         `Native /v1/messages: Vertex GCP policy 400, retrying once (Copilot will likely route to Anthropic-direct)`,
       )
       try {
-        result = await createAnthropicMessages(sanitized, { anthropicBeta })
+        result = await createAnthropicMessages(sanitized, options)
       } catch (retryError) {
+        control.signal.throwIfAborted()
         const retryMessage = (retryError as Error).message || String(retryError)
         consola.warn(
           `Native /v1/messages: Vertex GCP policy 400 on both attempts, propagating to client: ${retryMessage}`,
@@ -296,8 +332,9 @@ async function handleNativePassthrough(
           `Native /v1/messages: Copilot rejected WebSearch/WebFetch — switching to proxy fallback`,
         )
         try {
-          return await handleWebToolFallback(c, anthropicPayload)
+          return await handleWebToolFallback(c, anthropicPayload, options)
         } catch (fallbackError) {
+          control.signal.throwIfAborted()
           consola.warn(
             `Proxy web fallback failed: ${(fallbackError as Error).message || String(fallbackError)}`,
           )
@@ -338,18 +375,17 @@ async function handleNativePassthrough(
   )
 
   return streamSSE(c, async (sse) => {
-    const abortController = new AbortController()
-    sse.onAbort(() => abortController.abort())
+    sse.onAbort(() => control.abortController.abort())
 
     try {
       await consumeNativeStreamWithHeartbeat(stream, sse, {
         heartbeatMs,
         upstreamTimeoutMs,
-        abortSignal: abortController.signal,
+        abortSignal: control.signal,
         requestedModel: anthropicPayload.model,
       })
     } catch (error) {
-      if (!abortController.signal.aborted) {
+      if (!control.signal.aborted) {
         const message = (error as Error).message || String(error)
         consola.warn(`Native SSE stream interrupted: ${message}`)
         resetConnections()
@@ -437,7 +473,7 @@ async function consumeNativeStreamWithHeartbeat(
 ): Promise<void> {
   const { heartbeatMs, upstreamTimeoutMs, abortSignal, requestedModel } = opts
   const iter = response[Symbol.asyncIterator]()
-  let pendingNext = iter.next()
+  let pendingNext = readStreamNext(iter)
   let lastDataAt = Date.now()
   let sawMessageStop = false
 
@@ -467,7 +503,7 @@ async function consumeNativeStreamWithHeartbeat(
       if (iterResult.done) break
 
       lastDataAt = Date.now()
-      pendingNext = iter.next()
+      pendingNext = readStreamNext(iter)
 
       const rawEvent = iterResult.value as { event?: string; data?: string }
       const result = await forwardNativeEvent(stream, rawEvent, requestedModel)
@@ -503,15 +539,25 @@ async function consumeNativeStreamWithHeartbeat(
 async function handleTranslatedCompletion(
   c: Context,
   anthropicPayload: AnthropicMessagesPayload,
+  control: RequestControl,
 ): Promise<Response> {
   const openAIPayload = translateToOpenAI(
-    injectIntoAnthropicPayload(stripSystemReminders(anthropicPayload)),
+    injectIntoAnthropicPayload(
+      stripSystemReminders({
+        ...anthropicPayload,
+        model: control.resolvedModel,
+      }),
+    ),
   )
 
   let response: Awaited<ReturnType<typeof createChatCompletions>>
   try {
-    response = await createChatCompletions(openAIPayload)
+    response = await createChatCompletions(openAIPayload, {
+      signal: control.signal,
+      resolvedModel: control.resolvedModel,
+    })
   } catch (error) {
+    control.signal.throwIfAborted()
     consola.warn(
       `Translated /v1/messages failed before stream start: ${errorMessage(error)}`,
     )
@@ -519,7 +565,12 @@ async function handleTranslatedCompletion(
   }
 
   if (isNonStreaming(response)) {
-    return c.json(translateToAnthropic(response))
+    return c.json(
+      overrideAnthropicResponseModel(
+        translateToAnthropic(response),
+        anthropicPayload.model,
+      ),
+    )
   }
 
   // Determine whether this stream goes through a proxy — affects
@@ -542,9 +593,8 @@ async function handleTranslatedCompletion(
 
   return streamSSE(c, async (stream) => {
     // Detect client disconnect via AbortController
-    const abortController = new AbortController()
     stream.onAbort(() => {
-      abortController.abort()
+      control.abortController.abort()
     })
 
     const streamState: AnthropicStreamState = {
@@ -561,11 +611,12 @@ async function handleTranslatedCompletion(
         streamState,
         heartbeatMs,
         upstreamTimeoutMs,
-        abortSignal: abortController.signal,
+        abortSignal: control.signal,
+        requestedModel: anthropicPayload.model,
       })
     } catch (error) {
       // Only log and send error if client is still connected
-      if (!abortController.signal.aborted) {
+      if (!control.signal.aborted) {
         const message = (error as Error).message || String(error)
         consola.warn(`SSE stream interrupted: ${message}`)
         resetConnections()

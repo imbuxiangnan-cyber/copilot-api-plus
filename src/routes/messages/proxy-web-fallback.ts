@@ -34,6 +34,7 @@ import {
   isAnthropicWebFetchTool,
   isAnthropicWebSearchTool,
 } from "~/lib/anthropic-web-tools"
+import { type RequestOptions } from "~/lib/request-options"
 import {
   createChatCompletions,
   type ChatCompletionResponse,
@@ -142,7 +143,11 @@ function parseArgs(raw: string): ParsedArgs {
   }
 }
 
-async function executeToolCall(call: ToolCall): Promise<string> {
+async function executeToolCall(
+  call: ToolCall,
+  signal?: AbortSignal,
+): Promise<string> {
+  signal?.throwIfAborted()
   const args = parseArgs(call.function.arguments)
   try {
     if (call.function.name === PROXY_WEB_SEARCH) {
@@ -152,6 +157,7 @@ async function executeToolCall(call: ToolCall): Promise<string> {
       }
       const backend = getSearchBackend()
       const results = await backend.search(query, {
+        signal,
         maxResults: Math.min(
           args.max_results ?? MAX_SEARCH_RESULTS,
           MAX_SEARCH_RESULTS,
@@ -164,7 +170,7 @@ async function executeToolCall(call: ToolCall): Promise<string> {
       if (!url) {
         return JSON.stringify({ error: "missing url" })
       }
-      const result = await directFetch(url)
+      const result = await directFetch(url, { signal })
       return JSON.stringify({
         url: result.url,
         status: result.status,
@@ -174,6 +180,7 @@ async function executeToolCall(call: ToolCall): Promise<string> {
       })
     }
   } catch (error) {
+    signal?.throwIfAborted()
     return JSON.stringify({
       error: error instanceof Error ? error.message : String(error),
     })
@@ -194,13 +201,16 @@ function isProxyToolCall(call: ToolCall): boolean {
  */
 async function runFallbackLoop(
   initialPayload: ChatCompletionsPayload,
+  options: RequestOptions,
 ): Promise<ChatCompletionResponse> {
   let payload: ChatCompletionsPayload = { ...initialPayload, stream: false }
   let lastResponse: ChatCompletionResponse | undefined
 
   for (let i = 0; i < MAX_LOOP_ITERATIONS; i++) {
+    options.signal?.throwIfAborted()
     const result = (await createChatCompletions(
       payload,
+      options,
     )) as ChatCompletionResponse
     lastResponse = result
     const choice = result.choices[0]
@@ -225,8 +235,10 @@ async function runFallbackLoop(
 
     const toolResults: Array<Message> = []
     for (const call of toolCalls ?? []) {
+      options.signal?.throwIfAborted()
       if (!isProxyToolCall(call)) continue
-      const content = await executeToolCall(call)
+      const content = await executeToolCall(call, options.signal)
+      options.signal?.throwIfAborted()
       toolResults.push({
         role: "tool",
         tool_call_id: call.id,
@@ -360,6 +372,7 @@ async function writeSynthesizedStream(
 export async function handleWebToolFallback(
   c: Context,
   anthropicPayload: AnthropicMessagesPayload,
+  options: RequestOptions = {},
 ): Promise<Response> {
   consola.warn(
     "[web-fallback] Copilot rejected WebSearch/WebFetch — running proxy-side fallback (DuckDuckGo HTML + direct fetch)",
@@ -367,6 +380,7 @@ export async function handleWebToolFallback(
 
   const openAiPayload = translateToOpenAI({
     ...anthropicPayload,
+    model: options.resolvedModel ?? anthropicPayload.model,
     // Strip server tools — they'd be skipped by the translator anyway,
     // and we add our private replacements below.
     tools: extractNonWebTools(anthropicPayload),
@@ -392,7 +406,7 @@ export async function handleWebToolFallback(
 
   let final: ChatCompletionResponse
   try {
-    final = await runFallbackLoop(loopPayload)
+    final = await runFallbackLoop(loopPayload, options)
   } catch (error) {
     consola.warn(
       `[web-fallback] loop failed: ${(error as Error).message || String(error)}`,

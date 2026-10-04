@@ -90,6 +90,43 @@ function makeManager(
 }
 
 describe("AccountManager account selection", () => {
+  test("selects an untried account without changing quota and recency ordering", () => {
+    const primary = makeAccount("primary", "active")
+    const recent = makeAccount("recent", "active")
+    const oldest = makeAccount("oldest", "active")
+    for (const account of [primary, recent, oldest]) {
+      account.usage = {
+        premium_remaining: account === primary ? 100 : 50,
+        premium_total: 100,
+        chat_remaining: 100,
+        chat_total: 100,
+        quotaResetDate: "2026-06-01",
+        lastCheckedAt: Date.now(),
+      }
+    }
+    recent.lastUsedAt = 200
+    oldest.lastUsedAt = 100
+    const manager = makeManager([primary, recent, oldest])
+
+    expect(manager.getActiveAccount()).toBe(primary)
+    expect(manager.getActiveAccount(new Set([primary.id]))).toBe(oldest)
+    expect(manager.getActiveAccount(new Set([primary.id, oldest.id]))).toBe(
+      recent,
+    )
+    expect(
+      manager.getActiveAccount(new Set([primary.id, oldest.id, recent.id])),
+    ).toBeUndefined()
+  })
+
+  test("keeps the single-account cooldown fallback unless that account was tried", () => {
+    const account = makeAccount("solo", "rate_limited")
+    account.cooldownUntil = Date.now() + 60_000
+    const manager = makeManager([account])
+
+    expect(manager.getActiveAccount()).toBe(account)
+    expect(manager.getActiveAccount(new Set([account.id]))).toBeUndefined()
+  })
+
   test("selects an exhausted-only usable account", () => {
     const account = makeAccount("exhausted", "exhausted")
     const manager = makeManager([account])

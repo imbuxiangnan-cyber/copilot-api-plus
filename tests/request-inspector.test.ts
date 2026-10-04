@@ -1,22 +1,70 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 
 import { clearRequests } from "~/lib/request-inspector"
 import { state } from "~/lib/state"
 import { server } from "~/server"
 
-const ORIGINAL_API_KEYS = state.apiKeys
+let originalState: typeof state
+let originalFetch: typeof fetch
+const fetchMock = mock(
+  (
+    _input: Parameters<typeof fetch>[0],
+    _init?: RequestInit,
+  ): Promise<Response> => {
+    throw new Error("Unexpected upstream request in request inspector test")
+  },
+)
 
 beforeEach(() => {
+  originalState = { ...state }
+  originalFetch = globalThis.fetch
+  Object.assign(state, {
+    copilotToken: "test-copilot-token",
+    copilotApiEndpoint: undefined,
+    vsCodeVersion: "1.0.0",
+    accountType: "individual",
+    multiAccountEnabled: false,
+    models: undefined,
+    apiKeys: undefined,
+    manualApprove: false,
+    rateLimitSeconds: undefined,
+    lastRequestTimestamp: undefined,
+  })
+  fetchMock.mockReset()
+  fetchMock.mockImplementation(() => {
+    throw new Error("Unexpected upstream request in request inspector test")
+  })
+  globalThis.fetch = fetchMock as unknown as typeof fetch
   clearRequests()
 })
 
 afterEach(() => {
   clearRequests()
-  state.apiKeys = ORIGINAL_API_KEYS
+  globalThis.fetch = originalFetch
+  for (const key of Object.keys(state)) {
+    if (!Object.hasOwn(originalState, key)) Reflect.deleteProperty(state, key)
+  }
+  Object.assign(state, originalState)
 })
 
 describe("request inspector", () => {
   test("records business requests and exposes them through /api/requests", async () => {
+    const chunk = {
+      id: "chat-inspector",
+      object: "chat.completion.chunk",
+      created: 123,
+      model: "gpt-test",
+      choices: [{ index: 0, delta: { content: "ok" }, finish_reason: "stop" }],
+    }
+    fetchMock.mockImplementationOnce((input, init) => {
+      expect(input).toBe("https://api.githubcopilot.com/chat/completions")
+      expect(init?.method).toBe("POST")
+      return Promise.resolve(
+        new Response(`data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`, {
+          headers: { "content-type": "text/event-stream" },
+        }),
+      )
+    })
     const businessResponse = await server.request("/chat/completions?trace=1", {
       method: "POST",
       headers: {
@@ -25,10 +73,21 @@ describe("request inspector", () => {
         "X-Api-Key": "secret-key",
         "X-Trace-Id": "trace-123",
       },
-      body: JSON.stringify({ model: "gpt-test", stream: true, messages: [] }),
+      body: JSON.stringify({
+        model: "gpt-test",
+        stream: true,
+        messages: [{ role: "user", content: "hi" }],
+      }),
     })
 
-    expect(businessResponse.status).toBeGreaterThanOrEqual(200)
+    const streamBody = await businessResponse.text()
+    expect(businessResponse.status).toBe(200)
+    expect(businessResponse.headers.get("content-type")).toContain(
+      "text/event-stream",
+    )
+    expect(streamBody).toContain(JSON.stringify(chunk))
+    expect(streamBody).toContain("data: [DONE]")
+    expect(fetchMock).toHaveBeenCalledTimes(1)
 
     const adminResponse = await server.request("/api/requests")
     expect(adminResponse.status).toBe(200)
@@ -60,11 +119,28 @@ describe("request inspector", () => {
   })
 
   test("DELETE /api/requests clears records", async () => {
-    await server.request("/responses", {
+    const upstreamResponse = {
+      id: "resp-inspector",
+      object: "response",
+      model: "gpt-test",
+      output: [],
+    }
+    fetchMock.mockImplementationOnce((input, init) => {
+      expect(input).toBe("https://api.githubcopilot.com/v1/responses")
+      expect(init?.method).toBe("POST")
+      return Promise.resolve(Response.json(upstreamResponse))
+    })
+    const businessResponse = await server.request("/responses", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "gpt-test" }),
+      body: JSON.stringify({
+        model: "gpt-test",
+        input: [{ role: "user", content: "hi" }],
+      }),
     })
+    expect(businessResponse.status).toBe(200)
+    expect(await businessResponse.json()).toEqual(upstreamResponse)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
 
     const beforeClear = (await (
       await server.request("/api/requests")
@@ -94,6 +170,7 @@ describe("request inspector", () => {
     const payload = (await response.json()) as { requests: Array<unknown> }
 
     expect(payload.requests).toHaveLength(0)
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   test("inspector runs after api key authentication", async () => {
@@ -106,9 +183,12 @@ describe("request inspector", () => {
     })
 
     expect(response.status).toBe(401)
+    expect(fetchMock).not.toHaveBeenCalled()
 
-    state.apiKeys = ORIGINAL_API_KEYS
-    const adminResponse = await server.request("/api/requests")
+    const adminResponse = await server.request("/api/requests", {
+      headers: { Authorization: "Bearer correct-key" },
+    })
+    expect(adminResponse.status).toBe(200)
     const payload = (await adminResponse.json()) as { requests: Array<unknown> }
 
     expect(payload.requests).toHaveLength(0)

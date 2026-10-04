@@ -1,8 +1,8 @@
 /**
  * Native Copilot `/v1/messages` passthrough.
  *
- * Mirrors the multi-account / single-account / 401-refresh / error-handling
- * structure of `create-chat-completions.ts`, but forwards the Anthropic
+ * Shares model slots, account rotation and cancellable transport with the
+ * Chat and Responses clients, but forwards the Anthropic
  * payload as-is to the native Copilot endpoint instead of translating it
  * through OpenAI chat-completions.
  *
@@ -23,6 +23,7 @@ import type {
 } from "~/routes/messages/anthropic-types"
 
 import { accountManager } from "~/lib/account-manager"
+import { runWithAccountRotation } from "~/lib/account-rotation"
 import {
   injectMaxThinkingBudget,
   isInvalidThinkingSignatureError,
@@ -36,13 +37,12 @@ import {
   type TokenSource,
 } from "~/lib/api-config"
 import { HTTPError } from "~/lib/error"
-import {
-  getAccountDispatcher,
-  resetAccountConnections,
-  type StreamAccountInfo,
-} from "~/lib/proxy"
+import { modelRouter } from "~/lib/model-router"
+import { runWithModelSlot } from "~/lib/model-slot"
+import { type StreamAccountInfo } from "~/lib/proxy"
 import { state } from "~/lib/state"
 import { refreshCopilotToken } from "~/lib/token"
+import { fetchWithTimeout } from "~/lib/upstream-fetch"
 import { rootCause } from "~/lib/utils"
 
 // ---------------------------------------------------------------------------
@@ -58,58 +58,8 @@ interface CreateOptions {
   anthropicBeta?: string
   /** Optional abort signal forwarded to fetch. */
   signal?: AbortSignal
-}
-
-// ---------------------------------------------------------------------------
-// Fetch helpers (timeout, retry, dispatcher)
-// ---------------------------------------------------------------------------
-
-const FETCH_TIMEOUT_MS = 120_000
-
-async function fetchWithTimeout(
-  url: string,
-  init: RequestInit,
-  {
-    timeoutMs = FETCH_TIMEOUT_MS,
-    accountId,
-    accountProxy,
-    externalSignal,
-  }: {
-    timeoutMs?: number
-    accountId?: string
-    accountProxy?: string
-    externalSignal?: AbortSignal
-  } = {},
-): Promise<Response> {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
-  const onExternalAbort = () => controller.abort()
-  if (externalSignal) {
-    if (externalSignal.aborted) controller.abort()
-    else
-      externalSignal.addEventListener("abort", onExternalAbort, { once: true })
-  }
-
-  try {
-    const fetchOptions: RequestInit & { dispatcher?: unknown } = {
-      ...init,
-      signal: controller.signal,
-    }
-    if (accountId) {
-      ;(fetchOptions as { dispatcher?: unknown }).dispatcher =
-        getAccountDispatcher(accountId, accountProxy)
-    }
-    return await fetch(url, fetchOptions)
-  } catch (error: unknown) {
-    if (error instanceof DOMException && error.name === "AbortError") {
-      throw new Error(`Request timed out after ${timeoutMs}ms`)
-    }
-    throw error
-  } finally {
-    clearTimeout(timer)
-    if (externalSignal)
-      externalSignal.removeEventListener("abort", onExternalAbort)
-  }
+  /** Already mapped by the route handler; do not apply mapping twice. */
+  resolvedModel?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -171,10 +121,14 @@ export async function createAnthropicMessages(
   payload: AnthropicMessagesPayload,
   options?: CreateOptions,
 ): Promise<AnthropicMessagesResult> {
+  const resolvedModel =
+    options?.resolvedModel ?? modelRouter.resolveModel(payload.model)
+  const mappedPayload = { ...payload, model: resolvedModel }
+
   // Default to maximum thinking budget when the client did not specify one.
   // Adaptive-thinking models get { type: "adaptive" }; others get the
   // model's max_thinking_budget. Existing client preference is respected.
-  injectMaxThinkingBudget(payload)
+  injectMaxThinkingBudget(mappedPayload)
 
   // Proactively strip assistant thinking/redacted_thinking blocks from
   // history. Copilot's Vertex backend (req_vrtx_*) rejects replayed
@@ -185,8 +139,8 @@ export async function createAnthropicMessages(
   // The `try/catch` block below still keeps the retry as a safety net for
   // any future / non-Vertex backend that might surface the same error
   // through a different code path.
-  const preStripped = stripAssistantThinkingBlocks(payload)
-  let workingPayload = payload
+  const preStripped = stripAssistantThinkingBlocks(mappedPayload)
+  let workingPayload = mappedPayload
   if (preStripped.stripped) {
     consola.debug(
       `Pre-stripped ${preStripped.strippedBlocks} assistant thinking block(s) from history (Copilot/Vertex does not accept replay)`,
@@ -200,23 +154,31 @@ export async function createAnthropicMessages(
   sanitizeForCopilotBackend(workingPayload)
   normalizeAdaptiveThinkingForCopilot(workingPayload)
 
-  try {
-    return await dispatchAnthropicRequest(workingPayload, options)
-  } catch (error) {
-    if (!(await isInvalidThinkingSignatureError(error))) throw error
+  return runWithModelSlot(
+    resolvedModel,
+    async () => {
+      try {
+        return await dispatchAnthropicRequest(workingPayload, options)
+      } catch (error) {
+        options?.signal?.throwIfAborted()
+        if (!(await isInvalidThinkingSignatureError(error))) throw error
 
-    const stripped = stripAssistantThinkingBlocks(workingPayload)
-    if (!stripped.stripped) throw error
+        const stripped = stripAssistantThinkingBlocks(workingPayload)
+        if (!stripped.stripped) throw error
 
-    const droppedSuffix =
-      stripped.droppedAssistantMessages > 0 ?
-        ` and dropping ${stripped.droppedAssistantMessages} thinking-only assistant turn(s)`
-      : ""
-    consola.warn(
-      `Native /v1/messages signature retry: stripped ${stripped.strippedBlocks} thinking block(s)${droppedSuffix}`,
-    )
-    return await dispatchAnthropicRequest(stripped.payload, options)
-  }
+        const droppedSuffix =
+          stripped.droppedAssistantMessages > 0 ?
+            ` and dropping ${stripped.droppedAssistantMessages} thinking-only assistant turn(s)`
+          : ""
+        consola.warn(
+          `Native /v1/messages signature retry: stripped ${stripped.strippedBlocks} thinking block(s)${droppedSuffix}`,
+        )
+        return await dispatchAnthropicRequest(stripped.payload, options)
+      }
+    },
+    (result) => (Symbol.asyncIterator in result ? result : undefined),
+    options?.signal,
+  )
 }
 
 async function dispatchAnthropicRequest(
@@ -224,7 +186,16 @@ async function dispatchAnthropicRequest(
   options?: CreateOptions,
 ): Promise<AnthropicMessagesResult> {
   if (state.multiAccountEnabled && accountManager.hasAccounts()) {
-    return createWithMultiAccount(payload, options)
+    return runWithAccountRotation<
+      AnthropicMessagesPayload,
+      AnthropicMessagesResult
+    >({
+      label: "native-anthropic",
+      payload,
+      signal: options?.signal,
+      transport: (request, source, accountId) =>
+        doFetchAnthropic({ payload: request, source, accountId, options }),
+    })
   }
   return createWithSingleAccount(payload, options)
 }
@@ -257,9 +228,10 @@ async function createWithSingleAccount(
   })
 
   if (response.status === 401) {
+    options?.signal?.throwIfAborted()
     consola.warn("Copilot token expired, refreshing and retrying...")
     try {
-      await refreshCopilotToken()
+      await refreshCopilotToken(options?.signal)
       response = await fetchWithTimeout(url, {
         method: "POST",
         headers: buildHeaders(),
@@ -267,6 +239,7 @@ async function createWithSingleAccount(
         signal: options?.signal,
       })
     } catch (refreshError) {
+      options?.signal?.throwIfAborted()
       consola.warn(`Failed to refresh token: ${rootCause(refreshError)}`)
       consola.debug("Failed to refresh token:", refreshError)
     }
@@ -288,7 +261,7 @@ async function createWithSingleAccount(
 }
 
 // ---------------------------------------------------------------------------
-// Multi-account path (failover across accounts, mirrors chat-completions)
+// Multi-account transport used by the shared rotation helper
 // ---------------------------------------------------------------------------
 
 interface FetchContext {
@@ -296,218 +269,6 @@ interface FetchContext {
   source: TokenSource
   accountId: string
   options?: CreateOptions
-}
-
-function buildTokenSource(
-  account: ReturnType<typeof accountManager.getActiveAccount> & object,
-): TokenSource {
-  return {
-    copilotToken: account.copilotToken,
-    copilotApiEndpoint: account.copilotApiEndpoint,
-    accountType: account.accountType,
-    githubToken: account.githubToken,
-    vsCodeVersion: state.vsCodeVersion,
-    machineId: account.machineId,
-    sessionId: account.sessionId,
-    proxy: account.proxy,
-  }
-}
-
-function tagStreamWithAccount(
-  result: AnthropicMessagesResult,
-  account: { id: string; proxy?: string },
-  source: TokenSource,
-): AnthropicMessagesResult {
-  if (typeof result === "object" && Symbol.asyncIterator in result) {
-    ;(
-      result as AsyncGenerator & { __accountInfo?: StreamAccountInfo }
-    ).__accountInfo = {
-      accountId: account.id,
-      accountProxy: account.proxy,
-      apiBaseUrl: copilotBaseUrl(source),
-    }
-  }
-  return result
-}
-
-async function handleMultiAccount401(
-  ctx: FetchContext,
-  account: NonNullable<ReturnType<typeof accountManager.getActiveAccount>>,
-): Promise<AnthropicMessagesResult> {
-  try {
-    await accountManager.refreshAccountToken(account)
-    ctx.source.copilotToken = account.copilotToken
-    const retried = await doFetchAnthropic(ctx)
-    accountManager.markAccountSuccess(account.id)
-    return tagStreamWithAccount(retried, account, ctx.source)
-  } catch (refreshError) {
-    accountManager.markAccountStatus(
-      account.id,
-      "banned",
-      "GitHub token invalid",
-    )
-    throw refreshError
-  }
-}
-
-async function createWithMultiAccount(
-  payload: AnthropicMessagesPayload,
-  options?: CreateOptions,
-): Promise<AnthropicMessagesResult> {
-  const triedAccountIds = new Set<string>()
-  let lastError: unknown
-  let networkRetried = false
-
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const account = accountManager.getActiveAccount()
-    if (!account || triedAccountIds.has(account.id)) break
-    triedAccountIds.add(account.id)
-
-    if (!account.copilotToken) {
-      consola.debug(
-        `Account ${account.label} has no copilot token, refreshing...`,
-      )
-      await accountManager.refreshAccountToken(account)
-      if (!account.copilotToken) {
-        accountManager.markAccountStatus(
-          account.id,
-          "error",
-          "No copilot token",
-        )
-        continue
-      }
-    }
-
-    const ctx: FetchContext = {
-      payload,
-      source: buildTokenSource(account),
-      accountId: account.id,
-      options,
-    }
-
-    try {
-      const result = await doFetchAnthropic(ctx)
-      account.lastRequestAt = Date.now()
-      accountManager.markAccountSuccess(account.id)
-      return tagStreamWithAccount(result, account, ctx.source)
-    } catch (error) {
-      lastError = error
-
-      if (error instanceof HTTPError) {
-        const action = await handleAnthropicHttpError(
-          error,
-          account,
-          triedAccountIds,
-        )
-        if (action === "refresh401") return handleMultiAccount401(ctx, account)
-        if (action === "throw") throw error
-        // "continue" — try next account
-        continue
-      }
-
-      const errMsg = (error as Error).message || String(error)
-      if (!networkRetried) {
-        networkRetried = true
-        consola.warn(
-          `Account ${account.label}: network error on /v1/messages, resetting pool and retrying once: ${errMsg}`,
-        )
-        resetAccountConnections(account.id)
-        triedAccountIds.delete(account.id)
-        continue
-      }
-      consola.warn(
-        `Account ${account.label}: network error after retry on /v1/messages (giving up): ${errMsg}`,
-      )
-      throw error
-    }
-  }
-
-  if (lastError)
-    throw lastError instanceof Error ? lastError : (
-        new Error("Network request failed")
-      )
-  throw new Error("No available accounts")
-}
-
-/**
- * Decide what to do for an HTTP error from a multi-account request attempt.
- *
- * Returns:
- *  - "refresh401" — caller should run the 401-refresh-and-retry flow
- *  - "throw"      — caller should rethrow the error to the client
- *  - "continue"   — caller should try the next account
- *
- * Single-account guard: marking the only account as rate_limited / banned
- * would disable the proxy entirely, so 429 / 403 are propagated unchanged
- * to the client when no other account is available.
- */
-async function handleAnthropicHttpError(
-  error: HTTPError,
-  account: import("~/lib/account-manager").Account,
-  triedAccountIds: Set<string>,
-): Promise<"refresh401" | "throw" | "continue"> {
-  const status = error.response.status
-  if (status === 401) return "refresh401"
-
-  if (status === 429 || status === 403) {
-    const isRateLimit = status === 429
-
-    if (isRateLimit) {
-      // Detect Copilot 5h Pro+ session limit + refresh GH rate-limit snapshot.
-      let body: string
-      try {
-        body = await error.response.clone().text()
-      } catch {
-        body = error.message || ""
-      }
-      if (body.includes("user_global_rate_limited:pro_plus")) {
-        accountManager.markCopilotSessionLimit(
-          account.id,
-          "user_global_rate_limited:pro_plus",
-        )
-      }
-      void accountManager.refreshGithubRateLimit(account)
-    }
-
-    if (hasAnotherAnthropicAccountToTry(triedAccountIds)) {
-      accountManager.markAccountStatus(
-        account.id,
-        isRateLimit ? "rate_limited" : "banned",
-        isRateLimit ? "429 Rate limited" : "403 Forbidden",
-      )
-      consola.warn(
-        `Account ${account.label}: ${status} on /v1/messages, trying next account`,
-      )
-      return "continue"
-    }
-    consola.warn(
-      `Account ${account.label}: ${status} on /v1/messages — only account, propagating to client without marking`,
-    )
-    return "throw"
-  }
-
-  if (status >= 400 && status < 500) return "throw"
-
-  consola.warn(
-    `Account ${account.label}: 5xx from /v1/messages${
-      hasAnotherAnthropicAccountToTry(triedAccountIds) ?
-        ", trying next account"
-      : " — no other accounts available, propagating error"
-    }`,
-  )
-  return "continue"
-}
-
-/**
- * Peek at whether `getActiveAccount()` would return an untried account on the
- * next iteration. Used purely for honest log messaging — doesn't affect
- * routing.
- */
-function hasAnotherAnthropicAccountToTry(
-  triedAccountIds: Set<string>,
-): boolean {
-  const next = accountManager.getActiveAccount()
-  return next !== undefined && !triedAccountIds.has(next.id)
 }
 
 // ---------------------------------------------------------------------------
@@ -518,6 +279,7 @@ async function doFetchAnthropic(
   ctx: FetchContext,
 ): Promise<AnthropicMessagesResult> {
   const { payload, source, accountId, options } = ctx
+  if (!source.copilotToken) throw new Error("Copilot token not found")
   const url = `${copilotBaseUrl(source)}/v1/messages`
   const bodyString = JSON.stringify(payload)
 
@@ -538,7 +300,7 @@ async function doFetchAnthropic(
       body: bodyString,
       signal: options?.signal,
     },
-    { accountId, accountProxy: source.proxy, externalSignal: options?.signal },
+    { accountId, accountProxy: source.proxy },
   )
 
   if (!response.ok) {
@@ -562,8 +324,17 @@ async function throwUpstreamError(response: Response): Promise<never> {
       body: errorBody,
     })
   }
-  throw new HTTPError(
+  const error = new HTTPError(
     `Failed to call /v1/messages: ${response.status} ${errorBody}`,
     response,
   )
+  if (
+    response.status >= 400
+    && response.status < 500
+    && ![401, 403, 429].includes(response.status)
+  ) {
+    ;(error as HTTPError & { __nonAccountError?: boolean }).__nonAccountError =
+      true
+  }
+  throw error
 }

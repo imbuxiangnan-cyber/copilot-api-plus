@@ -263,17 +263,18 @@ export class AccountManager {
   /**
    * Pick the best available account.
    *
-   * 1. Filter out disabled, banned, and accounts still in cooldown.
+   * 1. Filter out excluded, disabled, banned, and accounts still in cooldown.
    * 2. Prefer accounts not marked exhausted; quota exhaustion is advisory and
    *    upstream 429/403 responses remain authoritative.
    * 3. Within each status group, prefer more remaining premium quota.
    * 4. Fall back to round-robin (least-recently-used) when quotas are equal
    *    or unknown.
    */
-  getActiveAccount(): Account | undefined {
+  getActiveAccount(excludedIds?: ReadonlySet<string>): Account | undefined {
     const now = Date.now()
 
     const eligible = this.accounts.filter((a) => {
+      if (excludedIds?.has(a.id)) return false
       if (a.status === "disabled" || a.status === "banned") {
         return false
       }
@@ -288,7 +289,11 @@ export class AccountManager {
       // would be a self-inflicted outage.
       if (this.accounts.length === 1) {
         const solo = this.accounts[0]
-        if (solo.status !== "disabled" && solo.status !== "banned") {
+        if (
+          !excludedIds?.has(solo.id)
+          && solo.status !== "disabled"
+          && solo.status !== "banned"
+        ) {
           return solo
         }
       }
@@ -387,11 +392,16 @@ export class AccountManager {
    * Passes the account's GitHub token directly to `getCopilotToken()` so that
    * global `state.githubToken` is never mutated — safe for concurrent use.
    */
-  async refreshAccountToken(account: Account): Promise<void> {
+  async refreshAccountToken(
+    account: Account,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    signal?.throwIfAborted()
     if (!shouldBackgroundRefresh(account)) return
 
     try {
-      const data = await getCopilotToken(account.githubToken)
+      const data = await getCopilotToken(account.githubToken, signal)
+      signal?.throwIfAborted()
       // eslint-disable-next-line require-atomic-updates
       account.copilotToken = data.token
       if (data.endpoints?.api) {
@@ -399,6 +409,7 @@ export class AccountManager {
         account.copilotApiEndpoint = data.endpoints.api
       }
     } catch (err: unknown) {
+      signal?.throwIfAborted()
       if (err instanceof HTTPError && err.response.status === 401) {
         this.markAccountStatus(account.id, "banned", "GitHub token invalid")
         consola.warn(

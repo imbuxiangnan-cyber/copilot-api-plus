@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach } from "bun:test"
+import { afterEach, describe, test, expect, beforeEach } from "bun:test"
 
 import type { Model } from "~/services/copilot/get-models"
 
@@ -14,9 +14,20 @@ function setModels(models: Array<Partial<Model> & { id: string }>): void {
 }
 
 describe("resolveAnthropicRoute", () => {
+  let originalModels: typeof state.models
+  let originalDisablePassthrough: boolean
+
   beforeEach(() => {
+    originalModels = state.models
+    originalDisablePassthrough = state.disableAnthropicPassthrough
     state.disableAnthropicPassthrough = false
     state.models = undefined
+    clearRouteCache()
+  })
+
+  afterEach(() => {
+    state.models = originalModels
+    state.disableAnthropicPassthrough = originalDisablePassthrough
     clearRouteCache()
   })
 
@@ -72,16 +83,40 @@ describe("resolveAnthropicRoute", () => {
     expect(resolveAnthropicRoute("o1-preview")).toBe("translate-openai")
   })
 
-  test("results are cached per model id", () => {
+  test("refreshing model capabilities invalidates earlier route decisions", () => {
     setModels([
       { id: "claude-opus-4-5", supported_endpoints: ["anthropic-messages"] },
     ])
-    const first = resolveAnthropicRoute("claude-opus-4-5")
-    // Mutate models without clearing — cached value should still apply.
-    state.models = { object: "list", data: [] }
-    const second = resolveAnthropicRoute("claude-opus-4-5")
-    expect(first).toBe(second)
-    expect(second).toBe("native-anthropic")
+    expect(resolveAnthropicRoute("claude-opus-4-5")).toBe("native-anthropic")
+
+    // Model refresh replaces the snapshot without manually clearing routes.
+    state.models = {
+      object: "list",
+      data: [
+        { id: "claude-opus-4-5", supported_endpoints: ["/chat/completions"] },
+      ] as Array<Model>,
+    }
+    expect(resolveAnthropicRoute("claude-opus-4-5")).toBe("translate-openai")
+  })
+
+  test("loaded capabilities replace a cached model-name fallback", () => {
+    expect(resolveAnthropicRoute("custom-model")).toBe("translate-openai")
+
+    state.models = {
+      object: "list",
+      data: [
+        { id: "custom-model", supported_endpoints: ["/v1/messages"] },
+      ] as Array<Model>,
+    }
+    expect(resolveAnthropicRoute("custom-model")).toBe("native-anthropic")
+  })
+
+  test("discarding model capabilities also discards cached routes", () => {
+    setModels([{ id: "custom-model", supported_endpoints: ["/v1/messages"] }])
+    expect(resolveAnthropicRoute("custom-model")).toBe("native-anthropic")
+
+    state.models = undefined
+    expect(resolveAnthropicRoute("custom-model")).toBe("translate-openai")
   })
 
   test("respects empty supported_endpoints by falling through to heuristic", () => {

@@ -95,8 +95,9 @@ export const setupCopilotToken = async () => {
 /**
  * Refresh the Copilot token on demand (e.g. after a 401 error).
  */
-export async function refreshCopilotToken(): Promise<void> {
-  const { token } = await getCopilotToken()
+export async function refreshCopilotToken(signal?: AbortSignal): Promise<void> {
+  const { token } = await getCopilotToken(undefined, signal)
+  signal?.throwIfAborted()
   state.copilotToken = token
   consola.debug("Copilot token refreshed")
   if (state.showToken) {

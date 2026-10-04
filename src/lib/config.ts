@@ -4,12 +4,14 @@
  */
 
 import consola from "consola"
+import { randomUUID } from "node:crypto"
 import fs from "node:fs/promises"
 import path from "node:path"
 
 import { PATHS } from "./paths"
 
 const CONFIG_FILENAME = "config.json"
+let configWriteQueue: Promise<void> = Promise.resolve()
 
 export interface ProxyConfig {
   enabled: boolean
@@ -53,19 +55,76 @@ export async function loadConfig(): Promise<AppConfig> {
     const configPath = getConfigPath()
     // eslint-disable-next-line unicorn/prefer-json-parse-buffer
     const content = await fs.readFile(configPath, "utf8")
-    return JSON.parse(content) as AppConfig
-  } catch {
-    return {}
+    const config: unknown = JSON.parse(content)
+    if (
+      typeof config !== "object"
+      || config === null
+      || Array.isArray(config)
+    ) {
+      throw new TypeError("Configuration must be a JSON object")
+    }
+    return config as AppConfig
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      return {}
+    }
+    throw error
   }
 }
 
+/** Keep every read-modify-write transaction in this process ordered. */
+function queueConfigWrite(operation: () => Promise<void>): Promise<void> {
+  const pending = configWriteQueue.then(operation)
+  // Let later transactions run after a failure, while returning it to its caller.
+  configWriteQueue = pending.catch(() => {})
+  return pending
+}
+
+async function writeConfigAtomically(config: AppConfig): Promise<void> {
+  const configPath = getConfigPath()
+  const temporaryPath = `${configPath}.${randomUUID()}.tmp`
+  const content = JSON.stringify(config, null, 2)
+  try {
+    await fs.writeFile(temporaryPath, content, {
+      encoding: "utf8",
+      mode: 0o600,
+      flag: "wx",
+    })
+    await fs.rename(temporaryPath, configPath)
+  } catch (error) {
+    try {
+      await fs.unlink(temporaryPath)
+    } catch (cleanupError) {
+      if (
+        !(cleanupError instanceof Error)
+        || !("code" in cleanupError)
+        || cleanupError.code !== "ENOENT"
+      ) {
+        consola.warn("Failed to remove temporary configuration:", cleanupError)
+      }
+    }
+    throw error
+  }
+  consola.debug(`Configuration saved to ${configPath}`)
+}
+
+function updateConfig(
+  update: (config: AppConfig) => void,
+  onSaved?: () => void,
+): Promise<void> {
+  return queueConfigWrite(async () => {
+    const config = await loadConfig()
+    update(config)
+    await writeConfigAtomically(config)
+    onSaved?.()
+  })
+}
+
 /**
- * Save configuration to file
+ * Replace the complete configuration, ordered with all other config writes.
  */
 export async function saveConfig(config: AppConfig): Promise<void> {
-  const configPath = getConfigPath()
-  await fs.writeFile(configPath, JSON.stringify(config, null, 2), "utf8")
-  consola.debug(`Configuration saved to ${configPath}`)
+  await queueConfigWrite(() => writeConfigAtomically(config))
 }
 
 /**
@@ -80,18 +139,18 @@ export async function getProxyConfig(): Promise<ProxyConfig | undefined> {
  * Save proxy configuration
  */
 export async function saveProxyConfig(proxyConfig: ProxyConfig): Promise<void> {
-  const config = await loadConfig()
-  config.proxy = proxyConfig
-  await saveConfig(config)
+  await updateConfig((config) => {
+    config.proxy = proxyConfig
+  })
 }
 
 /**
  * Clear proxy configuration
  */
 export async function clearProxyConfig(): Promise<void> {
-  const config = await loadConfig()
-  delete config.proxy
-  await saveConfig(config)
+  await updateConfig((config) => {
+    delete config.proxy
+  })
 }
 
 /**
@@ -105,14 +164,16 @@ export async function getModelMappingConfig(): Promise<
 }
 
 /**
- * Save model mapping configuration
+ * Merge model configuration fields and apply runtime changes only after saving.
+ * The optional synchronous callback runs before the next write transaction.
  */
 export async function saveModelMappingConfig(
   modelMapping: ModelMappingConfig,
+  onSaved?: () => void,
 ): Promise<void> {
-  const config = await loadConfig()
-  config.modelMapping = modelMapping
-  await saveConfig(config)
+  await updateConfig((config) => {
+    config.modelMapping = { ...config.modelMapping, ...modelMapping }
+  }, onSaved)
 }
 
 /**

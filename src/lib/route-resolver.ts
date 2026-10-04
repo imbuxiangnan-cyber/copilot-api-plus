@@ -30,12 +30,14 @@ function looksLikeClaudeModel(model: string): boolean {
   return /^claude-/i.test(model)
 }
 
-/** Per-process cache of the routing decision keyed by model id. */
+/** Routing decisions are valid only for the current model-list snapshot. */
 const routeCache = new Map<string, AnthropicRoute>()
+let cachedModels = state.models
 
-/** Wipe the cache (call after `/models` is refreshed). */
+/** Wipe the cache and associate it with the current model-list snapshot. */
 export function clearRouteCache(): void {
   routeCache.clear()
+  cachedModels = state.models
 }
 
 /**
@@ -62,6 +64,8 @@ const NATIVE_ANTHROPIC_ENDPOINT_IDS = new Set<string>([
  */
 export function resolveAnthropicRoute(model: string): AnthropicRoute {
   if (state.disableAnthropicPassthrough) return "translate-openai"
+
+  if (cachedModels !== state.models) clearRouteCache()
 
   const cached = routeCache.get(model)
   if (cached) return cached

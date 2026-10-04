@@ -23,10 +23,14 @@ const DEFAULT_CONFIG: ModelMappingConfig = {
 
 const DEFAULT_MAX_CONCURRENCY = 10
 
+interface ModelQueue {
+  active: number
+  waiters: Array<() => void>
+}
+
 export class ModelRouter {
   private config: ModelMappingConfig
-  private queues: Map<string, { active: number; waiters: Array<() => void> }> =
-    new Map()
+  private queues: Map<string, ModelQueue> = new Map()
   private requestCounts: Map<string, number> = new Map()
 
   constructor(config?: ModelMappingConfig) {
@@ -73,54 +77,69 @@ export class ModelRouter {
    * the name so that concurrency limits are keyed by the actual model sent
    * to the backend, not the user-facing alias.
    *
-   * Returns a release function that must be called when the request completes.
+   * Returns an idempotent release function to call when the request completes.
    * If the concurrency limit is reached, the returned promise will wait until
    * a slot becomes available.
    */
-  async acquireSlot(resolvedModel: string): Promise<() => void> {
-    const maxConcurrency =
-      (this.config.concurrency as Partial<Record<string, number>>)[
-        resolvedModel
-      ]
-      ?? (this.config.concurrency as Partial<Record<string, number>>)["default"]
-      ?? DEFAULT_MAX_CONCURRENCY
-
-    let queue = this.queues.get(resolvedModel)
-    if (!queue) {
-      queue = { active: 0, waiters: [] }
-      this.queues.set(resolvedModel, queue)
+  acquireSlot(
+    resolvedModel: string,
+    signal?: AbortSignal,
+  ): Promise<() => void> {
+    // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- AbortSignal permits arbitrary reasons, which must be preserved.
+    if (signal?.aborted) return Promise.reject(signal.reason)
+    const queue: ModelQueue = this.queues.get(resolvedModel) ?? {
+      active: 0,
+      waiters: [],
     }
+    this.queues.set(resolvedModel, queue)
 
-    if (queue.active < maxConcurrency) {
-      queue.active++
-      this.requestCounts.set(
-        resolvedModel,
-        (this.requestCounts.get(resolvedModel) ?? 0) + 1,
-      )
-      consola.debug(
-        `Slot acquired for "${resolvedModel}": ${queue.active}/${maxConcurrency} active`,
-      )
-      return () => this.releaseSlot(resolvedModel)
-    }
-
-    // Wait for a slot to open
-    const currentQueue = queue
-    consola.debug(
-      `Concurrency limit reached for "${resolvedModel}" (${maxConcurrency}), queuing request`,
-    )
-    return new Promise<() => void>((resolve) => {
-      currentQueue.waiters.push(() => {
-        currentQueue.active++
-        this.requestCounts.set(
-          resolvedModel,
-          (this.requestCounts.get(resolvedModel) ?? 0) + 1,
-        )
-        consola.debug(
-          `Queued slot acquired for "${resolvedModel}": ${currentQueue.active}/${maxConcurrency} active`,
-        )
-        resolve(() => this.releaseSlot(resolvedModel))
-      })
+    return new Promise<() => void>((resolve, reject) => {
+      const onAbort = () => {
+        const index = queue.waiters.indexOf(waiter)
+        if (index === -1) return
+        queue.waiters.splice(index, 1)
+        signal?.removeEventListener("abort", onAbort)
+        // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- Preserve the caller's cancellation reason.
+        reject(signal?.reason)
+      }
+      const waiter = () => {
+        signal?.removeEventListener("abort", onAbort)
+        resolve(this.grantSlot(resolvedModel, queue))
+      }
+      queue.waiters.push(waiter)
+      signal?.addEventListener("abort", onAbort, { once: true })
+      this.drainQueue(resolvedModel, queue)
     })
+  }
+
+  private getMaxConcurrency(model: string): number {
+    const concurrency = this.config.concurrency as Partial<
+      Record<string, number>
+    >
+    return concurrency[model] ?? concurrency.default ?? DEFAULT_MAX_CONCURRENCY
+  }
+
+  private grantSlot(model: string, queue: ModelQueue): () => void {
+    queue.active++
+    this.requestCounts.set(model, (this.requestCounts.get(model) ?? 0) + 1)
+    consola.debug(
+      `Slot acquired for "${model}": ${queue.active}/${this.getMaxConcurrency(model)} active`,
+    )
+
+    let released = false
+    return () => {
+      if (released) return
+      released = true
+      this.releaseSlot(model)
+    }
+  }
+
+  private drainQueue(model: string, queue: ModelQueue): void {
+    const maxConcurrency = this.getMaxConcurrency(model)
+    while (queue.active < maxConcurrency && queue.waiters.length > 0) {
+      const next = queue.waiters.shift()
+      if (next) next()
+    }
   }
 
   private releaseSlot(model: string): void {
@@ -129,10 +148,7 @@ export class ModelRouter {
 
     queue.active--
 
-    if (queue.waiters.length > 0) {
-      const next = queue.waiters.shift()
-      if (next) next()
-    }
+    this.drainQueue(model, queue)
 
     consola.debug(
       `Slot released for "${model}": ${queue.active} active, ${queue.waiters.length} queued`,
@@ -167,17 +183,10 @@ export class ModelRouter {
     ])
     for (const model of allModels) {
       const queue = this.queues.get(model)
-      const maxConcurrency =
-        (this.config.concurrency as Partial<Record<string, number>>)[model]
-        ?? (this.config.concurrency as Partial<Record<string, number>>)[
-          "default"
-        ]
-        ?? DEFAULT_MAX_CONCURRENCY
-
       stats[model] = {
         active: queue?.active ?? 0,
         queued: queue?.waiters.length ?? 0,
-        maxConcurrency,
+        maxConcurrency: this.getMaxConcurrency(model),
         totalRequests: this.requestCounts.get(model) ?? 0,
       }
     }
@@ -203,9 +212,14 @@ export class ModelRouter {
 
   /**
    * Update the per-model concurrency configuration.
+   * Admit queued requests when capacity increases; let active requests finish
+   * before admitting more when a limit decreases.
    */
   updateConcurrency(concurrency: Record<string, number>): void {
     this.config.concurrency = { ...concurrency }
+    for (const [model, queue] of this.queues) {
+      this.drainQueue(model, queue)
+    }
     consola.debug(
       "Model concurrency updated:",
       Object.keys(concurrency).length,

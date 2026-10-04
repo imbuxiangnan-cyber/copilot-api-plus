@@ -95,9 +95,14 @@ export class DuckDuckGoHtmlBackend implements SearchBackend {
     query: string,
     options?: SearchOptions,
   ): Promise<Array<SearchResult>> {
+    options?.signal?.throwIfAborted()
     if (!query || !query.trim()) return []
 
     const controller = new AbortController()
+    const signal =
+      options?.signal ?
+        AbortSignal.any([controller.signal, options.signal])
+      : controller.signal
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
     try {
       const body = new URLSearchParams({ q: query, kl: "wt-wt" })
@@ -110,17 +115,22 @@ export class DuckDuckGoHtmlBackend implements SearchBackend {
           "Accept-Language": "en-US,en;q=0.9",
         },
         body: body.toString(),
-        signal: controller.signal,
+        signal,
       })
+      signal.throwIfAborted()
       if (!response.ok) {
         throw new Error(
           `DuckDuckGo HTML search failed: HTTP ${response.status}`,
         )
       }
       const html = await response.text()
+      signal.throwIfAborted()
       const all = parseDuckDuckGoHtml(html)
       const limit = options?.maxResults ?? DEFAULT_MAX_RESULTS
       return all.slice(0, Math.max(0, limit))
+    } catch (error) {
+      signal.throwIfAborted()
+      throw error
     } finally {
       clearTimeout(timer)
     }

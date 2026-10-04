@@ -25,14 +25,15 @@
   ],
   "scripts": {
     "build": "tsdown",
-    "dev": "bun run --watch ./src/main.ts",
+    "dev": "bun run --watch ./src/main.ts start",
     "knip": "knip-bun",
     "lint": "eslint --cache",
     "lint:all": "eslint --cache .",
     "prepack": "bun run build",
     "prepare": "bunx simple-git-hooks || true",
     "release": "bumpp && bun publish --access public",
-    "start": "NODE_ENV=production bun run ./src/main.ts",
+    "start": "NODE_ENV=production bun run ./src/main.ts start",
+    "test": "bun test",
     "typecheck": "tsc"
   },
   "simple-git-hooks": {
@@ -46,6 +47,7 @@
     "citty": "^0.1.6",
     "clipboardy": "^5.0.0",
     "consola": "^3.4.2",
+    "dotenv": "^17.2.3",
     "fetch-event-stream": "^0.1.5",
     "gpt-tokenizer": "^3.0.1",
     "hono": "^4.9.9",
@@ -65,6 +67,7 @@
     "prettier-plugin-packagejson": "^2.5.19",
     "simple-git-hooks": "^2.13.1",
     "tsdown": "^0.15.6",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "zod": "^4.1.11"
   }
 }

@@ -18,16 +18,18 @@ import {
   type TokenSource,
 } from "~/lib/api-config"
 import { HTTPError } from "~/lib/error"
+import { modelRouter } from "~/lib/model-router"
 import { type StreamAccountInfo } from "~/lib/proxy"
+import { type RequestOptions } from "~/lib/request-options"
 import { state } from "~/lib/state"
 import { refreshCopilotToken } from "~/lib/token"
+import { fetchWithRetry, fetchWithTimeout } from "~/lib/upstream-fetch"
 
-import {
-  fetchWithRetry,
-  fetchWithTimeout,
-  type ChatCompletionResponse,
-  type ChatCompletionsPayload,
+import type {
+  ChatCompletionResponse,
+  ChatCompletionsPayload,
 } from "./create-chat-completions"
+
 import {
   chatToResponsesPayload,
   responsesStreamToChatChunks,
@@ -40,33 +42,40 @@ import {
  * return either a Chat-style response or an SSE generator that yields
  * already-translated Chat Completion chunks (one per `data:` line).
  *
- * Currently only supports single-account mode. Multi-account routing
- * for Responses-only models can be added in a follow-up if needed.
+ * Supports single-account token refresh and shared multi-account rotation.
  */
 export async function createResponsesAsChat(
   payload: ChatCompletionsPayload,
+  options: RequestOptions = {},
 ): Promise<AsyncGenerator<ServerSentEventMessage> | ChatCompletionResponse> {
+  options.signal?.throwIfAborted()
+  const routedPayload = {
+    ...payload,
+    model: options.resolvedModel ?? modelRouter.resolveModel(payload.model),
+  }
   if (state.multiAccountEnabled && accountManager.hasAccounts()) {
     return runWithAccountRotation<
       ChatCompletionsPayload,
       AsyncGenerator<ServerSentEventMessage> | ChatCompletionResponse
     >({
       label: "responses",
-      payload,
+      payload: routedPayload,
+      signal: options.signal,
       transport: (p, tokenSource, accountId) =>
-        doResponsesFetch(p, tokenSource, { accountId }),
+        doResponsesFetch(p, tokenSource, { accountId, signal: options.signal }),
     })
   }
 
   if (!state.copilotToken) throw new Error("Copilot token not found")
-  return doResponsesFetch(payload, state)
+  return doResponsesFetch(routedPayload, state, { signal: options.signal })
 }
 
 async function doResponsesFetch(
   payload: ChatCompletionsPayload,
   source: TokenSource,
-  ctx: { accountId?: string } = {},
+  ctx: { accountId?: string; signal?: AbortSignal } = {},
 ): Promise<AsyncGenerator<ServerSentEventMessage> | ChatCompletionResponse> {
+  ctx.signal?.throwIfAborted()
   const responsesPayload = chatToResponsesPayload(payload)
   const url = `${copilotBaseUrl(source)}/v1/responses`
 
@@ -100,6 +109,7 @@ async function doResponsesFetch(
       method: "POST",
       headers: buildHeaders(),
       body: bodyString,
+      signal: ctx.signal,
     }),
     { accountId: ctx.accountId, accountProxy: source.proxy },
   )
@@ -107,13 +117,17 @@ async function doResponsesFetch(
   if (response.status === 401 && !ctx.accountId) {
     consola.warn("Copilot token expired, refreshing and retrying...")
     try {
-      await refreshCopilotToken()
+      ctx.signal?.throwIfAborted()
+      await refreshCopilotToken(ctx.signal)
+      ctx.signal?.throwIfAborted()
       response = await fetchWithTimeout(url, {
         method: "POST",
         headers: buildHeaders(),
         body: bodyString,
+        signal: ctx.signal,
       })
     } catch {
+      ctx.signal?.throwIfAborted()
       // Fall through to error handling
     }
   }
