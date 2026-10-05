@@ -1,13 +1,14 @@
-FROM oven/bun:1.2.19-alpine AS builder
+ARG BUN_VERSION=1.3.3
+FROM oven/bun:${BUN_VERSION}-alpine AS builder
 WORKDIR /app
 
 COPY ./package.json ./bun.lock ./
-RUN bun install --frozen-lockfile
+RUN bun install --frozen-lockfile --ignore-scripts
 
 COPY . .
 RUN bun run build
 
-FROM oven/bun:1.2.19-alpine AS runner
+FROM oven/bun:${BUN_VERSION}-alpine AS runner
 WORKDIR /app
 
 COPY ./package.json ./bun.lock ./

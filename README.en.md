@@ -1,9 +1,12 @@
 # Copilot API Plus
 
 [![npm version](https://img.shields.io/npm/v/copilot-api-plus.svg)](https://www.npmjs.com/package/copilot-api-plus)
-[![license](https://img.shields.io/npm/l/copilot-api-plus.svg)](https://github.com/imbuxiangnan-cyber/copilot-api-plus/blob/main/LICENSE)
+[![CI](https://github.com/imbuxiangnan-cyber/copilot-api-plus/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/imbuxiangnan-cyber/copilot-api-plus/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 English | [简体中文](README.md)
+
+[Support](SUPPORT.md) · [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md) · [Security](SECURITY.md) · [Code of conduct](CODE_OF_CONDUCT.md)
 
 > A proxy that converts GitHub Copilot into OpenAI & Anthropic compatible APIs. Works with Claude Code and more.
 
@@ -38,7 +41,7 @@ English | [简体中文](README.md)
 | Feature | Description |
 |---------|-------------|
 | 🔌 **GitHub Copilot Backend** | Access AI models using your GitHub Copilot subscription |
-| 🤖 **Dual Protocol** | Supports both OpenAI Chat Completions API and Anthropic Messages API |
+| 🤖 **API Compatibility** | Supports OpenAI Chat Completions, Responses, and Anthropic Messages APIs |
 | 💻 **Claude Code Integration** | One-command Claude Code setup (`--claude-code`) |
 | 📊 **Usage Monitoring** | Real-time API usage dashboard |
 | 🔄 **Auto Authentication** | Automatic token refresh, no manual intervention needed |
@@ -70,6 +73,8 @@ X-CodeAI is built for developers and AI tool users, and works well with Claude C
 
 ### Installation
 
+npm/npx usage requires **Node.js 20.18.1 or newer**. Source development uses the Bun version pinned in [.bun-version](.bun-version).
+
 ```bash
 # Global install
 npm install -g copilot-api-plus
@@ -93,15 +98,19 @@ The server listens on `http://localhost:4141` by default.
 ### Run from Source
 
 ```bash
+git clone https://github.com/imbuxiangnan-cyber/copilot-api-plus.git
+cd copilot-api-plus
 bun install --frozen-lockfile
 bun run dev
 
-# Build and start
+# Build and run the output
 bun run build
-bun run start
+bun ./dist/main.js start
 ```
 
-The `dev` and `start` scripts already include the CLI `start` command. Append server options directly, for example `bun run dev --port 4142`. On Windows, you can also run `start.bat`, then open the usage viewer link from the logs once the server is ready.
+`bun run start` runs the source in production mode. The `dev` and `start` scripts already include the CLI `start` command. Append server options directly, for example `bun run dev --port 4142`. On Windows, you can also run `start.bat`, then open the usage viewer link from the logs once the server is ready.
+
+See the [changelog](CHANGELOG.md) for unreleased changes on the main branch; npm and prebuilt images follow [Releases](https://github.com/imbuxiangnan-cyber/copilot-api-plus/releases). Development checks, test isolation, and contribution steps are documented in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
@@ -897,19 +906,23 @@ docker run -p 4141:4141 \
 
 ### Docker Compose
 
-```yaml
-version: "3.8"
-services:
-  copilot-api-plus:
-    build: .
-    ports:
-      - "4141:4141"
-    volumes:
-      - ./copilot-data:/root/.local/share/copilot-api-plus
-    environment:
-      - GH_TOKEN=your_github_token  # Optional
-    restart: unless-stopped
+The included [compose.yaml](compose.yaml) publishes the port only on `127.0.0.1` and stores account data in the `copilot-data` named volume.
+
+```bash
+cp .env.example .env
+docker compose config --quiet
+docker compose build
+
+# First login when GH_TOKEN is not set: follow the device authorization prompt
+docker compose run --rm copilot-api-plus auth
+
+docker compose up -d
+docker compose logs -f copilot-api-plus
 ```
+
+Configure `COPILOT_API_PORT`, optional `GH_TOKEN`, and proxy settings in your local `.env`; see [.env.example](.env.example). You can skip device login when `GH_TOKEN` is set. `docker compose down` retains the account volume; `docker compose down -v` deletes its data.
+
+To reach a host proxy from a container, use a reachable hostname such as `host.docker.internal`. Public deployments need API key authentication, access controls, and a matching health check; this Compose example is intended for local access.
 
 ### Using a Proxy
 

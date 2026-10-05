@@ -11,3 +11,17 @@ tests/
 *.md
 
 .eslintcache
+
+# Local credentials, agent state and runtime data must not enter build context.
+.env
+.env.*
+.omc/
+.claude/
+.aider*
+copilot-data/
+github_token
+accounts.json
+*.log
+*.tgz
+models_raw.json
+admin_models.json

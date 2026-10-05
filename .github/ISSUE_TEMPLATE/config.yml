@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 使用与配置支持
+    url: https://github.com/imbuxiangnan-cyber/copilot-api-plus/blob/main/SUPPORT.md
+    about: 查看使用、配置、排障与反馈方式。
+  - name: 私下报告安全漏洞
+    url: https://github.com/imbuxiangnan-cyber/copilot-api-plus/security/advisories/new
+    about: 安全漏洞请私下报告，不要在公开 Issue 中披露凭据或漏洞细节。

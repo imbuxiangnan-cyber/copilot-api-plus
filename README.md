@@ -1,9 +1,12 @@
 # Copilot API Plus
 
 [![npm version](https://img.shields.io/npm/v/copilot-api-plus.svg)](https://www.npmjs.com/package/copilot-api-plus)
-[![license](https://img.shields.io/npm/l/copilot-api-plus.svg)](https://github.com/imbuxiangnan-cyber/copilot-api-plus/blob/main/LICENSE)
+[![CI](https://github.com/imbuxiangnan-cyber/copilot-api-plus/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/imbuxiangnan-cyber/copilot-api-plus/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 [English](README.en.md) | 简体中文
+
+[使用帮助](SUPPORT.md) · [贡献指南](CONTRIBUTING.md) · [更新记录](CHANGELOG.md) · [安全报告](SECURITY.md) · [行为准则](CODE_OF_CONDUCT.md)
 
 > A proxy that converts GitHub Copilot into OpenAI & Anthropic compatible APIs. Works with Claude Code, opencode, and more.
 
@@ -39,7 +42,7 @@
 
 | 功能 | 说明 |
 |------|------|
-| 🤖 **双协议兼容** | 同时支持 OpenAI Chat Completions API 和 Anthropic Messages API |
+| 🤖 **协议兼容** | 支持 OpenAI Chat Completions、Responses 和 Anthropic Messages API |
 | 💻 **Claude Code 集成** | 一键生成 Claude Code 启动命令 (`--claude-code`) |
 | 📊 **使用量监控** | Web 仪表盘实时查看 API 使用情况 |
 | 🔄 **自动认证** | Token 过期自动刷新，无需手动干预 |
@@ -71,6 +74,8 @@ X-CodeAI 面向开发者和 AI 工具用户，适合 Claude Code、代码助手�
 
 ### 安装
 
+npm/npx 运行需要 **Node.js 20.18.1 或更高版本**。源码开发使用 [.bun-version](.bun-version) 中锁定的 Bun 版本。
+
 ```bash
 # 全局安装
 npm install -g copilot-api-plus
@@ -94,15 +99,19 @@ npx copilot-api-plus@latest start --claude-code
 ### 从源码运行
 
 ```bash
+git clone https://github.com/imbuxiangnan-cyber/copilot-api-plus.git
+cd copilot-api-plus
 bun install --frozen-lockfile
 bun run dev
 
-# 构建后启动
+# 构建并运行产物
 bun run build
-bun run start
+bun ./dist/main.js start
 ```
 
-`dev` 和 `start` 脚本已包含 CLI 的 `start` 子命令；添加服务参数时直接使用 `bun run dev --port 4142`。Windows 也可以运行 `start.bat`，服务就绪后再打开日志中的使用量查看器链接。
+`bun run start` 以生产模式直接运行源码；`dev` 和 `start` 脚本都已包含 CLI 的 `start` 子命令，添加服务参数时直接使用 `bun run dev --port 4142`。Windows 也可以运行 `start.bat`，服务就绪后再打开日志中的使用量查看器链接。
+
+主分支中的未发布改动见 [更新记录](CHANGELOG.md)；npm 和预构建镜像以 [Releases](https://github.com/imbuxiangnan-cyber/copilot-api-plus/releases) 为准。开发检查、测试隔离和提交方式见 [贡献指南](CONTRIBUTING.md)。
 
 ---
 
@@ -896,19 +905,23 @@ docker run -p 4141:4141 \
 
 ### Docker Compose
 
-```yaml
-version: "3.8"
-services:
-  copilot-api-plus:
-    build: .
-    ports:
-      - "4141:4141"
-    volumes:
-      - ./copilot-data:/root/.local/share/copilot-api-plus
-    environment:
-      - GH_TOKEN=your_github_token  # 可选
-    restart: unless-stopped
+仓库自带 [compose.yaml](compose.yaml)，默认只将端口发布到本机 `127.0.0.1`，账号数据保存在命名卷 `copilot-data`。
+
+```bash
+cp .env.example .env
+docker compose config --quiet
+docker compose build
+
+# 首次登录：未设置 GH_TOKEN 时执行，按终端提示完成设备授权
+docker compose run --rm copilot-api-plus auth
+
+docker compose up -d
+docker compose logs -f copilot-api-plus
 ```
+
+可在本地 `.env` 中设置 `COPILOT_API_PORT`、可选 `GH_TOKEN` 和代理，字段说明见 [.env.example](.env.example)。设置 `GH_TOKEN` 后可以跳过上面的设备登录步骤。`docker compose down` 保留账号卷；`docker compose down -v` 会删除卷中的账号数据。
+
+容器访问宿主机代理时应使用 `host.docker.internal` 等容器可达地址。公开部署时应另行配置 API Key、访问控制及匹配的健康检查；当前 Compose 示例用于本机接入。
 
 ### 使用代理
 

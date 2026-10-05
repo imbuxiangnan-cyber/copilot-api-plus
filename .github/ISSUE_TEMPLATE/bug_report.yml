@@ -1,0 +1,99 @@
+name: Bug 反馈
+description: 报告可以复现的错误、接口异常或兼容性问题。
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请先查看 [支持指南](https://github.com/imbuxiangnan-cyber/copilot-api-plus/blob/main/SUPPORT.md) 和已有 Issue。
+        安全漏洞请按 [安全政策](https://github.com/imbuxiangnan-cyber/copilot-api-plus/blob/main/SECURITY.md) 私下报告。
+
+        **不要提交 GitHub/Copilot Token、API Key、Authorization/Cookie、完整 accounts.json 或个人对话内容。**
+        请用最小示例替换业务数据；日志只需粘贴相关的脱敏片段，无需上传文件。
+  - type: input
+    id: version
+    attributes:
+      label: 项目版本或提交
+      description: 填写安装版本、发布标签或源码提交 SHA。
+      placeholder: "例如：copilot-api-plus 版本号 / git rev-parse --short HEAD 的输出"
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 运行环境
+      description: 请填写操作系统、运行时、安装方式和客户端版本；说明是否使用代理、多账号及流式输出。不要提供账号标识或代理密码。
+      placeholder: |
+        操作系统：
+        Bun / Node.js 版本：
+        安装方式（npm / 源码 / Docker）：
+        客户端及版本：
+        是否使用网络代理：
+        单账号 / 多账号：
+        是否流式输出：
+    validations:
+      required: true
+  - type: dropdown
+    id: protocol
+    attributes:
+      label: 涉及的接口或协议
+      multiple: true
+      options:
+        - "OpenAI Chat Completions（/v1/chat/completions 或 /chat/completions）"
+        - "OpenAI Responses（/v1/responses 或 /responses）"
+        - "Anthropic Messages（/v1/messages）"
+        - "模型列表、Embeddings 或 Token 计数"
+        - "管理 API / 使用量查看器"
+        - "CLI、启动或部署"
+        - "其他或尚不确定（请在复现步骤说明）"
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: 模型名称与映射
+      description: 填写客户端请求的模型名；配置了映射时补充实际目标模型。不涉及模型时填写“无”。
+      placeholder: "请求模型 → 映射后的模型（如适用）"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 最小复现步骤
+      description: 提供可重复的操作步骤或脱敏请求示例，包括必要的启动参数、请求体和复现频率。请删除认证信息。
+      placeholder: |
+        1. 使用以下参数启动：
+        2. 发送以下最小请求或执行以下操作：
+        3. 出现问题：
+        复现频率：
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期行为
+      placeholder: 预期返回什么结果或发生什么行为？
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为
+      description: 描述错误、HTTP 状态码、SSE 事件或界面表现。
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 脱敏日志（可选）
+      description: 仅粘贴定位问题所需的片段。删除所有凭据、Cookie、账号信息和私人请求内容；不要粘贴完整 accounts.json。
+      render: text
+    validations:
+      required: false
+  - type: checkboxes
+    id: privacy_check
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已检查以上内容，不包含 Token、API Key、认证头、Cookie、accounts.json 或其他敏感信息。
+          required: true

@@ -3,6 +3,15 @@ node_modules/
 
 # local env
 *.local
+.env
+.env.*
+!.env.example
+
+# local agent notes and persisted credentials/data
+.omc/
+copilot-data/
+github_token
+accounts.json
 
 # Claude Code local settings
 .claude/
