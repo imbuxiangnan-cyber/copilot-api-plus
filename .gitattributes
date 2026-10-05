@@ -1,2 +1,5 @@
-# Keep container entrypoints executable when checked out on Windows.
-*.sh text eol=lf
+# Match .editorconfig on fresh checkouts, including Windows CI.
+* text=auto eol=lf
+
+# Windows launchers keep their native line endings.
+*.bat text eol=crlf
