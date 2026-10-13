@@ -74,7 +74,7 @@ X-CodeAI 面向开发者和 AI 工具用户，适合 Claude Code、代码助手�
 
 ### 安装
 
-npm/npx 运行需要 **Node.js 20.18.1 或更高版本**。源码开发使用 [.bun-version](.bun-version) 中锁定的 Bun 版本。
+npm/npx 运行最低需要 **Node.js 20.18.1**，建议使用仍受支持的 Node.js LTS；CI 使用 [.node-version](.node-version) 固定的 Node 24 LTS。源码开发使用 [.bun-version](.bun-version) 中锁定的 Bun 版本。
 
 ```bash
 # 全局安装
@@ -152,14 +152,17 @@ npx copilot-api-plus@latest start --account-type enterprise
 
 #### 可用模型
 
-> 默认示例推荐使用 `claude-opus-5`。实际可用模型和上下文长度以 `/v1/models` 返回为准。
+模型会随 Copilot 计划、组织策略和上游退役计划变化。启动服务后查询当前账号的模型 ID：
 
-| 模型 | ID | 上下文长度 |
-|------|-----|-----------|
-| Claude Opus 5 | `claude-opus-5` | 以 `/v1/models` 返回为准 |
-| GPT-4.1 | `gpt-4.1` | 1M |
-| o4-mini | `o4-mini` | 200K |
-| Gemini 2.5 Pro | `gemini-2.5-pro` | 1M |
+```bash
+curl http://localhost:4141/v1/models
+# 完整能力信息，包括 supported_endpoints、上下文与输出限制
+curl http://localhost:4141/api/models/available
+```
+
+启用 API Key 时需附带相应认证头。文中的 `claude-opus-5` 等名称仅为请求示例，请替换为你账号实际返回的 ID。代理会根据 `supported_endpoints` 选择 HTTP 请求路径；只声明 WebSocket 的接口不会被当作 HTTP Responses 支持。
+
+官方可用性与退役说明见 [GitHub 支持模型文档](https://docs.github.com/en/copilot/reference/ai-models/supported-models)。本次版本选择及开源实现对照见 [上游更新核对](docs/UPSTREAM_SYNC.md)。
 
 ---
 

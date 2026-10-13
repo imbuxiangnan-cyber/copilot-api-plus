@@ -4,6 +4,14 @@
 
 ## [Unreleased]
 
+### 2026-10-13 上游兼容与依赖更新
+
+- 升级 Bun 1.4.3、Hono 4.13.13、Undici 7.30.0、srvx 1.0.5，刷新运行和开发依赖的兼容修复版本。
+- 升级 Knip 6.41.0，移除没有官方修复版本的旧 braces 依赖链。
+- 根据模型目录的 HTTP 能力选择 Responses，目录刷新后不继续使用旧路由学习结果。
+- 正确转换 Responses 不完整终态、usage 和结束标记，识别工具输出中的图片。
+- 更新 Actions 的 Node 24 运行时，并固定 CI Node 24 LTS；具体取舍和来源见 [上游更新核对](docs/UPSTREAM_SYNC.md)。
+
 ### 修复 / Fixed
 
 - 统一 Chat、Responses 和原生 Anthropic 的模型映射、并发控制与账号恢复。

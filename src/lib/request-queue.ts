@@ -26,7 +26,7 @@ export class RequestQueue {
   async enqueue<T>(execute: () => Promise<T>): Promise<T> {
     return new Promise<T>((resolve, reject) => {
       this.queue.push({
-        execute: execute as () => Promise<unknown>,
+        execute: execute,
         resolve: resolve as (value: unknown) => void,
         reject,
       })

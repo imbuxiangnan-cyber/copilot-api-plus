@@ -271,8 +271,7 @@ function handleAssistantMessage(
 
 function mapContent(
   content:
-    | string
-    | Array<AnthropicUserContentBlock | AnthropicAssistantContentBlock>,
+    string | Array<AnthropicUserContentBlock | AnthropicAssistantContentBlock>,
 ): string | Array<ContentPart> | null {
   if (typeof content === "string") {
     return content

@@ -10,6 +10,8 @@
 
 import { randomUUID } from "node:crypto"
 
+import { HTTPError } from "~/lib/error"
+
 import type {
   ChatCompletionChunk,
   ChatCompletionResponse,
@@ -81,10 +83,7 @@ export interface ResponsesPayload {
   instructions?: string
   tools?: Array<ResponsesFunctionTool>
   tool_choice?:
-    | "auto"
-    | "none"
-    | "required"
-    | { type: "function"; name: string }
+    "auto" | "none" | "required" | { type: "function"; name: string }
   reasoning?: {
     effort: "minimal" | "low" | "medium" | "high" | "xhigh"
     summary?: "auto"
@@ -145,7 +144,8 @@ export interface ResponsesResponse {
   status?: string
   model: string
   output: Array<ResponsesOutputItem>
-  usage?: ResponsesUsage
+  incomplete_details?: { reason?: string } | null
+  usage?: ResponsesUsage | null
   error?: { code?: string; message?: string } | null
 }
 
@@ -329,7 +329,7 @@ export function chatToResponsesPayload(
 // ---------------------------------------------------------------------------
 
 function mapUsage(
-  usage: ResponsesUsage | undefined,
+  usage: ResponsesUsage | null | undefined,
 ): ChatCompletionResponse["usage"] {
   if (!usage) return undefined
   return {
@@ -382,6 +382,30 @@ function extractToolCalls(output: Array<ResponsesOutputItem>): Array<ToolCall> {
   return calls
 }
 
+function resolveFinishReason(
+  response: ResponsesResponse,
+  hasToolCalls: boolean,
+): ChatCompletionResponse["choices"][number]["finish_reason"] {
+  if (response.status !== "incomplete")
+    return hasToolCalls ? "tool_calls" : "stop"
+  const reason = response.incomplete_details?.reason
+  if (reason === "max_output_tokens" || reason === "max_messages")
+    return "length"
+  if (reason === "content_filter") return "content_filter"
+
+  // WebSocket steering requires a successor response and cannot be represented
+  // as a completed Chat response. Unknown reasons must not masquerade as stop.
+  const message = `Responses API returned an incomplete response: ${reason ?? "missing reason"}`
+  const error = new HTTPError(
+    message,
+    Response.json({ message }, { status: 502 }),
+  )
+  // This is a local translation limitation, not an upstream account failure.
+  ;(error as HTTPError & { __nonAccountError?: boolean }).__nonAccountError =
+    true
+  throw error
+}
+
 export function responsesToChatResponse(
   resp: ResponsesResponse,
   requestedModel: string,
@@ -389,8 +413,7 @@ export function responsesToChatResponse(
   const text = extractAssistantText(resp.output)
   const reasoningText = extractReasoningText(resp.output)
   const toolCalls = extractToolCalls(resp.output)
-  const finishReason: "stop" | "tool_calls" =
-    toolCalls.length > 0 ? "tool_calls" : "stop"
+  const finishReason = resolveFinishReason(resp, toolCalls.length > 0)
   return {
     id: resp.id,
     object: "chat.completion",
@@ -726,7 +749,7 @@ function* emitToolCallFallback(
   })
 }
 
-function* handleCompleted(
+function* handleFinished(
   s: StreamState,
   response: ResponsesResponse,
 ): Generator<SSEMessage> {
@@ -748,8 +771,7 @@ function* handleCompleted(
     yield* emitToolCallFallback(s, item, outputIndex)
   }
 
-  const finishReason: "stop" | "tool_calls" =
-    s.hasToolCalls ? "tool_calls" : "stop"
+  const finishReason = resolveFinishReason(response, s.hasToolCalls)
   yield makeChunk(s, {
     index: 0,
     delta: {},
@@ -843,10 +865,20 @@ function* dispatchEvent(
     }
     case "response.completed": {
       if (event.response) {
-        yield* handleCompleted(s, event.response)
+        yield* handleFinished(s, event.response)
         return true
       }
       return false
+    }
+    case "response.incomplete": {
+      if (!event.response) {
+        handleTerminalEvent({
+          ...event,
+          message: "Responses API incomplete event is missing response details",
+        })
+      }
+      yield* handleFinished(s, { ...event.response, status: "incomplete" })
+      return true
     }
     case "response.failed":
     case "response.error": {

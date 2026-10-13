@@ -63,7 +63,7 @@ export async function loadConfig(): Promise<AppConfig> {
     ) {
       throw new TypeError("Configuration must be a JSON object")
     }
-    return config as AppConfig
+    return config
   } catch (error) {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") {
       return {}

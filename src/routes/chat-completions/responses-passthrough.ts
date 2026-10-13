@@ -31,6 +31,7 @@ import { modelRouter } from "~/lib/model-router"
 import { runWithModelSlot } from "~/lib/model-slot"
 import { type StreamAccountInfo } from "~/lib/proxy"
 import { type RequestOptions } from "~/lib/request-options"
+import { responsesHasVisionInput } from "~/lib/responses-input"
 import { state } from "~/lib/state"
 import { refreshCopilotToken } from "~/lib/token"
 import { fetchWithRetry, fetchWithTimeout } from "~/lib/upstream-fetch"
@@ -38,7 +39,6 @@ import { type ChatCompletionResponse } from "~/services/copilot/create-chat-comp
 import {
   responsesStreamToChatChunks,
   responsesToChatResponse,
-  type ResponsesPayload,
   type ResponsesResponse,
 } from "~/services/copilot/responses-translator"
 
@@ -95,30 +95,6 @@ function detectAgentCall(input: Array<unknown>): boolean {
     if (it.type === "message" && it.role === "assistant") return true
     // Some clients send {role: "assistant", ...} without an explicit type.
     if (!it.type && it.role === "assistant") return true
-  }
-  return false
-}
-
-/**
- * Detect whether the input contains an `input_image` content part anywhere,
- * which controls the `Copilot-Vision-Request` header.
- */
-function detectVision(input: Array<unknown>): boolean {
-  for (const item of input) {
-    if (!item || typeof item !== "object") continue
-    const it = item as Record<string, unknown>
-    if (it.type !== "message" && it.type !== undefined) continue
-    const content = it.content
-    if (!Array.isArray(content)) continue
-    for (const part of content) {
-      if (
-        part
-        && typeof part === "object"
-        && (part as Record<string, unknown>).type === "input_image"
-      ) {
-        return true
-      }
-    }
   }
   return false
 }
@@ -214,7 +190,7 @@ async function doResponsesFetch(
   signal?.throwIfAborted()
   if (!source.copilotToken) throw new Error("Copilot token not found")
 
-  const enableVision = detectVision(upstreamBody.input)
+  const enableVision = responsesHasVisionInput(upstreamBody.input)
   const isAgentCall = detectAgentCall(upstreamBody.input)
 
   const buildHeaders = (): Record<string, string> => ({
@@ -223,7 +199,7 @@ async function doResponsesFetch(
   })
 
   const url = `${copilotBaseUrl(source)}/v1/responses`
-  const bodyString = JSON.stringify(upstreamBody as unknown as ResponsesPayload)
+  const bodyString = JSON.stringify(upstreamBody)
 
   consola.debug("Sending request to Copilot (/v1/responses) [passthrough]:", {
     model: upstreamBody.model,

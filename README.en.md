@@ -73,7 +73,7 @@ X-CodeAI is built for developers and AI tool users, and works well with Claude C
 
 ### Installation
 
-npm/npx usage requires **Node.js 20.18.1 or newer**. Source development uses the Bun version pinned in [.bun-version](.bun-version).
+npm/npx usage requires at least **Node.js 20.18.1**; a supported Node.js LTS release is recommended. CI uses Node 24 LTS pinned in [.node-version](.node-version). Source development uses the Bun version pinned in [.bun-version](.bun-version).
 
 ```bash
 # Global install
@@ -151,14 +151,17 @@ npx copilot-api-plus@latest start --account-type enterprise
 
 #### Available Models
 
-> Default examples recommend `claude-opus-5`. Actual model availability and context lengths are determined by `/v1/models`.
+Availability depends on your Copilot plan, organization policies, and model retirement schedules. After starting the server, query your account's model IDs:
 
-| Model | ID | Context Length |
-|-------|-----|---------------|
-| Claude Opus 5 | `claude-opus-5` | Determined by `/v1/models` |
-| GPT-4.1 | `gpt-4.1` | 1M |
-| o4-mini | `o4-mini` | 200K |
-| Gemini 2.5 Pro | `gemini-2.5-pro` | 1M |
+```bash
+curl http://localhost:4141/v1/models
+# Full capabilities, including supported_endpoints and context/output limits
+curl http://localhost:4141/api/models/available
+```
+
+Include authentication headers when API key authentication is enabled. Names such as `claude-opus-5` elsewhere in this guide are examples; replace them with IDs returned for your account. The proxy uses `supported_endpoints` to choose an HTTP request path and does not treat WebSocket-only endpoints as HTTP Responses support.
+
+See [GitHub's model documentation](https://docs.github.com/en/copilot/reference/ai-models/supported-models) for availability and retirement guidance, and the [upstream update review](docs/UPSTREAM_SYNC.md) for this update's sources and version choices.
 
 ---
 

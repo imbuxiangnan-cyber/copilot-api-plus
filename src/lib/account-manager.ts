@@ -19,12 +19,7 @@ import { getGitHubUser } from "~/services/github/get-user"
 // ---------------------------------------------------------------------------
 
 export type AccountStatus =
-  | "active"
-  | "exhausted"
-  | "rate_limited"
-  | "banned"
-  | "error"
-  | "disabled"
+  "active" | "exhausted" | "rate_limited" | "banned" | "error" | "disabled"
 
 export interface Account {
   id: string

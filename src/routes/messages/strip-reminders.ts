@@ -66,8 +66,7 @@ export function stripText(s: string): string {
 }
 
 type AnyContentBlock =
-  | AnthropicUserContentBlock
-  | AnthropicAssistantContentBlock
+  AnthropicUserContentBlock | AnthropicAssistantContentBlock
 
 /**
  * Strip reminders from a block array. Non-text blocks pass through.
@@ -103,9 +102,9 @@ export function stripBlocks<B extends AnyContentBlock>(
         } else if (stripped.length === 0) {
           // Keep the block (tool_result must exist for the tool_use_id), but
           // replace empty content with a single space placeholder.
-          out.push({ ...b, content: " " } as B)
+          out.push({ ...b, content: " " })
         } else {
-          out.push({ ...b, content: stripped } as B)
+          out.push({ ...b, content: stripped })
         }
         continue
       }
@@ -120,7 +119,7 @@ export function stripBlocks<B extends AnyContentBlock>(
       out.push({
         ...b,
         content: strippedBlocks.length > 0 ? strippedBlocks : " ",
-      } as B)
+      })
       continue
     }
     if (b.type !== "text") {
@@ -129,7 +128,7 @@ export function stripBlocks<B extends AnyContentBlock>(
     }
     const t = stripText(b.text)
     if (t.length === 0) continue // drop empty-after-strip blocks
-    out.push(t === b.text ? b : ({ ...b, text: t } as B))
+    out.push(t === b.text ? b : { ...b, text: t })
   }
   return out
 }
@@ -153,7 +152,7 @@ export function stripMessage(message: AnthropicMessage): AnthropicMessage {
   if (typeof message.content === "string") {
     const next = stripText(message.content)
     if (next === message.content) return message
-    return { ...message, content: next } as AnthropicMessage
+    return { ...message, content: next }
   }
   const next = stripBlocks(message.content as ReadonlyArray<AnyContentBlock>)
   if (next === message.content) return message

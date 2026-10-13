@@ -89,9 +89,7 @@ export interface AnthropicRedactedThinkingBlock {
 }
 
 export type AnthropicUserContentBlock =
-  | AnthropicTextBlock
-  | AnthropicImageBlock
-  | AnthropicToolResultBlock
+  AnthropicTextBlock | AnthropicImageBlock | AnthropicToolResultBlock
 
 export type AnthropicAssistantContentBlock =
   | AnthropicTextBlock

@@ -102,7 +102,7 @@ function startKeepalive(): void {
         fetch(pingUrl, {
           method: "HEAD",
           dispatcher: dispatcher as unknown as undefined,
-        } as RequestInit).catch(() => {})
+        }).catch(() => {})
         consola.debug(
           `Proxy keepalive ping sent (account ${key.slice(0, 8)} → ${new URL(pingUrl).hostname})`,
         )
@@ -230,14 +230,14 @@ export function initProxyFromEnv(): void {
             /* noop */
           }
           consola.debug(`HTTP proxy route: ${origin.hostname} via ${label}`)
-          return (agent as unknown as Dispatcher).dispatch(options, handler)
+          return agent.dispatch(options, handler)
         } catch {
           return (direct as unknown as Dispatcher).dispatch(options, handler)
         }
       },
       close() {
         for (const agent of proxies.values()) {
-          void (agent as unknown as Dispatcher).close()
+          void agent.close()
         }
         // `direct` is always set before the dispatcher is installed.
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
@@ -245,7 +245,7 @@ export function initProxyFromEnv(): void {
       },
       destroy() {
         for (const agent of proxies.values()) {
-          void (agent as unknown as Dispatcher).destroy()
+          void agent.destroy()
         }
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         return direct!.destroy()
@@ -304,7 +304,7 @@ export function resetConnections(): void {
   // Tear down old agents in the background — errors are non-fatal.
   void (oldDirect as unknown as Dispatcher).close().catch(() => {})
   for (const agent of oldProxies.values()) {
-    void (agent as unknown as Dispatcher).close().catch(() => {})
+    void agent.close().catch(() => {})
   }
 
   consola.debug("Connection pool reset — stale sockets cleared")
@@ -376,7 +376,7 @@ export function getAccountDispatcher(
           proxyAgent = new ProxyAgent({ uri: proxyUrl, ...agentOptions })
           proxyMap.set(proxyUrl, proxyAgent)
         }
-        return (proxyAgent as unknown as Dispatcher).dispatch(options, handler)
+        return proxyAgent.dispatch(options, handler)
       } catch {
         // Fallback to per-account direct agent
         let agent = accountAgents.get(accountId)
@@ -402,7 +402,7 @@ export function resetAccountConnections(accountId: string): void {
   const oldProxies = accountProxyAgents.get(accountId)
   if (oldProxies) {
     for (const agent of oldProxies.values()) {
-      void (agent as unknown as Dispatcher).close().catch(() => {})
+      void agent.close().catch(() => {})
     }
     accountProxyAgents.delete(accountId)
   }

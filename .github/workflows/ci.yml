@@ -24,9 +24,14 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -53,3 +58,6 @@ jobs:
 
       - name: Build
         run: bun run build
+
+      - name: Smoke test the Node CLI entrypoint
+        run: node ./dist/main.js start --help

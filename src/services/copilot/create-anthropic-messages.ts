@@ -50,8 +50,7 @@ import { rootCause } from "~/lib/utils"
 // ---------------------------------------------------------------------------
 
 export type AnthropicMessagesResult =
-  | AnthropicResponse
-  | (AsyncGenerator & { __accountInfo?: StreamAccountInfo })
+  AnthropicResponse | (AsyncGenerator & { __accountInfo?: StreamAccountInfo })
 
 interface CreateOptions {
   /** Forwarded as the `anthropic-beta` request header (e.g. for prompt caching). */

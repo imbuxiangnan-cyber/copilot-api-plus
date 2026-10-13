@@ -11,6 +11,7 @@ import {
   type TokenSource,
 } from "~/lib/api-config"
 import { HTTPError } from "~/lib/error"
+import { modelSupportsHttpEndpoint } from "~/lib/model-capabilities"
 import { modelRouter } from "~/lib/model-router"
 import { releaseWhenStreamEnds } from "~/lib/model-slot"
 import {
@@ -103,7 +104,7 @@ function normalizeMaxTokens(
   return {
     ...rest,
     max_completion_tokens: max_tokens,
-  } as ChatCompletionsPayload
+  }
 }
 
 /**
@@ -248,7 +249,7 @@ function injectDefaultReasoningEffort(
   const effort = cap ?? advertised ?? "high"
   return {
     ...payload,
-    reasoning_effort: effort as ChatCompletionsPayload["reasoning_effort"],
+    reasoning_effort: effort,
   }
 }
 
@@ -302,6 +303,7 @@ import { createResponsesAsChat } from "./create-responses"
  * Cleared on process restart so Copilot routing changes self-heal.
  */
 const responsesApiOnlyModels = new Set<string>()
+let responsesModelSnapshot = state.models
 
 /**
  * Models we know up-front are Responses-API-only on Copilot, so the
@@ -319,10 +321,26 @@ function isLikelyResponsesOnly(model: string): boolean {
   return RESPONSES_ONLY_MODEL_HINTS.some((re) => re.test(model))
 }
 
-// eslint-disable-next-line complexity -- Keep cancellation guards beside the protocol recovery branches.
+function shouldUseResponsesApi(model: string): boolean {
+  if (responsesModelSnapshot !== state.models) {
+    responsesApiOnlyModels.clear()
+    responsesModelSnapshot = state.models
+  }
+  // An observed upstream rejection wins until the catalog is refreshed.
+  if (responsesApiOnlyModels.has(model)) return true
+  const modelInfo = findModel(model)
+  if (modelSupportsHttpEndpoint(modelInfo, "chat-completions")) return false
+  if (modelSupportsHttpEndpoint(modelInfo, "responses")) return true
+  // Missing metadata keeps legacy compatibility; explicit non-HTTP metadata
+  // must not grant HTTP Responses support through a model-name hint.
+  if (modelInfo?.supported_endpoints?.length) return false
+  return isLikelyResponsesOnly(model)
+}
+
 export const createChatCompletions = async (
   payload: ChatCompletionsPayload,
   options: RequestOptions = {},
+  // eslint-disable-next-line complexity -- Keep cancellation guards beside protocol recovery branches.
 ) => {
   options.signal?.throwIfAborted()
   // Guard: every code path below assumes `messages` is an array
@@ -361,14 +379,12 @@ export const createChatCompletions = async (
 
   // Skip the failing Chat endpoint for known Responses-only models, while
   // retaining the same concurrency slot and stream lifecycle below.
-  const useResponsesApi =
-    responsesApiOnlyModels.has(resolvedModel)
-    || isLikelyResponsesOnly(resolvedModel)
+  const modelSnapshot = state.models
+  const useResponsesApi = shouldUseResponsesApi(resolvedModel)
   if (useResponsesApi) {
     consola.debug(
       `Model "${resolvedModel}" is Responses-only — using /v1/responses`,
     )
-    responsesApiOnlyModels.add(resolvedModel)
   }
 
   // Acquire concurrency slot
@@ -422,7 +438,7 @@ export const createChatCompletions = async (
     // Responses-API-only models: cache + retry via /v1/responses.
     const responsesRetry = handle400UnsupportedApiError(
       error,
-      { resolvedModel, routedPayload, signal: options.signal },
+      { resolvedModel, routedPayload, signal: options.signal, modelSnapshot },
       releaseSlot,
     )
     if (responsesRetry !== undefined) return responsesRetry
@@ -464,6 +480,7 @@ function handle400UnsupportedApiError(
     resolvedModel: string
     routedPayload: ChatCompletionsPayload
     signal?: AbortSignal
+    modelSnapshot: typeof state.models
   },
   releaseSlot: () => void,
 ): Promise<AsyncGenerator | ChatCompletionResponse> | undefined {
@@ -477,9 +494,11 @@ function handle400UnsupportedApiError(
   )
     return undefined
 
-  responsesApiOnlyModels.add(ctx.resolvedModel)
+  if (ctx.modelSnapshot === state.models) {
+    responsesApiOnlyModels.add(ctx.resolvedModel)
+  }
   consola.debug(
-    `Model "${ctx.resolvedModel}" requires /v1/responses — switching for future requests`,
+    `Model "${ctx.resolvedModel}" requires /v1/responses — retrying with Responses API`,
   )
 
   return (async () => {
@@ -551,7 +570,7 @@ function handle400MaxTokensError(
 
   const { max_tokens, ...rest } = ctx.routedPayload
   return retryWithModifiedPayload(
-    { ...rest, max_completion_tokens: max_tokens } as ChatCompletionsPayload,
+    { ...rest, max_completion_tokens: max_tokens },
     releaseSlot,
     signal,
   )
