@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+暂无未发布变更。
+
+## [1.8.0] - 2026-10-14
+
 ### 2026-10-13 上游兼容与依赖更新
 
 - 升级 Bun 1.4.3、Hono 4.13.13、Undici 7.30.0、srvx 1.0.5，刷新运行和开发依赖的兼容修复版本。
@@ -31,5 +35,6 @@
 
 既有已发布版本；详情见 [发布说明](https://github.com/imbuxiangnan-cyber/copilot-api-plus/releases/tag/v1.7.27)。
 
-[Unreleased]: https://github.com/imbuxiangnan-cyber/copilot-api-plus/compare/v1.7.27...main
+[Unreleased]: https://github.com/imbuxiangnan-cyber/copilot-api-plus/compare/v1.8.0...main
+[1.8.0]: https://github.com/imbuxiangnan-cyber/copilot-api-plus/compare/v1.7.27...v1.8.0
 [1.7.27]: https://github.com/imbuxiangnan-cyber/copilot-api-plus/releases/tag/v1.7.27
