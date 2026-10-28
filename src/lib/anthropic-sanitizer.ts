@@ -71,7 +71,8 @@ export function sanitizeForCopilotBackend(
 function sanitizeSamplingParameters(payload: AnthropicMessagesPayload): void {
   const modelInfo = findModel(payload.model)
   const strip =
-    payload.thinking !== undefined
+    payload.thinking?.type === "enabled"
+    || payload.thinking?.type === "adaptive"
     || modelRejectsSamplingParameters(payload.model, modelInfo)
 
   if (!strip) return
@@ -298,7 +299,9 @@ export function pickSupportedEffort(
  *     thinking depth — `budget_tokens` on adaptive 400s, and the
  *     top-level `effort` field 400s.
  *   - Other thinking-capable models get
- *     `{ type: "enabled", budget_tokens: max_thinking_budget }`.
+ *     `{ type: "enabled", budget_tokens: N }`, capped below the client's
+ *     `max_tokens`. Requests without room for the 1,024-token minimum or
+ *     requests forcing a tool call skip automatic manual thinking.
  *   - Models without thinking capability are left untouched.
  *
  * Skipped if the client already specified `thinking` (any value) — we
@@ -337,14 +340,37 @@ export function injectMaxThinkingBudget(
     return
   }
 
-  const maxBudget = supports.max_thinking_budget
-  if (!maxBudget || maxBudget <= 0) return
-
-  payload.thinking = { type: "enabled", budget_tokens: maxBudget }
-  addRequestTrace("inject_enabled_thinking", String(maxBudget))
-  consola.debug(
-    `Injected enabled thinking budget=${maxBudget} for ${payload.model} (no client preference)`,
+  const budget = getAutomaticManualThinkingBudget(
+    payload,
+    supports.max_thinking_budget,
   )
+  if (budget === undefined) return
+
+  payload.thinking = { type: "enabled", budget_tokens: budget }
+  addRequestTrace("inject_enabled_thinking", String(budget))
+  consola.debug(
+    `Injected enabled thinking budget=${budget} for ${payload.model} (no client preference)`,
+  )
+}
+
+function getAutomaticManualThinkingBudget(
+  payload: AnthropicMessagesPayload,
+  maxBudget: number | undefined,
+): number | undefined {
+  if (!maxBudget || !Number.isSafeInteger(maxBudget)) return
+  if (!Number.isSafeInteger(payload.max_tokens)) return
+  if (
+    payload.tool_choice?.type === "any"
+    || payload.tool_choice?.type === "tool"
+  ) {
+    return
+  }
+
+  // Manual thinking must leave room for the final response and requires at
+  // least 1,024 tokens. Only constrain our own defaults; explicit client
+  // thinking settings above are forwarded unchanged.
+  const budget = Math.min(maxBudget, payload.max_tokens - 1)
+  return budget >= 1024 ? budget : undefined
 }
 
 // ---------------------------------------------------------------------------

@@ -119,6 +119,7 @@ export class DuckDuckGoHtmlBackend implements SearchBackend {
       })
       signal.throwIfAborted()
       if (!response.ok) {
+        await response.body?.cancel().catch(() => {})
         throw new Error(
           `DuckDuckGo HTML search failed: HTTP ${response.status}`,
         )

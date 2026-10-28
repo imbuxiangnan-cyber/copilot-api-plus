@@ -74,6 +74,20 @@ describe("Anthropic to OpenAI translation logic", () => {
     expect(isValidChatCompletionRequest(openAIPayload)).toBe(true)
   })
 
+  test("does not enable reasoning when the client explicitly disables thinking", () => {
+    const anthropicPayload: AnthropicMessagesPayload = {
+      model: "gpt-4o",
+      messages: [{ role: "user", content: "Hello!" }],
+      max_tokens: 100,
+      thinking: { type: "disabled" },
+      output_config: { effort: "high" },
+    }
+
+    const openAIPayload = translateToOpenAI(anthropicPayload)
+    expect(openAIPayload.reasoning_effort).toBeUndefined()
+    expect(openAIPayload.thinking_budget).toBeUndefined()
+  })
+
   test("should translate comprehensive Anthropic payload to valid OpenAI payload", () => {
     const anthropicPayload: AnthropicMessagesPayload = {
       model: "gpt-4o",

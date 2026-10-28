@@ -164,6 +164,8 @@ curl http://localhost:4141/api/models/available
 
 官方可用性与退役说明见 [GitHub 支持模型文档](https://docs.github.com/en/copilot/reference/ai-models/supported-models)。本次版本选择及开源实现对照见 [上游更新核对](docs/UPSTREAM_SYNC.md)。
 
+Chat 请求自动转入 Responses 时，会转换 `response_format`（包括 JSON Schema）并保留工具 `strict` 和 `parallel_tool_calls`。模型是否支持这些参数仍以上游能力为准。Anthropic 请求显式指定 `thinking: { "type": "disabled" }` 时，代理不会自动注入思考参数。
+
 ---
 
 ## 👥 多账号管理

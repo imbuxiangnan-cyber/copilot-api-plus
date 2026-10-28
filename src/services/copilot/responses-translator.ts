@@ -22,6 +22,11 @@ import type {
   ToolCall,
 } from "./create-chat-completions"
 
+import {
+  translateResponseFormat,
+  type ResponsesTextFormat,
+} from "./response-format"
+
 // ---------------------------------------------------------------------------
 // Responses API request types (the subset we care about)
 // ---------------------------------------------------------------------------
@@ -74,7 +79,7 @@ interface ResponsesFunctionTool {
   name: string
   description?: string
   parameters: Record<string, unknown>
-  strict?: boolean
+  strict?: boolean | null
 }
 
 export interface ResponsesPayload {
@@ -92,6 +97,7 @@ export interface ResponsesPayload {
   temperature?: number
   top_p?: number
   parallel_tool_calls?: boolean
+  text?: { format: ResponsesTextFormat }
   stream?: boolean
   store?: boolean
   // Copilot may surface usage in the completed event by default; explicit opt-in here is harmless.
@@ -248,6 +254,9 @@ function translateTool(tool: Tool): ResponsesFunctionTool {
     name: tool.function.name,
     description: tool.function.description,
     parameters: tool.function.parameters,
+    // Responses attempts strict mode by default. Keep Chat's non-strict
+    // default unless the caller explicitly requests strict validation.
+    strict: tool.function.strict ?? false,
   }
 }
 
@@ -319,7 +328,8 @@ export function chatToResponsesPayload(
     max_output_tokens: maxOutput,
     temperature: payload.temperature ?? undefined,
     top_p: payload.top_p ?? undefined,
-    parallel_tool_calls: undefined,
+    parallel_tool_calls: payload.parallel_tool_calls ?? undefined,
+    text: translateResponseFormat(payload.response_format),
     stream: payload.stream ?? undefined,
   }
 }

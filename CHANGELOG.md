@@ -6,6 +6,20 @@
 
 暂无未发布变更。
 
+## [1.8.1] - 2026-10-28
+
+### 修复 / Fixed
+
+- Chat 请求自动转入 Responses 时，保留 JSON / JSON Schema 输出格式、工具 `strict` 及 `parallel_tool_calls` 设置；保持 Chat 工具默认非严格模式的语义。
+- 尊重 Anthropic 显式关闭思考的设置；自动注入的旧版 Claude 思考预算遵守输出上限和工具选择约束。
+- WebFetch 校验每次重定向的目标，拒绝跳转到本机、内网及不支持的协议；补充 IPv6 私网与 IPv4 映射地址识别，释放跳转和错误响应的 body。
+- 类型检查排除生成的 `dist`，避免构建清理产物时误报文件缺失。
+
+### 依赖 / Dependencies
+
+- 更新 Bun 1.4.4、Hono 4.13.14、Undici 7.30.1、srvx 1.0.8、Knip 6.43.0 及 Bun 类型，CI Node 24 LTS 更新至 24.22.1。
+- 同步双锁文件；官方资料、开源实现对照和验证边界见 [2026-10-28 上游核对](docs/UPSTREAM_SYNC.md)。
+
 ## [1.8.0] - 2026-10-14
 
 ### 2026-10-13 上游兼容与依赖更新
@@ -35,6 +49,7 @@
 
 既有已发布版本；详情见 [发布说明](https://github.com/imbuxiangnan-cyber/copilot-api-plus/releases/tag/v1.7.27)。
 
-[Unreleased]: https://github.com/imbuxiangnan-cyber/copilot-api-plus/compare/v1.8.0...main
+[Unreleased]: https://github.com/imbuxiangnan-cyber/copilot-api-plus/compare/v1.8.1...main
+[1.8.1]: https://github.com/imbuxiangnan-cyber/copilot-api-plus/compare/v1.8.0...v1.8.1
 [1.8.0]: https://github.com/imbuxiangnan-cyber/copilot-api-plus/compare/v1.7.27...v1.8.0
 [1.7.27]: https://github.com/imbuxiangnan-cyber/copilot-api-plus/releases/tag/v1.7.27

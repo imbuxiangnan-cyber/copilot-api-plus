@@ -41,6 +41,9 @@ export function translateToOpenAI(
   // Thinking cannot be enabled when tool_choice forces tool use
   const isForced =
     Boolean(toolChoice) && toolChoice !== "auto" && toolChoice !== "none"
+  const thinkingEnabled =
+    payload.thinking?.type === "enabled"
+    || payload.thinking?.type === "adaptive"
   const reasoningEffort = pickTranslatedReasoningEffort(payload)
 
   return {
@@ -62,10 +65,11 @@ export function translateToOpenAI(
     // If a model rejects "high" (e.g. claude-opus-4.7 only accepts "medium"),
     // the downstream error handler in createChatCompletions will auto-downgrade.
     ...(!isForced
-      && payload.thinking && {
+      && thinkingEnabled && {
         reasoning_effort: reasoningEffort,
       }),
     ...(!isForced
+      && thinkingEnabled
       && payload.thinking?.budget_tokens && {
         thinking_budget: payload.thinking.budget_tokens,
       }),

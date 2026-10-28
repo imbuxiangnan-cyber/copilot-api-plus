@@ -555,6 +555,7 @@ async function handleTranslatedCompletion(
     response = await createChatCompletions(openAIPayload, {
       signal: control.signal,
       resolvedModel: control.resolvedModel,
+      skipThinkingInjection: anthropicPayload.thinking?.type === "disabled",
     })
   } catch (error) {
     control.signal.throwIfAborted()
@@ -603,7 +604,9 @@ async function handleTranslatedCompletion(
       contentBlockOpen: false,
       toolCalls: {},
       thinkingBlockOpen: false,
-      thinkingRequested: Boolean(anthropicPayload.thinking),
+      thinkingRequested:
+        anthropicPayload.thinking?.type === "enabled"
+        || anthropicPayload.thinking?.type === "adaptive",
     }
 
     try {

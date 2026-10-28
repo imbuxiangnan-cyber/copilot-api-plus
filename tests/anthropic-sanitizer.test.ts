@@ -124,6 +124,31 @@ describe("sanitizeForCopilotBackend", () => {
     expect(payload.top_p).toBe(0.8)
     expect(payload.top_k).toBe(50)
   })
+
+  test("preserves sampling parameters when legacy thinking is explicitly disabled", () => {
+    const payload = basePayload({
+      thinking: { type: "disabled" },
+      temperature: 0.2,
+      top_p: 0.8,
+      top_k: 50,
+    })
+    sanitizeForCopilotBackend(payload)
+    expect(payload.thinking).toEqual({ type: "disabled" })
+    expect(payload.temperature).toBe(0.2)
+    expect(payload.top_p).toBe(0.8)
+    expect(payload.top_k).toBe(50)
+  })
+
+  test("still removes unsupported sampling on modern models with thinking disabled", () => {
+    const payload = basePayload({
+      model: "claude-sonnet-5",
+      thinking: { type: "disabled" },
+      temperature: 0.2,
+    })
+    sanitizeForCopilotBackend(payload)
+    expect(payload.thinking).toEqual({ type: "disabled" })
+    expect(payload.temperature).toBeUndefined()
+  })
 })
 
 describe("normalizeAdaptiveThinkingForCopilot", () => {
@@ -523,12 +548,97 @@ describe("injectMaxThinkingBudget", () => {
       max_thinking_budget: 32000,
       adaptive_thinking: false,
     })
-    const payload = basePayload({ model: "claude-opus-4.5" })
+    const payload = basePayload({
+      model: "claude-opus-4.5",
+      max_tokens: 64000,
+    })
     injectMaxThinkingBudget(payload)
     expect(payload.thinking).toEqual({
       type: "enabled",
       budget_tokens: 32000,
     })
+  })
+})
+
+describe("automatic manual thinking constraints", () => {
+  beforeEach(() => {
+    state.models = undefined
+    state.maxThinking = true
+    state.thinkingEffort = "auto"
+  })
+
+  test.each([1025, 4096, 32000])(
+    "caps automatic manual thinking below max_tokens=%i",
+    (maxTokens) => {
+      setModelCapability("claude-opus-4.5", {
+        max_thinking_budget: 32000,
+      })
+      const payload = basePayload({
+        model: "claude-opus-4.5",
+        max_tokens: maxTokens,
+      })
+      injectMaxThinkingBudget(payload)
+      expect(payload.thinking).toEqual({
+        type: "enabled",
+        budget_tokens: maxTokens - 1,
+      })
+      expect(payload.max_tokens).toBe(maxTokens)
+    },
+  )
+
+  test.each([0, 100, 1024])(
+    "skips automatic manual thinking without minimum budget at max_tokens=%i",
+    (maxTokens) => {
+      setModelCapability("claude-opus-4.5", {
+        max_thinking_budget: 32000,
+      })
+      const payload = basePayload({
+        model: "claude-opus-4.5",
+        max_tokens: maxTokens,
+      })
+      injectMaxThinkingBudget(payload)
+      expect(payload.thinking).toBeUndefined()
+      expect(payload.max_tokens).toBe(maxTokens)
+    },
+  )
+
+  test.each(["any", "tool"] as const)(
+    "skips automatic manual thinking with forced tool choice %s",
+    (type) => {
+      setModelCapability("claude-opus-4.5", {
+        max_thinking_budget: 32000,
+      })
+      const payload = basePayload({
+        model: "claude-opus-4.5",
+        max_tokens: 64000,
+        tool_choice: { type, name: "test_tool" },
+      })
+      injectMaxThinkingBudget(payload)
+      expect(payload.thinking).toBeUndefined()
+    },
+  )
+
+  test("respects explicit disabled thinking with automatic thinking enabled", () => {
+    setModelCapability("claude-sonnet-4.6", {
+      adaptive_thinking: true,
+      reasoning_effort: ["low", "high"],
+    })
+    const payload = basePayload({
+      model: "claude-sonnet-4.6",
+      thinking: { type: "disabled" },
+    })
+    injectMaxThinkingBudget(payload)
+    normalizeAdaptiveThinkingForCopilot(payload)
+    expect(payload.thinking).toEqual({ type: "disabled" })
+    expect(payload.output_config).toBeUndefined()
+  })
+})
+
+describe("explicit thinking preferences", () => {
+  beforeEach(() => {
+    state.models = undefined
+    state.maxThinking = true
+    state.thinkingEffort = "auto"
   })
 
   test("respects existing client thinking field", () => {

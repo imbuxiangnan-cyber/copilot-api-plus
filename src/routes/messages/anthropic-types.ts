@@ -19,7 +19,7 @@ export interface AnthropicMessagesPayload {
     name?: string
   }
   thinking?: {
-    type: "enabled" | "adaptive"
+    type: "enabled" | "adaptive" | "disabled"
     budget_tokens?: number
   }
   /**

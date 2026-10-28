@@ -406,7 +406,12 @@ export async function handleWebToolFallback(
 
   let final: ChatCompletionResponse
   try {
-    final = await runFallbackLoop(loopPayload, options)
+    final = await runFallbackLoop(loopPayload, {
+      ...options,
+      skipThinkingInjection:
+        options.skipThinkingInjection
+        || anthropicPayload.thinking?.type === "disabled",
+    })
   } catch (error) {
     consola.warn(
       `[web-fallback] loop failed: ${(error as Error).message || String(error)}`,

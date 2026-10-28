@@ -4,39 +4,71 @@
  * Rejects:
  *   - non-http(s) URLs
  *   - localhost / loopback / private-RFC1918 / link-local hostnames
- *   - hostnames that resolve to literal private IPs in the URL
+ *   - private IP literals, including IPv4-mapped IPv6
  *
  * The intent is to stop the model from probing internal infrastructure
  * (cloud metadata services, intranet, etc.) through the proxy. This is
- * a defense-in-depth check, not a substitute for proper egress control.
+ * a defense-in-depth check, not a substitute for proper egress control:
+ * DNS results are not pinned. Every redirect target is checked too.
  */
 
 import type { FetchOptions, FetchResult } from "./types"
 
 const DEFAULT_MAX_BYTES = 512 * 1024
 const DEFAULT_TIMEOUT_MS = 15_000
+const MAX_REDIRECTS = 20
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308])
 
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
 /** Block common private/loopback/link-local addresses. */
 const PRIVATE_HOST_PATTERNS: ReadonlyArray<RegExp> = [
-  /^localhost$/i,
+  /^(?:.*\.)?localhost$/i,
   /^127(?:\.\d{1,3}){3}$/,
-  /^0\.0\.0\.0$/,
+  /^0(?:\.\d{1,3}){3}$/,
   /^10(?:\.\d{1,3}){3}$/,
   /^192\.168(?:\.\d{1,3}){2}$/,
   /^172\.(1[6-9]|2\d|3[01])(?:\.\d{1,3}){2}$/,
   /^169\.254(?:\.\d{1,3}){2}$/,
-  /^::1$/,
-  /^fc00:/i,
-  /^fe80:/i,
-  /^\[?::ffff:127\./i,
+  /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])(?:\.\d{1,3}){2}$/,
 ]
 
 export function isPrivateHost(host: string): boolean {
-  const clean = host.replaceAll(/^\[|\]$/g, "").toLowerCase()
-  return PRIVATE_HOST_PATTERNS.some((re) => re.test(clean))
+  const clean = host.replaceAll(/^\[|\]$|\.$/g, "").toLowerCase()
+  if (PRIVATE_HOST_PATTERNS.some((re) => re.test(clean))) return true
+  if (!clean.includes(":")) return false
+
+  // URL normalizes IPv4-mapped IPv6 to hex, for example ::ffff:7f00:1.
+  let address: string
+  try {
+    address = new URL(`http://[${clean}]/`).hostname.slice(1, -1)
+  } catch {
+    return false
+  }
+  const halves = address.split("::")
+  const left = halves[0] ? halves[0].split(":") : []
+  const right = halves[1] ? halves[1].split(":") : []
+  const groups = [
+    ...left,
+    ...Array<string>(8 - left.length - right.length).fill("0"),
+    ...right,
+  ].map((group) => Number.parseInt(group, 16))
+  const first = groups[0]
+  if ((first & 0xfe00) === 0xfc00 || (first & 0xffc0) === 0xfe80) return true
+  if (groups.slice(0, 7).every((group) => group === 0))
+    return groups[7] === 0 || groups[7] === 1
+  if (
+    groups.slice(0, 5).every((group) => group === 0)
+    && groups[5] === 0xffff
+  ) {
+    return isPrivateHost(
+      [groups[6] >> 8, groups[6] & 255, groups[7] >> 8, groups[7] & 255].join(
+        ".",
+      ),
+    )
+  }
+  return false
 }
 
 export interface UrlValidation {
@@ -104,29 +136,68 @@ async function readBodyWithLimit(
   const chunks: Array<Uint8Array> = []
   let collected = 0
   let truncated = false
-  while (true) {
-    const { value, done } = (await reader.read()) as {
-      value?: Uint8Array
-      done: boolean
-    }
-    if (done) break
-    if (!value) continue
-    collected += value.byteLength
-    if (collected > maxBytes) {
-      truncated = true
-      const overflow = collected - maxBytes
-      const keep = value.byteLength - overflow
-      if (keep > 0) chunks.push(value.subarray(0, keep))
-      try {
-        await reader.cancel()
-      } catch {
-        // ignore
+  try {
+    while (true) {
+      const { value, done } = (await reader.read()) as {
+        value?: Uint8Array
+        done: boolean
       }
-      break
+      if (done) break
+      if (!value) continue
+      collected += value.byteLength
+      if (collected > maxBytes) {
+        truncated = true
+        const overflow = collected - maxBytes
+        const keep = value.byteLength - overflow
+        if (keep > 0) chunks.push(value.subarray(0, keep))
+        await reader.cancel().catch(() => {})
+        break
+      }
+      chunks.push(value)
     }
-    chunks.push(value)
+  } finally {
+    reader.releaseLock()
   }
   return { buffer: concat(chunks), truncated }
+}
+
+/** Validate every redirect target before opening another connection. */
+async function fetchWithValidatedRedirects(
+  rawUrl: string,
+  signal: AbortSignal,
+): Promise<{ response: Response; url: string }> {
+  let url = new URL(rawUrl)
+  for (let redirects = 0; ; redirects++) {
+    signal.throwIfAborted()
+    const validation = validateFetchUrl(url.toString())
+    if (!validation.ok)
+      throw new Error(`WebFetch refused: ${validation.reason}`)
+
+    const response = await fetch(url.toString(), {
+      method: "GET",
+      headers: {
+        "User-Agent": USER_AGENT,
+        Accept:
+          "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.5",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+      redirect: "manual",
+      signal,
+    })
+    const location = response.headers.get("location")
+    if (!REDIRECT_STATUSES.has(response.status) || location === null)
+      return { response, url: url.toString() }
+
+    try {
+      signal.throwIfAborted()
+      if (redirects >= MAX_REDIRECTS)
+        throw new Error(`WebFetch refused: exceeded ${MAX_REDIRECTS} redirects`)
+      url = new URL(location, url)
+    } finally {
+      // Undici cannot reliably reclaim unread bodies through garbage collection.
+      await response.body?.cancel().catch(() => {})
+    }
+  }
 }
 
 export async function directFetch(
@@ -148,17 +219,7 @@ export async function directFetch(
     : controller.signal
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    const response = await fetch(rawUrl, {
-      method: "GET",
-      headers: {
-        "User-Agent": USER_AGENT,
-        Accept:
-          "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.5",
-        "Accept-Language": "en-US,en;q=0.9",
-      },
-      redirect: "follow",
-      signal,
-    })
+    const { response, url } = await fetchWithValidatedRedirects(rawUrl, signal)
     signal.throwIfAborted()
 
     const contentType =
@@ -174,7 +235,7 @@ export async function directFetch(
     const text = isHtml ? extractTextFromHtml(raw) : raw
 
     return {
-      url: response.url || rawUrl,
+      url: response.url || url,
       status: response.status,
       contentType,
       text,

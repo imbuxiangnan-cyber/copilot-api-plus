@@ -27,6 +27,8 @@ import { refreshCopilotToken } from "~/lib/token"
 import { fetchWithRetry, fetchWithTimeout } from "~/lib/upstream-fetch"
 import { findModel, rootCause } from "~/lib/utils"
 
+import { type ChatResponseFormat } from "./response-format"
+
 export { fetchWithRetry, fetchWithTimeout } from "~/lib/upstream-fetch"
 
 // ---------------------------------------------------------------------------
@@ -178,7 +180,9 @@ function isToolChoiceForced(
 function injectThinking(
   payload: ChatCompletionsPayload,
   resolvedModel: string,
+  options: RequestOptions,
 ): ChatCompletionsPayload {
+  if (options.skipThinkingInjection) return payload
   // Thinking must be stripped when:
   // 1. tool_choice forces tool use (API rejects the combination), or
   // 2. the model is known to reject reasoning_effort when ANY tools are
@@ -370,7 +374,7 @@ export const createChatCompletions = async (
   // ---------------------------------------------------------------------------
   // Thinking injection: use model capabilities to decide strategy
   // ---------------------------------------------------------------------------
-  const thinkingPayload = injectThinking(routedPayload, resolvedModel)
+  const thinkingPayload = injectThinking(routedPayload, resolvedModel, options)
   const wasInjected =
     thinkingPayload.reasoning_effort !== routedPayload.reasoning_effort
     || thinkingPayload.thinking_budget !== routedPayload.thinking_budget
@@ -1156,9 +1160,10 @@ export interface ChatCompletionsPayload {
   presence_penalty?: number | null
   logit_bias?: Record<string, number> | null
   logprobs?: boolean | null
-  response_format?: { type: "json_object" } | null
+  response_format?: ChatResponseFormat | null
   seed?: number | null
   tools?: Array<Tool> | null
+  parallel_tool_calls?: boolean | null
   tool_choice?:
     | "none"
     | "auto"
@@ -1180,6 +1185,7 @@ export interface Tool {
     name: string
     description?: string
     parameters: Record<string, unknown>
+    strict?: boolean | null
   }
 }
 

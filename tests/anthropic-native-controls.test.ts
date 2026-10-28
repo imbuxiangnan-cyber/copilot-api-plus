@@ -6,6 +6,7 @@ import { recordBreakerSuccess } from "~/lib/account-rotation"
 import { ModelRouter, modelRouter } from "~/lib/model-router"
 import { clearRouteCache } from "~/lib/route-resolver"
 import { state, type State } from "~/lib/state"
+import { handleWebToolFallback } from "~/routes/messages/proxy-web-fallback"
 import { messageRoutes } from "~/routes/messages/route"
 import { createAnthropicMessages } from "~/services/copilot/create-anthropic-messages"
 
@@ -255,3 +256,48 @@ test("Messages selects Chat after mapping without mapping again", async () => {
   })
   expect(await response.json()).toMatchObject({ model: "claude-client" })
 })
+
+test.each(["translated", "web-fallback"])(
+  "Messages preserves disabled thinking through %s Chat default injection",
+  async (path) => {
+    router.updateMapping({ "claude-client": "gpt-final" })
+    fetchSpy.mockResolvedValueOnce(
+      Response.json({
+        id: "chat-disabled-thinking",
+        model: "gpt-final",
+        choices: [
+          {
+            index: 0,
+            message: { role: "assistant", content: "Hello" },
+            finish_reason: "stop",
+          },
+        ],
+        usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+      }),
+    )
+    const requestPayload = {
+      ...payload("claude-client"),
+      thinking: { type: "disabled" as const },
+    }
+    const requestApp =
+      path === "web-fallback" ?
+        new Hono().post("/v1/messages", (c) =>
+          handleWebToolFallback(c, requestPayload, {
+            resolvedModel: "gpt-final",
+          }),
+        )
+      : app
+    const response = await requestApp.request("/v1/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(requestPayload),
+    })
+    expect(response.status).toBe(200)
+    const upstream = JSON.parse(fetchSpy.mock.calls[0][1]?.body as string) as {
+      reasoning_effort?: string
+      thinking_budget?: number
+    }
+    expect(upstream.reasoning_effort).toBeUndefined()
+    expect(upstream.thinking_budget).toBeUndefined()
+  },
+)

@@ -163,6 +163,8 @@ Include authentication headers when API key authentication is enabled. Names suc
 
 See [GitHub's model documentation](https://docs.github.com/en/copilot/reference/ai-models/supported-models) for availability and retirement guidance, and the [upstream update review](docs/UPSTREAM_SYNC.md) for this update's sources and version choices.
 
+When a Chat request is routed to Responses, the proxy converts `response_format` (including JSON Schema) and preserves tool `strict` and `parallel_tool_calls`. Support for those options still depends on the upstream model. An Anthropic request with explicit `thinking: { "type": "disabled" }` prevents automatic thinking parameter injection.
+
 ---
 
 ## 👥 Multi-Account Management
